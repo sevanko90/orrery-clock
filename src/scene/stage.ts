@@ -92,7 +92,7 @@ export class Stage {
       this.composer.setPixelRatio(quality.pixelRatio);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       const res = new THREE.Vector2(container.clientWidth, container.clientHeight).multiplyScalar(quality.low ? 0.5 : 1);
-      this.bloom = new UnrealBloomPass(res, 0.45, 0.5, 2.2);
+      this.bloom = new UnrealBloomPass(res, 0.32, 0.45, 3.2);
       this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
     }

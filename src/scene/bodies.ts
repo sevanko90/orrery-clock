@@ -312,7 +312,7 @@ export class Bodies {
     const allow4k = !opts.lowQuality;
 
     // ---- Sun ----
-    const sunMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(4.2, 3.2, 2.2) });
+    const sunMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(5.6, 4.3, 3.0) });
     this.sunMesh = new THREE.Mesh(new THREE.SphereGeometry(SUN_RADIUS, 64, 48), sunMat);
     this.sunMesh.position.set(0, PLANE_Y, 0);
     const sunTex = new ProgressiveTexture('sun', (t) => {
@@ -332,7 +332,7 @@ export class Bodies {
     this.sunMesh.add(this.sunGlow);
     this.root.add(this.sunMesh);
 
-    this.sunLight = new THREE.PointLight(0xfff0dd, 2.6, 0, 0);
+    this.sunLight = new THREE.PointLight(0xfff0dd, 2.2, 0, 0);
     this.sunLight.position.copy(this.sunMesh.position);
     this.sunLight.castShadow = !opts.lowQuality;
     this.sunLight.shadow.mapSize.set(1024, 1024);

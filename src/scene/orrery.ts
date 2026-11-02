@@ -247,6 +247,8 @@ export function buildOrrery(mats: Materials): Orrery {
     zOuter = TABLE_RADIUS - 0.35,
     extent = TABLE_RADIUS;
   const zodiacMat = mats.brass.clone();
+  // Satin finish: a large flat ring of polished brass mirrors the Sun as a glare.
+  zodiacMat.roughness = 0.55;
   zodiacMat.alphaTest = 0.5;
   zodiacMat.visible = false;
   const zodiac = new THREE.Mesh(new THREE.PlaneGeometry(extent * 2, extent * 2), zodiacMat);
