@@ -27,7 +27,7 @@ Browser-only, static TypeScript site. Interactive but primarily decorative 3D or
 
 ## Backlog
 
-- "Exploded view" button: animate the cabinet sides folding away to expose the whole mechanism.
+- (empty) — exploded view dropped: the glass drum already exposes the movement.
 
 ## Interaction
 
