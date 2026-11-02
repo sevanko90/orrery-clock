@@ -37,10 +37,11 @@ export class ProgressiveTexture {
     private apply: (tex: THREE.Texture) => void,
     private colorSpace: THREE.ColorSpace = THREE.SRGBColorSpace,
     private has4k = true,
+    private hasPlaceholder = true,
   ) {}
 
   async start(full: TextureTier): Promise<void> {
-    await this.set('256').catch(() => undefined);
+    if (this.hasPlaceholder) await this.set('256').catch(() => undefined);
     await this.set(full).catch((e) => console.warn(`texture ${this.name}`, e));
   }
 

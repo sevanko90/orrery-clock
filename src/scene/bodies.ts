@@ -170,6 +170,7 @@ function makePlanet(
       },
       THREE.SRGBColorSpace,
       false,
+      false,
     ).start('2k');
   }
 
