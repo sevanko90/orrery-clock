@@ -1,3 +1,4 @@
+import { createDatePicker } from './datePicker';
 import { REAL_TIME_STEP, SPEED_STEPS, type SimClock } from '../sim/clock';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -12,7 +13,7 @@ export function bindControls(clock: SimClock, onEscape: () => void) {
   const pause = $<HTMLButtonElement>('c-pause');
   const pauseIcon = $('c-pause-icon');
   const now = $<HTMLButtonElement>('c-now');
-  const date = $<HTMLInputElement>('c-date');
+  const date = $<HTMLButtonElement>('c-date');
 
   slider.max = String(SPEED_STEPS.length - 1);
 
@@ -32,28 +33,17 @@ export function bindControls(clock: SimClock, onEscape: () => void) {
   pause.addEventListener('click', () => clock.togglePause());
   now.addEventListener('click', () => clock.resetToNow());
 
-  date.addEventListener('change', () => {
-    if (!date.value) return;
+  const picker = createDatePicker(date, (y, m, d) => {
     // Keep the current time of day; jump to the chosen calendar date (local).
-    const [y, m, d] = date.value.split('-').map(Number);
-    const cur = new Date(clock.nowMs());
-    const target = new Date(cur);
-    target.setFullYear(y, m - 1, d);
+    const target = new Date(clock.nowMs());
+    target.setFullYear(y, m, d);
     clock.jumpTo(target.getTime());
     if (clock.step === REAL_TIME_STEP) clock.setStep(PAUSED_STEP);
   });
 
-  // Keep the date input in step with simulated time (when not being edited).
+  // Keep the date label in step with simulated time.
   const syncDate = () => {
-    if (document.activeElement !== date) {
-      const d = new Date(clock.nowMs());
-      const y = d.getFullYear();
-      if (y >= 1000 && y <= 2999) {
-        date.value = `${String(y).padStart(4, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-          d.getDate(),
-        ).padStart(2, '0')}`;
-      }
-    }
+    picker.setValue(new Date(clock.nowMs()));
     now.dataset.live = String(clock.isLive());
   };
 
