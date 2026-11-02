@@ -76,6 +76,17 @@ function unfocus() {
   focus.goHome();
   info.hide();
 }
+/** Fly back to the default camera position and zoom, whatever the state. */
+function resetView() {
+  info.hide();
+  focus.goHome();
+  lastInteraction = performance.now();
+}
+document.getElementById('c-home')!.addEventListener('click', resetView);
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'h' || e.key === 'H') resetView();
+});
 
 const { syncDate } = bindControls(clock, unfocus);
 
