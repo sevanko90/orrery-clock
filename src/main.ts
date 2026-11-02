@@ -20,6 +20,21 @@ if (import.meta.env.PROD) {
   const updateSW = registerSW({ immediate: true, onNeedRefresh: () => updateSW(true) });
 }
 
+// Surface failures on the page rather than leaving a silent black canvas.
+function showFatal(msg: string) {
+  let el = document.getElementById('fatal');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fatal';
+    el.setAttribute('role', 'alert');
+    document.body.appendChild(el);
+  }
+  el.textContent = `The orrery couldn't start: ${msg}`;
+  document.getElementById('veil')?.classList.add('gone');
+}
+addEventListener('error', (e) => showFatal(e.message || String(e.error)));
+addEventListener('unhandledrejection', (e) => showFatal(String(e.reason?.message ?? e.reason)));
+
 const container = document.getElementById('scene')!;
 const quality = detectQuality();
 const stage = new Stage(container, quality);
@@ -210,7 +225,22 @@ let prev = performance.now();
 let elapsed = 0;
 let frames = 0;
 
+let frameFailed = false;
 function frame(now: number) {
+  try {
+    step(now);
+  } catch (err) {
+    if (!frameFailed) {
+      frameFailed = true;
+      console.error(err);
+      showFatal(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+  requestAnimationFrame(frame);
+}
+
+function step(now: number) {
   const dt = Math.min(0.1, (now - prev) / 1000);
   prev = now;
   elapsed += dt;
@@ -247,7 +277,6 @@ function frame(now: number) {
   syncDate();
 
   if (++frames === 3) veil.classList.add('gone');
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 

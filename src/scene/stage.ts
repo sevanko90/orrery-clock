@@ -50,6 +50,10 @@ export class Stage {
     this.renderer.shadowMap.enabled = quality.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
+    this.renderer.domElement.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      console.error('WebGL context lost');
+    });
 
     this.scene.background = new THREE.Color(0x050407);
 
@@ -78,7 +82,12 @@ export class Stage {
     const fill = new THREE.HemisphereLight(0xffe2b8, 0x1a1008, 0.35);
     this.scene.add(fill);
 
-    if (quality.bloom) {
+    // Bloom renders into half-float targets; some browsers (notably Safari's
+    // WebGL on certain GPUs) can't render to those, which would leave a blank
+    // canvas. Only enable post-processing when it's supported.
+    const ext = this.renderer.extensions;
+    const canFloat = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
+    if (quality.bloom && canFloat && new URLSearchParams(location.search).get('bloom') !== '0') {
       this.composer = new EffectComposer(this.renderer);
       this.composer.setPixelRatio(quality.pixelRatio);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
