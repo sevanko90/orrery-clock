@@ -1,0 +1,119 @@
+[
+  {
+    "name": "sun",
+    "title": "Solarsystemscope texture 8k sun.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/a4/Solarsystemscope_texture_8k_sun.jpg",
+    "width": 4096,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_sun.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "mercury",
+    "title": "Solarsystemscope texture 8k mercury.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/2/27/Solarsystemscope_texture_8k_mercury.jpg",
+    "width": 8192,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_mercury.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "venus",
+    "title": "Solarsystemscope texture 4k venus atmosphere.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/5/57/Solarsystemscope_texture_4k_venus_atmosphere.jpg",
+    "width": 4096,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_4k_venus_atmosphere.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "earth",
+    "title": "Solarsystemscope texture 8k earth daymap.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg",
+    "width": 8192,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "earth-clouds",
+    "title": "Solarsystemscope texture 2k earth clouds.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/e/ed/Solarsystemscope_texture_2k_earth_clouds.jpg",
+    "width": 2048,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_2k_earth_clouds.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "mars",
+    "title": "Solarsystemscope texture 8k mars.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/7/70/Solarsystemscope_texture_8k_mars.jpg",
+    "width": 8192,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_mars.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "jupiter",
+    "title": "Solarsystemscope texture 8k jupiter.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/5/5e/Solarsystemscope_texture_8k_jupiter.jpg",
+    "width": 4096,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_jupiter.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "saturn",
+    "title": "Solarsystemscope texture 8k saturn.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/1/1e/Solarsystemscope_texture_8k_saturn.jpg",
+    "width": 4096,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_saturn.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "saturn-ring",
+    "title": "Solarsystemscope texture 8k saturn ring alpha.png",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/2/29/Solarsystemscope_texture_8k_saturn_ring_alpha.png",
+    "width": 8192,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_saturn_ring_alpha.png",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "uranus",
+    "title": "Solarsystemscope texture 2k uranus.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/9/95/Solarsystemscope_texture_2k_uranus.jpg",
+    "width": 2048,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_2k_uranus.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "neptune",
+    "title": "Solarsystemscope texture 2k neptune.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/1/1e/Solarsystemscope_texture_2k_neptune.jpg",
+    "width": 2048,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_2k_neptune.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "pluto",
+    "title": "Pluto color mapmosaic.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/ad/Pluto_color_mapmosaic.jpg",
+    "width": 5926,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Pluto_color_mapmosaic.jpg",
+    "license": "Public domain",
+    "artist": "NASA / Johns Hopkins University Applied Physics Laboratory / Southwest Research Institute"
+  },
+  {
+    "name": "stars",
+    "title": "Solarsystemscope texture 2k stars milky way.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/0/0e/Solarsystemscope_texture_2k_stars_milky_way.jpg",
+    "width": 2048,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_2k_stars_milky_way.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  }
+]

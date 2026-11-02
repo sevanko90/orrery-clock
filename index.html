@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0a09" />
+    <meta name="description" content="A mechanical 3D orrery and clock: brass, walnut and the planets exactly where they are right now." />
+    <title>Orrery Clock</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Cormorant+Garamond:ital,wght@0,500;1,500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="scene" aria-label="3D orrery. Drag to rotate, scroll to zoom, click a planet for details."></div>
+
+    <div id="veil"><div class="veil-inner"><div class="veil-gear"></div><p>Winding the mechanism…</p></div></div>
+
+    <section id="readout" class="panel" aria-live="off">
+      <div class="brand">Orrery&nbsp;Clock</div>
+      <div class="time nixie" id="r-time">--:--:--</div>
+      <div class="date" id="r-date">—</div>
+      <div class="sim" id="r-sim" hidden>
+        <span class="sim-label">Orrery shows</span>
+        <span id="r-sim-date">—</span>
+        <span class="sim-speed" id="r-sim-speed"></span>
+      </div>
+      <button class="toggle-extras" id="r-toggle" aria-expanded="true" aria-controls="r-extras">Almanac</button>
+      <dl class="extras" id="r-extras">
+        <div class="moon-row">
+          <dt>Moon</dt>
+          <dd><svg id="r-moon" viewBox="-12 -12 24 24" width="22" height="22" aria-hidden="true"></svg><span id="r-moon-text">—</span></dd>
+        </div>
+        <div><dt>Sunrise</dt><dd id="r-rise">—</dd></div>
+        <div><dt>Sunset</dt><dd id="r-set">—</dd></div>
+        <div><dt>Sidereal</dt><dd id="r-lst">—</dd></div>
+        <div><dt>Julian day</dt><dd id="r-jd">—</dd></div>
+        <div class="place-row">
+          <dt>Place</dt>
+          <dd><span id="r-place">—</span> <button id="r-locate" class="link-btn" type="button">Use my location</button></dd>
+        </div>
+      </dl>
+    </section>
+
+    <aside id="info" class="panel" hidden aria-live="polite">
+      <button class="close" id="info-close" aria-label="Close">×</button>
+      <div class="kind" id="info-kind"></div>
+      <h2 id="info-name"></h2>
+      <dl id="info-stats"></dl>
+      <p class="blurb" id="info-blurb"></p>
+    </aside>
+
+    <nav id="controls" class="panel" aria-label="Time controls">
+      <button id="c-now" class="pill" type="button" title="Return to now (N)">Now</button>
+      <button id="c-slower" class="icon-btn" type="button" aria-label="Slower / reverse" title="Slower (←)">
+        <svg viewBox="0 0 24 24"><path d="M11 6 3 12l8 6zM21 6l-8 6 8 6z" /></svg>
+      </button>
+      <button id="c-pause" class="icon-btn" type="button" aria-label="Pause" title="Pause (Space)">
+        <svg viewBox="0 0 24 24" id="c-pause-icon"><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
+      </button>
+      <button id="c-faster" class="icon-btn" type="button" aria-label="Faster" title="Faster (→)">
+        <svg viewBox="0 0 24 24"><path d="m13 6 8 6-8 6zM3 6l8 6-8 6z" /></svg>
+      </button>
+      <div class="throttle">
+        <input id="c-speed" type="range" min="0" max="14" step="1" aria-label="Speed" />
+        <output id="c-speed-label">real time</output>
+      </div>
+      <label class="date-jump">
+        <span class="sr-only">Jump to date</span>
+        <input id="c-date" type="date" min="1000-01-01" max="2999-12-31" />
+      </label>
+    </nav>
+
+    <div id="hover-tag" hidden></div>
+
+    <footer id="corner">
+      <span class="attribution">
+        Planet images: <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a>
+        (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>) &amp; NASA, via Wikimedia Commons
+      </span>
+      <button id="credits-btn" class="link-btn" type="button">Credits</button>
+    </footer>
+
+    <dialog id="credits">
+      <h2>Credits</h2>
+      <p>Planet textures by <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, via Wikimedia Commons; resized and converted to WebP.</p>
+      <p>Pluto map: NASA / Johns Hopkins APL / SwRI (New Horizons), public domain.</p>
+      <p>Planet positions from JPL’s approximate Keplerian elements (E. M. Standish). Sunrise and sunset after SunCalc.</p>
+      <p>Sizes and distances are compressed so everything fits on the table. Angles around the Sun are true for the date shown.</p>
+      <form method="dialog"><button class="pill">Close</button></form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

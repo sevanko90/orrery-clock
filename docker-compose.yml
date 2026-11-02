@@ -1,0 +1,70 @@
+services:
+  app:
+    image: orrery-clock-dev-image:latest
+    container_name: orrery-clock-app-container
+
+    user: node
+
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+
+    working_dir: /workspace
+    # Keeps the container alive across the file-watcher's momentary process
+    # restarts (the Vite watcher can otherwise look like PID 1 dying).
+    stdin_open: true
+
+    volumes:
+      # Maps your local files into the container
+      - .:/workspace
+      # node_modules lives in a named volume, not the bind mount, so that:
+      #  - native/platform-specific binaries built in the container never
+      #    touch your host OS
+      #  - Windows/WSL2 bind-mount performance isn't tanked by node_modules
+      #  - installed packages survive container rebuilds
+      - orrery-clock-node-modules:/workspace/node_modules
+
+    ports:
+      - "${DEV_PORT:-5173}:${DEV_PORT:-5173}"
+    environment:
+      # Set to true in .env if hot-reload doesn't fire (common on Windows/WSL2)
+      - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}
+      - CHOKIDAR_INTERVAL=${CHOKIDAR_INTERVAL:-100}
+
+    # docker-compose.yml is the source of truth for this environment: all
+    # setup happens here, not in a devcontainer postCreateCommand, so the
+    # exact same behavior applies whether you use VS Code or plain `docker
+    # compose up`.
+    command: |
+      sh -c "
+      if [ ! -f /workspace/node_modules/.volume_initialized ]; then
+        echo 'First-time volume detected (root ownership). Fixing permissions...';
+        sudo chown -R node:node /workspace/node_modules && \
+        touch /workspace/node_modules/.volume_initialized;
+      fi;
+
+      if [ ! -f package.json ]; then
+        echo '';
+        echo 'No package.json found yet. This container only sets up the';
+        echo 'environment, not the app itself. Open a shell in the running';
+        echo 'container and scaffold your app, e.g.:';
+        echo '  npm create vite@latest . -- --template vanilla-ts';
+        echo 'Then run: docker compose up';
+        echo '';
+        exec sleep infinity;
+      fi;
+
+      if [ ! -d node_modules/.bin ]; then
+        echo 'Installing dependencies...';
+        if ! npm install; then
+          echo 'ERROR: npm install failed. Aborting container startup.';
+          exit 1;
+        fi;
+      fi;
+
+      echo 'Handing terminal stream over to the dev server...' &&
+      exec ${DEV_COMMAND:-npm run dev -- --host 0.0.0.0 --port ${DEV_PORT:-5173}}
+      "
+
+volumes:
+  orrery-clock-node-modules:
