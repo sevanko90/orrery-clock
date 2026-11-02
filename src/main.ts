@@ -15,7 +15,10 @@ import { Readout } from './ui/readout';
 import { bindControls } from './ui/controls';
 import { InfoCard } from './ui/infocard';
 
-if (import.meta.env.PROD) registerSW({ immediate: true });
+if (import.meta.env.PROD) {
+  // Activate new builds immediately; reload once the new worker takes control.
+  const updateSW = registerSW({ immediate: true, onNeedRefresh: () => updateSW(true) });
+}
 
 const container = document.getElementById('scene')!;
 const quality = detectQuality();

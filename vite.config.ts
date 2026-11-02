@@ -22,6 +22,11 @@ export default defineConfig({
         icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
       },
       workbox: {
+        // Take over as soon as a new version is installed, so returning
+        // visitors never get stuck on a stale build.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         // Precache only the app shell. Textures are cached at runtime as they
         // are first requested, so the first visit never downloads anything twice.
         globPatterns: ['**/*.{js,css,html,svg}'],
