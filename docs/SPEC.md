@@ -21,13 +21,12 @@ Browser-only, static TypeScript site. Interactive but primarily decorative 3D or
 ## Mechanism
 
 - Real kinematic simulation: time drives the escapement (at 1×) or a hand crank (any other speed); every arbor angle propagates gear-by-gear through the meshes to the planet arms.
-- Movement lives inside the walnut cabinet behind a glass window: going train + balance/anchor/escape wheel on the top plate, central drive arbor (1 rev / 6 sidereal years), and a two-stage compound train per planet (ratios within 25 ppm of sidereal periods).
+- Movement stands in a central glass drum (glass top and sides between brass mullions) on a slim walnut table: going train + balance/anchor/escape wheel on the top plate, central drive arbor (1 rev / 6 sidereal years), and a two-stage compound train per planet (ratios within 25 ppm of sidereal periods).
 - Gear tooth counts and layout are solved offline by `scripts/design-mechanism.ts`; `src/mechanism/mechanism.test.ts` checks for collisions and ratio accuracy.
 - Arms show mean (uniform-circular) motion like a real geared orrery; faint markers show true Keplerian positions. Arms are re-set to mean longitude whenever time jumps.
 
 ## Backlog
 
-- More glass: additional top and side windows on the cabinet so more of the movement is visible.
 - "Exploded view" button: animate the cabinet sides folding away to expose the whole mechanism.
 
 ## Interaction

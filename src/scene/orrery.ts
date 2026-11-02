@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { ARMS, PLANE_Y, TABLE_RADIUS, TABLE_TOP, type ArmSpec } from './layout';
-import { GLASS_Y, WINDOW_RADIUS, CENTRAL_HOLE, stage2Y, GEAR_T } from '../mechanism/heights';
+import { GLASS_Y, WINDOW_RADIUS, CENTRAL_HOLE, stage2Y, GEAR_T, BOTTOM_PLATE, PLATE_T } from '../mechanism/heights';
+
+/** Walnut table surface: the movement's bottom plate rests on it. */
+const TABLE_SURFACE = BOTTOM_PLATE - PLATE_T / 2;
 import { buildMechanism, design, type Mechanism3D } from './mechanism3d';
 import type { Materials } from './materials';
 
@@ -135,47 +138,73 @@ export function buildOrrery(mats: Materials): Orrery {
   const root = new THREE.Group();
   root.name = 'orrery';
 
-  // ---- Cabinet: a walnut drum with a glass window over the movement ------
+  // ---- Table and glass drum -------------------------------------------
+  // A slim walnut table; the movement stands in a central glass drum (glass
+  // sides between brass mullions, glass top) so it can be seen from any angle.
   const cabinet = new THREE.Group();
-  const H = TABLE_TOP;
-  const wall = new THREE.Mesh(new THREE.CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS - 0.4, H - 0.3, 128, 1, true), mats.woodEdge);
-  wall.position.y = 0.3 + (H - 0.3) / 2;
-  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(TABLE_RADIUS - 0.3, TABLE_RADIUS - 0.9, 0.3, 128), mats.woodEdge);
-  plinth.position.y = 0.15;
+  const H = TABLE_TOP; // top of the drum, where the planet tubes emerge
+  const S = TABLE_SURFACE;
 
-  const topShape = new THREE.Shape();
-  topShape.absarc(0, 0, TABLE_RADIUS, 0, Math.PI * 2, false);
-  const win = new THREE.Path();
-  win.absarc(0, 0, WINDOW_RADIUS, 0, Math.PI * 2, true);
-  topShape.holes.push(win);
-  const topGeo = new THREE.ExtrudeGeometry(topShape, { depth: 0.18, bevelEnabled: false, curveSegments: 128 });
-  topGeo.rotateX(-Math.PI / 2);
-  // Planar UVs for the wood grain.
-  const uv = topGeo.attributes.uv as THREE.BufferAttribute;
-  const pos = topGeo.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / (TABLE_RADIUS * 2) + 0.5, pos.getZ(i) / (TABLE_RADIUS * 2) + 0.5);
-  const top = new THREE.Mesh(topGeo, mats.wood);
-  top.position.y = H - 0.18;
-
-  // Interior: dark felt floor and a polished inner wall around the window.
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(WINDOW_RADIUS + 0.2, 64), mats.felt);
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = 0.18;
-  const well = new THREE.Mesh(new THREE.CylinderGeometry(WINDOW_RADIUS, WINDOW_RADIUS, H - 0.18, 96, 1, true), mats.woodEdge);
-  well.material = mats.woodEdge.clone();
-  (well.material as THREE.MeshStandardMaterial).side = THREE.BackSide;
-  well.position.y = (H + 0.18) / 2;
-
+  const tableGeo = new THREE.CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS - 0.25, S - 0.12, 128);
+  const uvT = tableGeo.attributes.uv as THREE.BufferAttribute;
+  const posT = tableGeo.attributes.position as THREE.BufferAttribute;
+  // Planar UVs on the cap so the grain runs straight across the table.
+  for (let i = 0; i < uvT.count; i++) {
+    if (Math.abs(posT.getY(i)) > (S - 0.12) / 2 - 1e-4) uvT.setXY(i, posT.getX(i) / (TABLE_RADIUS * 2) + 0.5, posT.getZ(i) / (TABLE_RADIUS * 2) + 0.5);
+  }
+  const table = new THREE.Mesh(tableGeo, [mats.woodEdge, mats.wood, mats.wood]);
+  table.position.y = 0.12 + (S - 0.12) / 2;
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(TABLE_RADIUS - 0.35, TABLE_RADIUS - 0.8, 0.12, 128), mats.woodEdge);
+  plinth.position.y = 0.06;
   const rim = new THREE.Mesh(new THREE.TorusGeometry(TABLE_RADIUS, 0.06, 12, 192), mats.brass);
   rim.rotation.x = Math.PI / 2;
-  rim.position.y = H - 0.02;
-  const bezel = new THREE.Mesh(new THREE.TorusGeometry(WINDOW_RADIUS, 0.09, 16, 160), mats.brass);
-  bezel.rotation.x = Math.PI / 2;
-  bezel.position.y = H;
+  rim.position.y = S - 0.02;
 
-  // The glass itself: faint, glossy, with a brass bush where the tubes rise.
+  // Drum frame: footing band, cornice ring and turned mullions.
+  const drumR = WINDOW_RADIUS;
+  const footing = new THREE.Mesh(new THREE.CylinderGeometry(drumR + 0.18, drumR + 0.28, 0.16, 128, 1, true), mats.brassDark);
+  footing.position.y = S + 0.08;
+  const cornice = new THREE.Mesh(new THREE.CylinderGeometry(drumR + 0.3, drumR + 0.18, 0.14, 128, 1, true), mats.brass);
+
+  cornice.position.y = H - 0.05;
+  const corniceCap = new THREE.Mesh(new THREE.RingGeometry(drumR - 0.02, drumR + 0.3, 128), mats.brass);
+  corniceCap.rotation.x = -Math.PI / 2;
+  corniceCap.position.y = H + 0.02;
+  cabinet.add(corniceCap);
+  const corniceLip = new THREE.Mesh(new THREE.TorusGeometry(drumR + 0.3, 0.05, 12, 160), mats.brass);
+  corniceLip.rotation.x = Math.PI / 2;
+  corniceLip.position.y = H + 0.02;
+  const mullions = 10;
+  const mullionH = H - 0.12 - (S + 0.16);
+  for (let i = 0; i < mullions; i++) {
+    const a = (i / mullions) * Math.PI * 2 + Math.PI / mullions;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, mullionH, 12), mats.brass);
+    m.position.set(Math.cos(a) * (drumR + 0.04), S + 0.16 + mullionH / 2, -Math.sin(a) * (drumR + 0.04));
+    cabinet.add(m);
+    for (const y of [S + 0.2, H - 0.16]) {
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.06, 12), mats.brassDark);
+      collar.position.set(m.position.x, y, m.position.z);
+      cabinet.add(collar);
+    }
+  }
+
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xdfe8ee,
+    transparent: true,
+    opacity: 0.05,
+    roughness: 0.02,
+    metalness: 0.0,
+    envMapIntensity: 1.0,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const sideGlass = new THREE.Mesh(new THREE.CylinderGeometry(drumR, drumR, H - S - 0.2, 128, 1, true), glassMat);
+  sideGlass.position.y = S + 0.13 + (H - S - 0.2) / 2;
+  sideGlass.renderOrder = 2;
+
+  // Glass top, with a brass bush where the tubes rise and one for the crank.
   const glassShape = new THREE.Shape();
-  glassShape.absarc(0, 0, WINDOW_RADIUS, 0, Math.PI * 2, false);
+  glassShape.absarc(0, 0, drumR, 0, Math.PI * 2, false);
   const glassHole = new THREE.Path();
   glassHole.absarc(0, 0, CENTRAL_HOLE + 0.05, 0, Math.PI * 2, true);
   glassShape.holes.push(glassHole);
@@ -185,19 +214,7 @@ export function buildOrrery(mats: Materials): Orrery {
   glassShape.holes.push(crankHole);
   const glassGeo = new THREE.ShapeGeometry(glassShape, 96);
   glassGeo.rotateX(-Math.PI / 2);
-  const glass = new THREE.Mesh(
-    glassGeo,
-    new THREE.MeshStandardMaterial({
-      color: 0xdfe8ee,
-      transparent: true,
-      opacity: 0.045,
-      roughness: 0.02,
-      metalness: 0.0,
-      envMapIntensity: 0.9,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
-  );
+  const glass = new THREE.Mesh(glassGeo, glassMat);
   glass.position.y = GLASS_Y;
   glass.renderOrder = 2;
   const bush = new THREE.Mesh(new THREE.TorusGeometry(CENTRAL_HOLE + 0.05, 0.05, 10, 48), mats.brass);
@@ -207,10 +224,10 @@ export function buildOrrery(mats: Materials): Orrery {
   crankBush.rotation.x = Math.PI / 2;
   crankBush.position.set(crank.x, GLASS_Y, -crank.y);
 
-  cabinet.add(wall, plinth, top, floor, well, rim, bezel, bush, crankBush);
-  enableShadows(cabinet, false, true);
-  top.castShadow = true;
-  cabinet.add(glass);
+  cabinet.add(table, plinth, rim, footing, cornice, corniceLip, bush, crankBush);
+  enableShadows(cabinet, true, true);
+  table.castShadow = false;
+  cabinet.add(glass, sideGlass);
 
   // Orbit grooves: inlaid brass on the wood, fine silver lines on the glass.
   for (const arm of ARMS) {
@@ -221,7 +238,7 @@ export function buildOrrery(mats: Materials): Orrery {
     const w = onGlass ? 0.012 : 0.025;
     const groove = new THREE.Mesh(new THREE.RingGeometry(arm.radius - w, arm.radius + w, 256), mat);
     groove.rotation.x = -Math.PI / 2;
-    groove.position.y = (onGlass ? GLASS_Y : H) + 0.003;
+    groove.position.y = (onGlass ? GLASS_Y : S) + 0.003;
     cabinet.add(groove);
   }
 
@@ -234,7 +251,7 @@ export function buildOrrery(mats: Materials): Orrery {
   zodiacMat.visible = false;
   const zodiac = new THREE.Mesh(new THREE.PlaneGeometry(extent * 2, extent * 2), zodiacMat);
   zodiac.rotation.x = -Math.PI / 2;
-  zodiac.position.y = H + 0.004;
+  zodiac.position.y = S + 0.004;
   zodiac.receiveShadow = true;
   cabinet.add(zodiac);
   zodiacAlphaTexture(zInner, zOuter, extent).then((tex) => {
