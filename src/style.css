@@ -393,6 +393,26 @@ input[type='range']::-moz-range-thumb {
   transform: translate(12px, -50%);
   white-space: nowrap;
 }
+#hover-tag small {
+  display: block;
+  max-width: 240px;
+  margin-top: 3px;
+  font-family: var(--serif);
+  font-size: 13px;
+  font-style: italic;
+  letter-spacing: 0;
+  white-space: normal;
+  color: var(--ink-dim);
+}
+#c-true svg {
+  fill: #9fd4ff;
+  stroke: #9fd4ff;
+}
+#c-true[aria-pressed='false'] svg {
+  fill: var(--ink-faint);
+  stroke: var(--ink-faint);
+  opacity: 0.6;
+}
 #hover-tag[hidden] {
   display: none;
 }
@@ -406,39 +426,6 @@ input[type='range']::-moz-range-thumb {
   gap: 4px;
   max-width: 240px;
   text-align: right;
-}
-.legend {
-  font-size: 12px;
-  line-height: 1.3;
-  color: var(--ink-dim);
-  text-align: right;
-}
-.legend label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--caps);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink);
-  cursor: pointer;
-}
-.legend input {
-  accent-color: var(--brass);
-  margin: 0;
-}
-.legend .ring {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid #aae1ff;
-  box-shadow: 0 0 6px rgba(120, 200, 255, 0.6);
-}
-.legend p {
-  margin: 2px 0 6px;
-  font-style: italic;
-  color: var(--ink-faint);
 }
 .attribution {
   font-size: 12px;
@@ -525,8 +512,7 @@ dialog#credits a {
     top: max(16px, env(safe-area-inset-top));
   }
   /* Full attribution stays one tap away in the Credits dialog. */
-  .attribution,
-  .legend p {
+  .attribution {
     display: none;
   }
   .throttle {

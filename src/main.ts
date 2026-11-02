@@ -46,54 +46,49 @@ const trueMarkers = new Map<string, THREE.Sprite>();
 const markerOwner = new Map<THREE.Object3D, string>();
 {
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = c.height = 64;
   const ctx = c.getContext('2d')!;
-  const glow = ctx.createRadialGradient(64, 64, 30, 64, 64, 62);
-  glow.addColorStop(0, 'rgba(120,200,255,0)');
-  glow.addColorStop(0.55, 'rgba(120,200,255,0.25)');
-  glow.addColorStop(1, 'rgba(120,200,255,0)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, 128, 128);
-  ctx.strokeStyle = 'rgba(170,225,255,0.95)';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.arc(64, 64, 44, 0, Math.PI * 2);
-  ctx.stroke();
-  // Four small ticks, like a sighting reticle.
-  ctx.lineWidth = 4;
-  for (let i = 0; i < 4; i++) {
-    const a = (i * Math.PI) / 2;
-    ctx.beginPath();
-    ctx.moveTo(64 + Math.cos(a) * 50, 64 + Math.sin(a) * 50);
-    ctx.lineTo(64 + Math.cos(a) * 60, 64 + Math.sin(a) * 60);
-    ctx.stroke();
-  }
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(160,220,255,1)');
+  g.addColorStop(0.35, 'rgba(120,190,255,0.5)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
   const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
   for (const a of ARMS) {
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.75, depthWrite: false }));
-    s.scale.setScalar(Math.max(0.5, a.size * 2.6));
+    const s = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    s.scale.setScalar(Math.max(0.35, a.size * 1.3));
     s.renderOrder = 3;
     stage.scene.add(s);
     trueMarkers.set(a.id, s);
     markerOwner.set(s, a.id);
   }
 }
-const markerToggle = document.getElementById('toggle-true') as HTMLInputElement;
-const showMarkers = (on: boolean) => trueMarkers.forEach((m) => (m.visible = on));
+const markerButton = document.getElementById('c-true') as HTMLButtonElement;
+let markersOn = true;
 try {
-  markerToggle.checked = localStorage.getItem('true-markers') !== '0';
+  markersOn = localStorage.getItem('true-markers') !== '0';
 } catch {
   /* ignore */
 }
-showMarkers(markerToggle.checked);
-markerToggle.addEventListener('change', () => {
-  showMarkers(markerToggle.checked);
+function setMarkers(on: boolean) {
+  markersOn = on;
+  trueMarkers.forEach((m) => (m.visible = on));
+  markerButton.setAttribute('aria-pressed', String(on));
+  markerButton.title = on ? 'Hide true positions (T)' : 'Show true positions (T)';
   try {
-    localStorage.setItem('true-markers', markerToggle.checked ? '1' : '0');
+    localStorage.setItem('true-markers', on ? '1' : '0');
   } catch {
     /* ignore */
   }
+}
+setMarkers(markersOn);
+markerButton.addEventListener('click', () => setMarkers(!markersOn));
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 't' || e.key === 'T') setMarkers(!markersOn);
 });
 
 /** Current arm longitude (radians) for a planet, for the info card. */
@@ -163,7 +158,7 @@ function pick(clientX: number, clientY: number): Body | null {
 
 /** Planet id whose true-position ring is under the pointer (call after setPointer). */
 function pickMarker(): string | null {
-  if (!markerToggle.checked) return null;
+  if (!markersOn) return null;
   const hit = raycaster.intersectObjects([...trueMarkers.values()], false)[0];
   return hit ? (markerOwner.get(hit.object) ?? null) : null;
 }
@@ -189,15 +184,17 @@ canvas.addEventListener('pointermove', (e) => {
   const hit = raycaster.intersectObjects(proxies, false)[0];
   const body = hit ? (bodies.bodies.find((b) => b.pickProxy === hit.object) ?? null) : null;
   const markerId = body ? null : pickMarker();
-  const label = body
-    ? body.name
-    : markerId
-      ? `${bodies.bodies.find((b) => b.id === markerId)?.name}: true position`
-      : null;
+  const markerName = markerId ? bodies.bodies.find((b) => b.id === markerId)?.name : null;
+  const label = body ? body.name : markerName ? `${markerName}: true position` : null;
   canvas.style.cursor = label ? 'pointer' : '';
   hoverTag.hidden = !label;
   if (label) {
-    hoverTag.textContent = label;
+    hoverTag.replaceChildren(label);
+    if (markerName) {
+      const note = document.createElement('small');
+      note.textContent = `The gears turn ${markerName} at its average speed; this glow marks where it really is.`;
+      hoverTag.append(note);
+    }
     hoverTag.style.left = `${e.clientX}px`;
     hoverTag.style.top = `${e.clientY}px`;
   }
