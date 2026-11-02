@@ -88,6 +88,8 @@ function makePlanet(
   group.add(tilt);
 
   const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.0 });
+  // Mercury's true colour is a slightly warmer, browner grey than the Moon.
+  if (id === 'mercury') mat.color.set('#e6d6c0');
   const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 64, 48), mat);
   sphere.castShadow = true;
   sphere.receiveShadow = false;
