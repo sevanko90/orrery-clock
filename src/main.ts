@@ -40,32 +40,70 @@ function setArms(simMs: number) {
   }
 }
 
-// Faint markers at each planet's true (Keplerian) position for comparison.
+// Ring markers at each planet's true (Keplerian) position. The gears can only
+// model average orbital speed, so the arms drift ahead of / behind these.
 const trueMarkers = new Map<string, THREE.Sprite>();
+const markerOwner = new Map<THREE.Object3D, string>();
 {
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  c.width = c.height = 128;
   const ctx = c.getContext('2d')!;
-  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  g.addColorStop(0, 'rgba(160,220,255,1)');
-  g.addColorStop(0.35, 'rgba(120,190,255,0.5)');
-  g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 64, 64);
+  const glow = ctx.createRadialGradient(64, 64, 30, 64, 64, 62);
+  glow.addColorStop(0, 'rgba(120,200,255,0)');
+  glow.addColorStop(0.55, 'rgba(120,200,255,0.25)');
+  glow.addColorStop(1, 'rgba(120,200,255,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.strokeStyle = 'rgba(170,225,255,0.95)';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(64, 64, 44, 0, Math.PI * 2);
+  ctx.stroke();
+  // Four small ticks, like a sighting reticle.
+  ctx.lineWidth = 4;
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2;
+    ctx.beginPath();
+    ctx.moveTo(64 + Math.cos(a) * 50, 64 + Math.sin(a) * 50);
+    ctx.lineTo(64 + Math.cos(a) * 60, 64 + Math.sin(a) * 60);
+    ctx.stroke();
+  }
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
   for (const a of ARMS) {
-    const s = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }),
-    );
-    s.scale.setScalar(Math.max(0.35, a.size * 1.3));
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.75, depthWrite: false }));
+    s.scale.setScalar(Math.max(0.5, a.size * 2.6));
     s.renderOrder = 3;
     stage.scene.add(s);
     trueMarkers.set(a.id, s);
+    markerOwner.set(s, a.id);
   }
+}
+const markerToggle = document.getElementById('toggle-true') as HTMLInputElement;
+const showMarkers = (on: boolean) => trueMarkers.forEach((m) => (m.visible = on));
+try {
+  markerToggle.checked = localStorage.getItem('true-markers') !== '0';
+} catch {
+  /* ignore */
+}
+showMarkers(markerToggle.checked);
+markerToggle.addEventListener('change', () => {
+  showMarkers(markerToggle.checked);
+  try {
+    localStorage.setItem('true-markers', markerToggle.checked ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+});
+
+/** Current arm longitude (radians) for a planet, for the info card. */
+function armLongitude(id: string): number | null {
+  const p = design.planets.find((x) => x.id === id);
+  return p ? kinematics.angle(p.tube) + (armOffsets[p.id] ?? 0) : null;
 }
 const readout = new Readout(clock);
 const focus = new FocusController(stage.camera, stage.controls);
-const info = new InfoCard(() => unfocus());
+const info = new InfoCard(() => unfocus(), armLongitude);
 
 function select(body: Body) {
   focus.focus(body);
@@ -108,12 +146,26 @@ const proxies = bodies.bodies.map((b) => b.pickProxy);
 const hoverTag = document.getElementById('hover-tag')!;
 const canvas = stage.renderer.domElement;
 
-function pick(clientX: number, clientY: number): Body | null {
+function setPointer(clientX: number, clientY: number) {
   const rect = canvas.getBoundingClientRect();
   pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
   raycaster.setFromCamera(pointer, stage.camera);
+}
+
+function pick(clientX: number, clientY: number): Body | null {
+  setPointer(clientX, clientY);
   const hit = raycaster.intersectObjects(proxies, false)[0];
-  return hit ? (bodies.bodies.find((b) => b.pickProxy === hit.object) ?? null) : null;
+  if (hit) return bodies.bodies.find((b) => b.pickProxy === hit.object) ?? null;
+  // Clicking a true-position ring selects its planet.
+  const id = pickMarker();
+  return id ? (bodies.bodies.find((b) => b.id === id) ?? null) : null;
+}
+
+/** Planet id whose true-position ring is under the pointer (call after setPointer). */
+function pickMarker(): string | null {
+  if (!markerToggle.checked) return null;
+  const hit = raycaster.intersectObjects([...trueMarkers.values()], false)[0];
+  return hit ? (markerOwner.get(hit.object) ?? null) : null;
 }
 
 let downAt: { x: number; y: number; t: number } | null = null;
@@ -133,11 +185,19 @@ canvas.addEventListener('pointermove', (e) => {
     hoverTag.hidden = true;
     return;
   }
-  const body = pick(e.clientX, e.clientY);
-  canvas.style.cursor = body ? 'pointer' : '';
-  hoverTag.hidden = !body;
-  if (body) {
-    hoverTag.textContent = body.name;
+  setPointer(e.clientX, e.clientY);
+  const hit = raycaster.intersectObjects(proxies, false)[0];
+  const body = hit ? (bodies.bodies.find((b) => b.pickProxy === hit.object) ?? null) : null;
+  const markerId = body ? null : pickMarker();
+  const label = body
+    ? body.name
+    : markerId
+      ? `${bodies.bodies.find((b) => b.id === markerId)?.name}: true position`
+      : null;
+  canvas.style.cursor = label ? 'pointer' : '';
+  hoverTag.hidden = !label;
+  if (label) {
+    hoverTag.textContent = label;
     hoverTag.style.left = `${e.clientX}px`;
     hoverTag.style.top = `${e.clientY}px`;
   }

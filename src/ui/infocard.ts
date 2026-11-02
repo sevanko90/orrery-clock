@@ -32,7 +32,10 @@ export class InfoCard {
   private body: Body | null = null;
   private lastRender = 0;
 
-  constructor(onClose: () => void) {
+  constructor(
+    onClose: () => void,
+    private armLongitude: (id: string) => number | null = () => null,
+  ) {
     $('info-close').addEventListener('click', onClose);
   }
 
@@ -84,6 +87,13 @@ export class InfoCard {
           rows.push(['Distance', `${nf((p.r * AU_KM) / 1e6, 2)} M km`]);
         }
         rows.push(['Longitude', `${nf((p.lon * 180) / Math.PI, 1)}°`]);
+        const arm = this.armLongitude(body.id);
+        if (arm !== null) {
+          // Signed difference, arm minus true, wrapped to ±180°.
+          const diff = ((((arm - p.lon) * 180) / Math.PI + 540) % 360) - 180;
+          const word = Math.abs(diff) < 0.05 ? 'on true position' : `${nf(Math.abs(diff), 1)}° ${diff > 0 ? 'ahead' : 'behind'}`;
+          rows.push(['Orrery arm', word]);
+        }
       }
       if (body.id in PLANET_ELEMENTS) {
         const a = PLANET_ELEMENTS[body.id as PlanetId].a[0];

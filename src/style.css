@@ -407,6 +407,39 @@ input[type='range']::-moz-range-thumb {
   max-width: 240px;
   text-align: right;
 }
+.legend {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--ink-dim);
+  text-align: right;
+}
+.legend label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--caps);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+.legend input {
+  accent-color: var(--brass);
+  margin: 0;
+}
+.legend .ring {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #aae1ff;
+  box-shadow: 0 0 6px rgba(120, 200, 255, 0.6);
+}
+.legend p {
+  margin: 2px 0 6px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
 .attribution {
   font-size: 12px;
   line-height: 1.3;
@@ -492,7 +525,8 @@ dialog#credits a {
     top: max(16px, env(safe-area-inset-top));
   }
   /* Full attribution stays one tap away in the Credits dialog. */
-  .attribution {
+  .attribution,
+  .legend p {
     display: none;
   }
   .throttle {
