@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { ARMS, MOVEMENT, PLANE_Y, TABLE_RADIUS, TABLE_TOP, type ArmSpec } from './layout';
-import { gearGeometry, meshAngle } from './gear';
+import { ARMS, PLANE_Y, TABLE_RADIUS, TABLE_TOP, type ArmSpec } from './layout';
+import { GLASS_Y, WINDOW_RADIUS, CENTRAL_HOLE, stage2Y, GEAR_T } from '../mechanism/heights';
+import { buildMechanism, design, type Mechanism3D } from './mechanism3d';
 import type { Materials } from './materials';
 
 const ZODIAC = [
@@ -20,20 +21,18 @@ const ZODIAC = [
 
 export interface ArmRig {
   spec: ArmSpec;
-  /** Rotates about the main axis with the planet's ecliptic longitude. */
+  /** Rotates about the main axis: tube angle plus the arm's setting offset. */
   pivot: THREE.Group;
   /** Where the planet sits (child of pivot). */
   anchor: THREE.Object3D;
-  pinion: THREE.Mesh;
 }
 
 export interface Orrery {
   root: THREE.Group;
   arms: ArmRig[];
-  /** Set each arm to an ecliptic longitude (radians). */
-  setLongitudes(lon: Record<string, number>): void;
-  /** Spin the decorative escapement by simulated seconds elapsed. */
-  tick(simSeconds: number): void;
+  mechanism: Mechanism3D;
+  /** Set each arm's absolute angle (radians, plan convention). */
+  setArmAngles(angles: Record<string, number>): void;
 }
 
 function enableShadows(obj: THREE.Object3D, cast = true, receive = true) {
@@ -47,59 +46,6 @@ function enableShadows(obj: THREE.Object3D, cast = true, receive = true) {
 
 function cylinder(r: number, h: number, mat: THREE.Material, segments = 32) {
   return new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, segments), mat);
-}
-
-/** Spoked flat plate (a ring joined to a hub by spokes). */
-function plateGeometry(outer: number, rimWidth: number, hubOuter: number, bore: number, spokes: number, depth: number) {
-  const shape = new THREE.Shape();
-  shape.absarc(0, 0, outer, 0, Math.PI * 2, false);
-  const boreP = new THREE.Path();
-  boreP.absarc(0, 0, bore, 0, Math.PI * 2, true);
-  shape.holes.push(boreP);
-  const rimInner = outer - rimWidth;
-  const half = 0.1;
-  for (let s = 0; s < spokes; s++) {
-    const a0 = (s / spokes) * Math.PI * 2 + half;
-    const a1 = ((s + 1) / spokes) * Math.PI * 2 - half;
-    const win = new THREE.Path();
-    win.absarc(0, 0, rimInner, a0, a1, false);
-    win.absarc(0, 0, hubOuter, a1 - 0.08, a0 + 0.08, true);
-    win.closePath();
-    shape.holes.push(win);
-  }
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth,
-    bevelEnabled: true,
-    bevelThickness: 0.015,
-    bevelSize: 0.015,
-    bevelSegments: 2,
-    curveSegments: 64,
-  });
-  geo.translate(0, 0, -depth / 2);
-  geo.rotateX(-Math.PI / 2);
-  return geo;
-}
-
-/** Turned pillar profile, like a clock movement's column. */
-function pillarGeometry(height: number) {
-  const pts: THREE.Vector2[] = [];
-  const prof: [number, number][] = [
-    [0.0, 0],
-    [0.17, 0],
-    [0.17, 0.06],
-    [0.12, 0.1],
-    [0.09, 0.2],
-    [0.08, 0.5],
-    [0.11, 0.55],
-    [0.08, 0.6],
-    [0.08, 0.9],
-    [0.12, 0.94],
-    [0.17, 0.97],
-    [0.17, 1],
-    [0, 1],
-  ];
-  for (const [r, t] of prof) pts.push(new THREE.Vector2(r, t * height));
-  return new THREE.LatheGeometry(pts, 24);
 }
 
 async function zodiacAlphaTexture(rInner: number, rOuter: number, extent: number): Promise<THREE.Texture> {
@@ -189,30 +135,94 @@ export function buildOrrery(mats: Materials): Orrery {
   const root = new THREE.Group();
   root.name = 'orrery';
 
-  // ---- Table -------------------------------------------------------------
-  const table = new THREE.Group();
-  const top = new THREE.Mesh(new THREE.CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS, 0.3, 128), [
-    mats.woodEdge,
-    mats.wood,
-    mats.wood,
-  ]);
-  top.position.y = TABLE_TOP - 0.15;
-  const skirt = new THREE.Mesh(
-    new THREE.CylinderGeometry(TABLE_RADIUS - 0.25, TABLE_RADIUS - 0.6, 0.3, 128),
-    mats.woodEdge,
-  );
-  skirt.position.y = TABLE_TOP - 0.45;
+  // ---- Cabinet: a walnut drum with a glass window over the movement ------
+  const cabinet = new THREE.Group();
+  const H = TABLE_TOP;
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS - 0.4, H - 0.3, 128, 1, true), mats.woodEdge);
+  wall.position.y = 0.3 + (H - 0.3) / 2;
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(TABLE_RADIUS - 0.3, TABLE_RADIUS - 0.9, 0.3, 128), mats.woodEdge);
+  plinth.position.y = 0.15;
+
+  const topShape = new THREE.Shape();
+  topShape.absarc(0, 0, TABLE_RADIUS, 0, Math.PI * 2, false);
+  const win = new THREE.Path();
+  win.absarc(0, 0, WINDOW_RADIUS, 0, Math.PI * 2, true);
+  topShape.holes.push(win);
+  const topGeo = new THREE.ExtrudeGeometry(topShape, { depth: 0.18, bevelEnabled: false, curveSegments: 128 });
+  topGeo.rotateX(-Math.PI / 2);
+  // Planar UVs for the wood grain.
+  const uv = topGeo.attributes.uv as THREE.BufferAttribute;
+  const pos = topGeo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / (TABLE_RADIUS * 2) + 0.5, pos.getZ(i) / (TABLE_RADIUS * 2) + 0.5);
+  const top = new THREE.Mesh(topGeo, mats.wood);
+  top.position.y = H - 0.18;
+
+  // Interior: dark felt floor and a polished inner wall around the window.
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(WINDOW_RADIUS + 0.2, 64), mats.felt);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.18;
+  const well = new THREE.Mesh(new THREE.CylinderGeometry(WINDOW_RADIUS, WINDOW_RADIUS, H - 0.18, 96, 1, true), mats.woodEdge);
+  well.material = mats.woodEdge.clone();
+  (well.material as THREE.MeshStandardMaterial).side = THREE.BackSide;
+  well.position.y = (H + 0.18) / 2;
+
   const rim = new THREE.Mesh(new THREE.TorusGeometry(TABLE_RADIUS, 0.06, 12, 192), mats.brass);
   rim.rotation.x = Math.PI / 2;
-  rim.position.y = TABLE_TOP - 0.02;
-  table.add(top, skirt, rim);
+  rim.position.y = H - 0.02;
+  const bezel = new THREE.Mesh(new THREE.TorusGeometry(WINDOW_RADIUS, 0.09, 16, 160), mats.brass);
+  bezel.rotation.x = Math.PI / 2;
+  bezel.position.y = H;
 
-  // Inlaid brass orbit grooves.
+  // The glass itself: faint, glossy, with a brass bush where the tubes rise.
+  const glassShape = new THREE.Shape();
+  glassShape.absarc(0, 0, WINDOW_RADIUS, 0, Math.PI * 2, false);
+  const glassHole = new THREE.Path();
+  glassHole.absarc(0, 0, CENTRAL_HOLE + 0.05, 0, Math.PI * 2, true);
+  glassShape.holes.push(glassHole);
+  const crank = design.arbors.find((a) => a.id === 'crank')!;
+  const crankHole = new THREE.Path();
+  crankHole.absarc(crank.x, crank.y, 0.12, 0, Math.PI * 2, true);
+  glassShape.holes.push(crankHole);
+  const glassGeo = new THREE.ShapeGeometry(glassShape, 96);
+  glassGeo.rotateX(-Math.PI / 2);
+  const glass = new THREE.Mesh(
+    glassGeo,
+    new THREE.MeshStandardMaterial({
+      color: 0xdfe8ee,
+      transparent: true,
+      opacity: 0.045,
+      roughness: 0.02,
+      metalness: 0.0,
+      envMapIntensity: 0.9,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  glass.position.y = GLASS_Y;
+  glass.renderOrder = 2;
+  const bush = new THREE.Mesh(new THREE.TorusGeometry(CENTRAL_HOLE + 0.05, 0.05, 10, 48), mats.brass);
+  bush.rotation.x = Math.PI / 2;
+  bush.position.y = GLASS_Y;
+  const crankBush = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.03, 8, 24), mats.brass);
+  crankBush.rotation.x = Math.PI / 2;
+  crankBush.position.set(crank.x, GLASS_Y, -crank.y);
+
+  cabinet.add(wall, plinth, top, floor, well, rim, bezel, bush, crankBush);
+  enableShadows(cabinet, false, true);
+  top.castShadow = true;
+  cabinet.add(glass);
+
+  // Orbit grooves: inlaid brass on the wood, fine silver lines on the glass.
   for (const arm of ARMS) {
-    const groove = new THREE.Mesh(new THREE.RingGeometry(arm.radius - 0.025, arm.radius + 0.025, 256), mats.brassDark);
+    const onGlass = arm.radius < WINDOW_RADIUS;
+    const mat = onGlass
+      ? new THREE.MeshBasicMaterial({ color: 0xd8c08a, transparent: true, opacity: 0.35, depthWrite: false })
+      : mats.brassDark;
+    const w = onGlass ? 0.012 : 0.025;
+    const groove = new THREE.Mesh(new THREE.RingGeometry(arm.radius - w, arm.radius + w, 256), mat);
     groove.rotation.x = -Math.PI / 2;
-    groove.position.y = TABLE_TOP + 0.002;
-    table.add(groove);
+    groove.position.y = (onGlass ? GLASS_Y : H) + 0.003;
+    cabinet.add(groove);
   }
 
   // Zodiac band inlay (texture is generated once fonts are ready).
@@ -220,112 +230,66 @@ export function buildOrrery(mats: Materials): Orrery {
     zOuter = TABLE_RADIUS - 0.35,
     extent = TABLE_RADIUS;
   const zodiacMat = mats.brass.clone();
-  zodiacMat.transparent = false;
   zodiacMat.alphaTest = 0.5;
   zodiacMat.visible = false;
   const zodiac = new THREE.Mesh(new THREE.PlaneGeometry(extent * 2, extent * 2), zodiacMat);
   zodiac.rotation.x = -Math.PI / 2;
-  zodiac.position.y = TABLE_TOP + 0.004;
-  table.add(zodiac);
+  zodiac.position.y = H + 0.004;
+  zodiac.receiveShadow = true;
+  cabinet.add(zodiac);
   zodiacAlphaTexture(zInner, zOuter, extent).then((tex) => {
     zodiacMat.alphaMap = tex;
     zodiacMat.visible = true;
     zodiacMat.needsUpdate = true;
   });
+  root.add(cabinet);
 
-  root.add(table);
+  // ---- The movement ----------------------------------------------------
+  const mechanism = buildMechanism(mats);
+  root.add(mechanism.root);
 
-  // ---- Movement (gear train between two plates) --------------------------
-  const movement = new THREE.Group();
-  const plateR = 6.0;
-  const bottomPlate = new THREE.Mesh(plateGeometry(plateR, plateR, 0.5, 0.15, 0, 0.1), mats.brassDark);
-  bottomPlate.position.y = MOVEMENT.bottom;
-  const topPlate = new THREE.Mesh(plateGeometry(plateR, 0.45, 1.15, 0.85, 6, 0.1), mats.brass);
-  topPlate.position.y = MOVEMENT.top;
-  movement.add(bottomPlate, topPlate);
-
-  // Feet between table and bottom plate.
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * Math.PI * 2;
-    const foot = cylinder(0.22, MOVEMENT.bottom - TABLE_TOP, mats.brassDark, 20);
-    foot.position.set(Math.cos(a) * (plateR - 0.6), (TABLE_TOP + MOVEMENT.bottom) / 2, -Math.sin(a) * (plateR - 0.6));
-    movement.add(foot);
-  }
-
-  // Pillars, kept clear of the layshaft's pinions.
-  const pillarH = MOVEMENT.top - MOVEMENT.bottom;
-  const pillarGeo = pillarGeometry(pillarH);
-  for (let k = 0; k < 6; k++) {
-    const a = MOVEMENT.layshaftAngle + Math.PI / 6 + (k * Math.PI) / 3;
-    const p = new THREE.Mesh(pillarGeo, mats.brass);
-    const r = plateR - 0.3;
-    p.position.set(Math.cos(a) * r, MOVEMENT.bottom, -Math.sin(a) * r);
-    movement.add(p);
-  }
-
-  // Layshaft.
-  const lsA = MOVEMENT.layshaftAngle;
-  const lsX = Math.cos(lsA) * MOVEMENT.layshaftDistance;
-  const lsZ = -Math.sin(lsA) * MOVEMENT.layshaftDistance;
-  const layshaft = cylinder(0.08, pillarH + 0.3, mats.steel, 16);
-  layshaft.position.set(lsX, (MOVEMENT.bottom + MOVEMENT.top) / 2, lsZ);
-  movement.add(layshaft);
-  for (const y of [MOVEMENT.bottom + 0.08, MOVEMENT.top + 0.08]) {
-    const jewel = cylinder(0.16, 0.06, mats.copper, 20);
-    jewel.position.set(lsX, y, lsZ);
-    movement.add(jewel);
-  }
-
-  // Central fixed post carrying the Sun.
-  const post = cylinder(0.12, PLANE_Y - MOVEMENT.bottom, mats.steel, 20);
-  post.position.y = (PLANE_Y + MOVEMENT.bottom) / 2;
-  movement.add(post);
-
-  root.add(movement);
+  // Warm work-lamp glow inside the cabinet so the gears read through the glass.
+  const lamp = new THREE.PointLight(0xffc98a, 0.9, 10, 1.2);
+  lamp.position.set(0, GLASS_Y - 0.05, 3.5);
+  root.add(lamp);
 
   // ---- Planet arms -------------------------------------------------------
   const arms: ArmRig[] = [];
-  const gearThickness = 0.12;
-
-  for (const spec of ARMS) {
+  ARMS.forEach((spec, k) => {
     const pivot = new THREE.Group();
     pivot.name = `arm-${spec.id}`;
 
-    const tubeLen = spec.armY - spec.gearY;
+    // Tube from its drive gear (inside the movement) up to the arm.
+    const tubeBottom = stage2Y(k) - GEAR_T / 2;
+    const tubeLen = spec.armY - tubeBottom;
     const tube = cylinder(spec.tubeRadius, tubeLen, mats.brass, 32);
-    tube.position.y = spec.gearY + tubeLen / 2;
+    tube.position.y = tubeBottom + tubeLen / 2;
     pivot.add(tube);
 
     const collar = cylinder(spec.tubeRadius + 0.07, 0.16, mats.brassDark, 32);
     collar.position.y = spec.armY;
     pivot.add(collar);
 
-    // Radial arm: a flat bar from the collar to the planet's radius.
     const armLen = spec.radius - spec.tubeRadius;
     const bar = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.06, 0.12), mats.brass);
     bar.position.set(spec.tubeRadius + armLen / 2, spec.armY, 0);
     pivot.add(bar);
 
-    // Counterweight stub opposite.
+    // Flat counterweight disc opposite (kept thin so it clears the crank).
     const stubLen = Math.min(1.2, 0.35 + spec.radius * 0.06);
     const stub = new THREE.Mesh(new THREE.BoxGeometry(stubLen, 0.05, 0.09), mats.brassDark);
     stub.position.set(-(spec.tubeRadius + stubLen / 2), spec.armY, 0);
-    const weight = new THREE.Mesh(new THREE.SphereGeometry(0.11 + spec.radius * 0.006, 16, 12), mats.brassDark);
+    const weight = cylinder(0.13 + spec.radius * 0.007, 0.07, mats.brassDark, 24);
     weight.position.set(-(spec.tubeRadius + stubLen), spec.armY, 0);
     pivot.add(stub, weight);
 
-    // Vertical rod up to the planet plane, with a little cradle.
     const rodTop = PLANE_Y - spec.size * 0.85;
     const rodLen = rodTop - spec.armY;
     const rod = cylinder(0.035, rodLen, mats.brass, 12);
     rod.position.set(spec.radius, spec.armY + rodLen / 2, 0);
     const knuckle = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 12), mats.brassDark);
     knuckle.position.set(spec.radius, spec.armY, 0);
-    const cup = new THREE.Mesh(
-      new THREE.CylinderGeometry(spec.size * 0.45, 0.04, spec.size * 0.35, 20, 1, true),
-      mats.brass,
-    );
-    cup.material = mats.brass;
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(spec.size * 0.45, 0.04, spec.size * 0.35, 20, 1, true), mats.brass);
     cup.position.set(spec.radius, rodTop + spec.size * 0.05, 0);
     pivot.add(rod, knuckle, cup);
 
@@ -333,78 +297,20 @@ export function buildOrrery(mats: Materials): Orrery {
     anchor.position.set(spec.radius, PLANE_Y, 0);
     pivot.add(anchor);
 
-    // Drive gear on the tube inside the movement.
-    const [nd, np] = spec.teeth;
-    const drivenR = (MOVEMENT.module * nd) / 2;
-    const driven = new THREE.Mesh(
-      gearGeometry({
-        teeth: nd,
-        module: MOVEMENT.module,
-        thickness: gearThickness,
-        boreRadius: spec.tubeRadius * 0.98,
-        spokes: drivenR > 1.1 ? 5 : 0,
-      }),
-      spec.id === 'earth' ? mats.copper : mats.brass,
-    );
-    driven.position.y = spec.gearY;
-    pivot.add(driven);
-
-    const pinionR = (MOVEMENT.module * np) / 2;
-    const pinion = new THREE.Mesh(
-      gearGeometry({
-        teeth: np,
-        module: MOVEMENT.module,
-        thickness: gearThickness,
-        boreRadius: 0.09,
-        spokes: pinionR > 1.1 ? 5 : 0,
-      }),
-      mats.brassDark,
-    );
-    pinion.position.set(lsX, spec.gearY, lsZ);
-    root.add(pinion);
-
+    enableShadows(pivot);
     root.add(pivot);
-    arms.push({ spec, pivot, anchor, pinion });
-  }
-
-  // ---- Escapement: a small ticking wheel on the top plate ---------------
-  const escape = new THREE.Group();
-  const escA = MOVEMENT.layshaftAngle + Math.PI;
-  escape.position.set(Math.cos(escA) * 4.6, MOVEMENT.top + 0.12, -Math.sin(escA) * 4.6);
-  const escWheel = new THREE.Mesh(
-    gearGeometry({ teeth: 30, module: 0.045, thickness: 0.05, boreRadius: 0.05, spokes: 4 }),
-    mats.copper,
-  );
-  const escArbor = cylinder(0.05, 0.25, mats.steel, 12);
-  escape.add(escWheel, escArbor);
-  root.add(escape);
-
-  enableShadows(root);
-  table.traverse((o) => (o.castShadow = false));
-
-  const thetas = new Map<string, number>();
+    arms.push({ spec, pivot, anchor });
+  });
 
   return {
     root,
     arms,
-    setLongitudes(lon) {
+    mechanism,
+    setArmAngles(angles) {
       for (const rig of arms) {
-        const theta = lon[rig.spec.id];
-        if (theta === undefined) continue;
-        if (thetas.get(rig.spec.id) === theta) continue;
-        thetas.set(rig.spec.id, theta);
-        rig.pivot.rotation.y = theta;
-        const [nd, np] = rig.spec.teeth;
-        rig.pinion.rotation.y = meshAngle(theta, nd, np, MOVEMENT.layshaftAngle);
+        const a = angles[rig.spec.id];
+        if (a !== undefined) rig.pivot.rotation.y = a;
       }
-    },
-    tick(simSeconds) {
-      // Dead-beat style: jump one tooth per (simulated) second.
-      const whole = Math.floor(simSeconds);
-      const frac = simSeconds - whole;
-      const snap = Math.min(1, frac * 8);
-      const ease = 1 - Math.pow(1 - snap, 3);
-      escWheel.rotation.y = -((whole % 30) + ease) * ((Math.PI * 2) / 30);
     },
   };
 }

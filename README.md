@@ -8,6 +8,7 @@ A mechanical 3D orrery and clock in the browser: walnut, brass and a working gea
 docker compose exec app npm test          # astronomy unit tests
 docker compose exec app npm run build     # production build to dist/
 docker compose exec app npm run textures  # re-fetch planet textures from Wikimedia Commons
+docker compose exec app npm run design    # re-solve gear trains + layout into src/mechanism/design.json
 ```
 
 Textures are generated once by `npm run textures` and committed under `public/textures/`; the deployed site serves them itself and never contacts Wikimedia at runtime. Attribution: Solar System Scope (CC BY 4.0) and NASA, via Wikimedia Commons — shown in the page footer and Credits dialog.

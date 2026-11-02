@@ -33,6 +33,8 @@ export class SimClock {
   private anchorReal = performance.now();
   private stepIndex = REAL_TIME_STEP;
   private listeners = new Set<Listener>();
+  /** Increments whenever simulated time is set discontinuously. */
+  jumps = 0;
 
   get speed(): number {
     return SPEED_STEPS[this.stepIndex].speed;
@@ -48,6 +50,7 @@ export class SimClock {
     if (t < MIN_TIME || t > MAX_TIME) {
       const clamped = Math.min(MAX_TIME, Math.max(MIN_TIME, t));
       this.reanchor(clamped);
+      this.jumps++;
       this.stepIndex = SPEED_STEPS.findIndex((s) => s.speed === 0);
       this.emit();
       return clamped;
@@ -75,11 +78,13 @@ export class SimClock {
 
   jumpTo(ms: number): void {
     this.reanchor(Math.min(MAX_TIME, Math.max(MIN_TIME, ms)));
+    this.jumps++;
     this.emit();
   }
 
   resetToNow(): void {
     this.reanchor(Date.now());
+    this.jumps++;
     this.stepIndex = REAL_TIME_STEP;
     this.emit();
   }

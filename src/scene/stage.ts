@@ -27,7 +27,7 @@ export function detectQuality(): Quality {
   };
 }
 
-export const HOME_TARGET = new THREE.Vector3(0, PLANE_Y - 3.4, 0);
+export const HOME_TARGET = new THREE.Vector3(0, PLANE_Y - 4.6, 0);
 export const HOME_CAMERA = new THREE.Vector3(18, 23, 32);
 
 export class Stage {

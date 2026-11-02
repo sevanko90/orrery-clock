@@ -7,6 +7,10 @@ import { buildOrrery } from './scene/orrery';
 import { Bodies, type Body } from './scene/bodies';
 import { FocusController } from './scene/focus';
 import { SimClock } from './sim/clock';
+import { Kinematics } from './mechanism/kinematics';
+import { design } from './scene/mechanism3d';
+import { meanLongitude, planetPosition, type PlanetId } from './astro/orbits';
+import { ARMS, PLANE_Y } from './scene/layout';
 import { Readout } from './ui/readout';
 import { bindControls } from './ui/controls';
 import { InfoCard } from './ui/infocard';
@@ -23,6 +27,42 @@ const bodies = new Bodies(orrery.arms, { lowQuality: quality.low });
 stage.scene.add(bodies.root);
 
 const clock = new SimClock();
+const kinematics = new Kinematics(design);
+
+// Each arm is clamped to its tube at a setting offset, like a real orrery
+// that is set by hand. We set it whenever simulated time jumps.
+const armOffsets: Record<string, number> = {};
+let seenJumps = -1;
+function setArms(simMs: number) {
+  const date = new Date(simMs);
+  for (const p of design.planets) {
+    armOffsets[p.id] = meanLongitude(p.id as PlanetId, date) - kinematics.angle(p.tube);
+  }
+}
+
+// Faint markers at each planet's true (Keplerian) position for comparison.
+const trueMarkers = new Map<string, THREE.Sprite>();
+{
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(160,220,255,1)');
+  g.addColorStop(0.35, 'rgba(120,190,255,0.5)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  for (const a of ARMS) {
+    const s = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    s.scale.setScalar(Math.max(0.35, a.size * 1.3));
+    s.renderOrder = 3;
+    stage.scene.add(s);
+    trueMarkers.set(a.id, s);
+  }
+}
 const readout = new Readout(clock);
 const focus = new FocusController(stage.camera, stage.controls);
 const info = new InfoCard(() => unfocus());
@@ -105,9 +145,23 @@ function frame(now: number) {
   elapsed += dt;
 
   const simMs = clock.nowMs();
-  orrery.setLongitudes(bodies.longitudes(new Date(simMs)));
-  orrery.tick(Math.abs(clock.speed) <= 60 ? simMs / 1000 : elapsed * 4);
+  const jumped = clock.jumps !== seenJumps;
+  kinematics.update(simMs, clock.speed === 1, jumped, dt);
+  if (jumped) {
+    seenJumps = clock.jumps;
+    setArms(simMs);
+  }
+  orrery.mechanism.update(kinematics);
+  const armAngles: Record<string, number> = {};
+  for (const p of design.planets) armAngles[p.id] = kinematics.angle(p.tube) + armOffsets[p.id];
+  orrery.setArmAngles(armAngles);
   orrery.root.updateMatrixWorld();
+
+  const simDate = new Date(simMs);
+  for (const a of ARMS) {
+    const lon = planetPosition(a.id, simDate).lon;
+    trueMarkers.get(a.id)!.position.set(Math.cos(lon) * a.radius, PLANE_Y, -Math.sin(lon) * a.radius);
+  }
   bodies.update(simMs, dt, elapsed);
   focus.update(dt);
 
@@ -127,4 +181,4 @@ function frame(now: number) {
 requestAnimationFrame(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics } });

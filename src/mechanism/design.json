@@ -1,0 +1,994 @@
+{
+ "fPeriodDays": 2191.5381780000002,
+ "arbors": [
+  {
+   "id": "F",
+   "x": 0,
+   "y": 0,
+   "radius": 0.1,
+   "bottom": 0.3,
+   "top": 1.7000000000000002
+  },
+  {
+   "id": "sunpost",
+   "x": 0,
+   "y": 0,
+   "radius": 0.12,
+   "bottom": 1.7000000000000002,
+   "top": 30
+  },
+  {
+   "id": "Y",
+   "x": -1.938565998440763,
+   "y": 1.76335630719375,
+   "radius": 0.07,
+   "bottom": 0.3,
+   "top": 3.0900000000000003
+  },
+  {
+   "id": "pillar0",
+   "x": 2.904547842054537,
+   "y": -4.927677123474744,
+   "radius": 0.17,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "pillar1",
+   "x": 1.8337434190670825,
+   "y": -5.418097920214082,
+   "radius": 0.17,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "pillar2",
+   "x": 5.056709080223395,
+   "y": -2.673591830849703,
+   "radius": 0.17,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "pillar3",
+   "x": -4.572133597744473,
+   "y": 3.4371491623693298,
+   "radius": 0.17,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "pillar4",
+   "x": -0.9953149752050933,
+   "y": -5.632738951889435,
+   "radius": 0.17,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "pillar5",
+   "x": -5.599012663058316,
+   "y": -1.1702380949672686,
+   "radius": 0.17,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "tube.mercury",
+   "x": 0,
+   "y": 0,
+   "radius": 0.2,
+   "bottom": 1.8000000000000003,
+   "top": 30
+  },
+  {
+   "id": "X.mercury",
+   "x": -2.075451009763826,
+   "y": -1.5024145882808857,
+   "radius": 0.06,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "tube.venus",
+   "x": 0,
+   "y": 0,
+   "radius": 0.275,
+   "bottom": 1.9400000000000004,
+   "top": 30
+  },
+  {
+   "id": "X.venus",
+   "x": 0.3344532750161289,
+   "y": 2.5559418082695817,
+   "radius": 0.06,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "tube.earth",
+   "x": 0,
+   "y": 0,
+   "radius": 0.35,
+   "bottom": 2.08,
+   "top": 30
+  },
+  {
+   "id": "X.earth",
+   "x": 1.710480057357316,
+   "y": -1.9111999921735467,
+   "radius": 0.06,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "tube.mars",
+   "x": 0,
+   "y": 0,
+   "radius": 0.425,
+   "bottom": 2.22,
+   "top": 30
+  },
+  {
+   "id": "X.mars",
+   "x": 3.401235381586867,
+   "y": -0.5166144204568549,
+   "radius": 0.06,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "tube.jupiter",
+   "x": 0,
+   "y": 0,
+   "radius": 0.5,
+   "bottom": 2.3600000000000003,
+   "top": 30
+  },
+  {
+   "id": "X.jupiter",
+   "x": -1.340370565526457,
+   "y": 2.486788556494872,
+   "radius": 0.06,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "tube.saturn",
+   "x": 0,
+   "y": 0,
+   "radius": 0.575,
+   "bottom": 2.5000000000000004,
+   "top": 30
+  },
+  {
+   "id": "X.saturn",
+   "x": -2.6971827780609976,
+   "y": 0.5639571551853367,
+   "radius": 0.06,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "tube.uranus",
+   "x": 0,
+   "y": 0,
+   "radius": 0.6499999999999999,
+   "bottom": 2.6400000000000006,
+   "top": 30
+  },
+  {
+   "id": "X.uranus",
+   "x": -0.31759075628913186,
+   "y": -2.7745837777044744,
+   "radius": 0.06,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "tube.neptune",
+   "x": 0,
+   "y": 0,
+   "radius": 0.7250000000000001,
+   "bottom": 2.7800000000000002,
+   "top": 30
+  },
+  {
+   "id": "X.neptune",
+   "x": 2.1843707322562453,
+   "y": 1.3351574592036972,
+   "radius": 0.06,
+   "bottom": 0.3,
+   "top": 2.9600000000000004
+  },
+  {
+   "id": "A4",
+   "x": -0.5700966491073076,
+   "y": 2.012700727494002,
+   "radius": 0.03,
+   "bottom": 2.9600000000000004,
+   "top": 3.1700000000000004
+  },
+  {
+   "id": "A3",
+   "x": 0.8062199160862467,
+   "y": 1.944607318313549,
+   "radius": 0.03,
+   "bottom": 2.9600000000000004,
+   "top": 3.2500000000000004
+  },
+  {
+   "id": "A2",
+   "x": 1.778815897275496,
+   "y": 1.0054795009348276,
+   "radius": 0.03,
+   "bottom": 2.9600000000000004,
+   "top": 3.2500000000000004
+  },
+  {
+   "id": "A1",
+   "x": 2.0152098719274054,
+   "y": -0.3256936240749406,
+   "radius": 0.03,
+   "bottom": 2.9600000000000004,
+   "top": 3.1700000000000004
+  },
+  {
+   "id": "E",
+   "x": 0.9693936487814039,
+   "y": -1.182532247973649,
+   "radius": 0.03,
+   "bottom": 2.9600000000000004,
+   "top": 3.2500000000000004
+  },
+  {
+   "id": "anchor",
+   "x": 0.4955464810153532,
+   "y": -1.582368291371555,
+   "radius": 0.03,
+   "bottom": 2.9600000000000004,
+   "top": 3.35
+  },
+  {
+   "id": "crank",
+   "x": -2.079244511784238,
+   "y": 3.473580139293943,
+   "radius": 0.03,
+   "bottom": 2.9600000000000004,
+   "top": 3.76
+  }
+ ],
+ "gears": [
+  {
+   "id": "F.drive",
+   "arbor": "F",
+   "kind": "spur",
+   "teeth": 120,
+   "module": 0.04031668600905594,
+   "y": 0.43999999999999995,
+   "thickness": 0.08,
+   "bore": 0.1,
+   "spokes": 6
+  },
+  {
+   "id": "Y.pinion",
+   "arbor": "Y",
+   "kind": "spur",
+   "teeth": 10,
+   "module": 0.04031668600905594,
+   "y": 0.43999999999999995,
+   "thickness": 0.08,
+   "bore": 0.07
+  },
+  {
+   "id": "mercury.a",
+   "arbor": "F",
+   "kind": "spur",
+   "teeth": 75,
+   "module": 0.05958549124952044,
+   "y": 0.58,
+   "thickness": 0.08,
+   "bore": 0.1,
+   "spokes": 5
+  },
+  {
+   "id": "mercury.b",
+   "arbor": "X.mercury",
+   "kind": "spur",
+   "teeth": 11,
+   "module": 0.05958549124952044,
+   "y": 0.58,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 0
+  },
+  {
+   "id": "mercury.c",
+   "arbor": "X.mercury",
+   "kind": "spur",
+   "teeth": 95,
+   "module": 0.042350018574039326,
+   "y": 1.8400000000000003,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 5
+  },
+  {
+   "id": "mercury.d",
+   "arbor": "tube.mercury",
+   "kind": "spur",
+   "teeth": 26,
+   "module": 0.042350018574039326,
+   "y": 1.8400000000000003,
+   "thickness": 0.08,
+   "bore": 0.2,
+   "spokes": 0
+  },
+  {
+   "id": "venus.a",
+   "arbor": "F",
+   "kind": "spur",
+   "teeth": 79,
+   "module": 0.05665343032809908,
+   "y": 0.72,
+   "thickness": 0.08,
+   "bore": 0.1,
+   "spokes": 5
+  },
+  {
+   "id": "venus.b",
+   "arbor": "X.venus",
+   "kind": "spur",
+   "teeth": 12,
+   "module": 0.05665343032809908,
+   "y": 0.72,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 0
+  },
+  {
+   "id": "venus.c",
+   "arbor": "X.venus",
+   "kind": "spur",
+   "teeth": 120,
+   "module": 0.025649065471925456,
+   "y": 1.9800000000000004,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 5
+  },
+  {
+   "id": "venus.d",
+   "arbor": "tube.venus",
+   "kind": "spur",
+   "teeth": 81,
+   "module": 0.025649065471925456,
+   "y": 1.9800000000000004,
+   "thickness": 0.08,
+   "bore": 0.275,
+   "spokes": 5
+  },
+  {
+   "id": "earth.a",
+   "arbor": "F",
+   "kind": "spur",
+   "teeth": 42,
+   "module": 0.07328127213884006,
+   "y": 0.86,
+   "thickness": 0.08,
+   "bore": 0.1,
+   "spokes": 5
+  },
+  {
+   "id": "earth.b",
+   "arbor": "X.earth",
+   "kind": "spur",
+   "teeth": 28,
+   "module": 0.07328127213884006,
+   "y": 0.86,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 5
+  },
+  {
+   "id": "earth.c",
+   "arbor": "X.earth",
+   "kind": "spur",
+   "teeth": 116,
+   "module": 0.035377165860129685,
+   "y": 2.12,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 5
+  },
+  {
+   "id": "earth.d",
+   "arbor": "tube.earth",
+   "kind": "spur",
+   "teeth": 29,
+   "module": 0.035377165860129685,
+   "y": 2.12,
+   "thickness": 0.08,
+   "bore": 0.35,
+   "spokes": 0
+  },
+  {
+   "id": "mars.a",
+   "arbor": "F",
+   "kind": "spur",
+   "teeth": 97,
+   "module": 0.048797815685022845,
+   "y": 1,
+   "thickness": 0.08,
+   "bore": 0.1,
+   "spokes": 5
+  },
+  {
+   "id": "mars.b",
+   "arbor": "X.mars",
+   "kind": "spur",
+   "teeth": 44,
+   "module": 0.048797815685022845,
+   "y": 1,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 5
+  },
+  {
+   "id": "mars.c",
+   "arbor": "X.mars",
+   "kind": "spur",
+   "teeth": 123,
+   "module": 0.03307928851725107,
+   "y": 2.2600000000000002,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 5
+  },
+  {
+   "id": "mars.d",
+   "arbor": "tube.mars",
+   "kind": "spur",
+   "teeth": 85,
+   "module": 0.03307928851725107,
+   "y": 2.2600000000000002,
+   "thickness": 0.08,
+   "bore": 0.425,
+   "spokes": 5
+  },
+  {
+   "id": "jupiter.a",
+   "arbor": "F",
+   "kind": "spur",
+   "teeth": 73,
+   "module": 0.05765337033561189,
+   "y": 1.1400000000000001,
+   "thickness": 0.08,
+   "bore": 0.1,
+   "spokes": 5
+  },
+  {
+   "id": "jupiter.b",
+   "arbor": "X.jupiter",
+   "kind": "spur",
+   "teeth": 25,
+   "module": 0.05765337033561189,
+   "y": 1.1400000000000001,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 0
+  },
+  {
+   "id": "jupiter.c",
+   "arbor": "X.jupiter",
+   "kind": "spur",
+   "teeth": 22,
+   "module": 0.03791966639523466,
+   "y": 2.4000000000000004,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 0
+  },
+  {
+   "id": "jupiter.d",
+   "arbor": "tube.jupiter",
+   "kind": "spur",
+   "teeth": 127,
+   "module": 0.03791966639523466,
+   "y": 2.4000000000000004,
+   "thickness": 0.08,
+   "bore": 0.5,
+   "spokes": 5
+  },
+  {
+   "id": "saturn.a",
+   "arbor": "F",
+   "kind": "spur",
+   "teeth": 71,
+   "module": 0.04206887504941687,
+   "y": 1.28,
+   "thickness": 0.08,
+   "bore": 0.1,
+   "spokes": 5
+  },
+  {
+   "id": "saturn.b",
+   "arbor": "X.saturn",
+   "kind": "spur",
+   "teeth": 60,
+   "module": 0.04206887504941687,
+   "y": 1.28,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 5
+  },
+  {
+   "id": "saturn.c",
+   "arbor": "X.saturn",
+   "kind": "spur",
+   "teeth": 21,
+   "module": 0.038538619800514755,
+   "y": 2.5400000000000005,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 0
+  },
+  {
+   "id": "saturn.d",
+   "arbor": "tube.saturn",
+   "kind": "spur",
+   "teeth": 122,
+   "module": 0.038538619800514755,
+   "y": 2.5400000000000005,
+   "thickness": 0.08,
+   "bore": 0.575,
+   "spokes": 5
+  },
+  {
+   "id": "uranus.a",
+   "arbor": "F",
+   "kind": "spur",
+   "teeth": 57,
+   "module": 0.03019136245748826,
+   "y": 1.42,
+   "thickness": 0.08,
+   "bore": 0.1,
+   "spokes": 0
+  },
+  {
+   "id": "uranus.b",
+   "arbor": "X.uranus",
+   "kind": "spur",
+   "teeth": 128,
+   "module": 0.03019136245748826,
+   "y": 1.42,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 5
+  },
+  {
+   "id": "uranus.c",
+   "arbor": "X.uranus",
+   "kind": "spur",
+   "teeth": 17,
+   "module": 0.04540977280191323,
+   "y": 2.6800000000000006,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 0
+  },
+  {
+   "id": "uranus.d",
+   "arbor": "tube.uranus",
+   "kind": "spur",
+   "teeth": 106,
+   "module": 0.04540977280191323,
+   "y": 2.6800000000000006,
+   "thickness": 0.08,
+   "bore": 0.6499999999999999,
+   "spokes": 5
+  },
+  {
+   "id": "neptune.a",
+   "arbor": "F",
+   "kind": "spur",
+   "teeth": 31,
+   "module": 0.0320012717930987,
+   "y": 1.56,
+   "thickness": 0.08,
+   "bore": 0.1,
+   "spokes": 0
+  },
+  {
+   "id": "neptune.b",
+   "arbor": "X.neptune",
+   "kind": "spur",
+   "teeth": 129,
+   "module": 0.0320012717930987,
+   "y": 1.56,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 5
+  },
+  {
+   "id": "neptune.c",
+   "arbor": "X.neptune",
+   "kind": "spur",
+   "teeth": 20,
+   "module": 0.03368554925589337,
+   "y": 2.8200000000000003,
+   "thickness": 0.08,
+   "bore": 0.06,
+   "spokes": 0
+  },
+  {
+   "id": "neptune.d",
+   "arbor": "tube.neptune",
+   "kind": "spur",
+   "teeth": 132,
+   "module": 0.03368554925589337,
+   "y": 2.8200000000000003,
+   "thickness": 0.08,
+   "bore": 0.7250000000000001,
+   "spokes": 5
+  },
+  {
+   "id": "Y.wheel",
+   "arbor": "Y",
+   "kind": "spur",
+   "teeth": 99,
+   "module": 0.026,
+   "y": 3.0500000000000003,
+   "thickness": 0.05,
+   "bore": 0.07,
+   "spokes": 5
+  },
+  {
+   "id": "A4.pinion",
+   "arbor": "A4",
+   "kind": "spur",
+   "teeth": 8,
+   "module": 0.026,
+   "y": 3.0500000000000003,
+   "thickness": 0.05,
+   "bore": 0.02
+  },
+  {
+   "id": "A4.wheel",
+   "arbor": "A4",
+   "kind": "spur",
+   "teeth": 98,
+   "module": 0.026,
+   "y": 3.1300000000000003,
+   "thickness": 0.05,
+   "bore": 0.03,
+   "spokes": 5
+  },
+  {
+   "id": "A3.pinion",
+   "arbor": "A3",
+   "kind": "spur",
+   "teeth": 8,
+   "module": 0.026,
+   "y": 3.1300000000000003,
+   "thickness": 0.05,
+   "bore": 0.02
+  },
+  {
+   "id": "A3.wheel",
+   "arbor": "A3",
+   "kind": "spur",
+   "teeth": 96,
+   "module": 0.026,
+   "y": 3.2100000000000004,
+   "thickness": 0.05,
+   "bore": 0.03,
+   "spokes": 5
+  },
+  {
+   "id": "A2.pinion",
+   "arbor": "A2",
+   "kind": "spur",
+   "teeth": 8,
+   "module": 0.026,
+   "y": 3.2100000000000004,
+   "thickness": 0.05,
+   "bore": 0.02
+  },
+  {
+   "id": "A2.wheel",
+   "arbor": "A2",
+   "kind": "spur",
+   "teeth": 96,
+   "module": 0.026,
+   "y": 3.0500000000000003,
+   "thickness": 0.05,
+   "bore": 0.03,
+   "spokes": 5
+  },
+  {
+   "id": "A1.pinion",
+   "arbor": "A1",
+   "kind": "spur",
+   "teeth": 8,
+   "module": 0.026,
+   "y": 3.0500000000000003,
+   "thickness": 0.05,
+   "bore": 0.02
+  },
+  {
+   "id": "A1.wheel",
+   "arbor": "A1",
+   "kind": "spur",
+   "teeth": 96,
+   "module": 0.026,
+   "y": 3.1300000000000003,
+   "thickness": 0.05,
+   "bore": 0.03,
+   "spokes": 5
+  },
+  {
+   "id": "E.pinion",
+   "arbor": "E",
+   "kind": "spur",
+   "teeth": 8,
+   "module": 0.026,
+   "y": 3.1300000000000003,
+   "thickness": 0.05,
+   "bore": 0.02
+  },
+  {
+   "id": "E.escape",
+   "arbor": "E",
+   "kind": "escape",
+   "teeth": 30,
+   "module": 0,
+   "y": 3.2100000000000004,
+   "thickness": 0.05,
+   "bore": 0.03,
+   "outer": 0.5
+  },
+  {
+   "id": "anchor",
+   "arbor": "anchor",
+   "kind": "anchor",
+   "teeth": 0,
+   "module": 0,
+   "y": 3.2100000000000004,
+   "thickness": 0.05,
+   "bore": 0.03,
+   "outer": 0.42
+  },
+  {
+   "id": "balance",
+   "arbor": "anchor",
+   "kind": "balance",
+   "teeth": 0,
+   "module": 0,
+   "y": 3.3000000000000003,
+   "thickness": 0.05,
+   "bore": 0.03,
+   "outer": 0.58
+  },
+  {
+   "id": "crank.gear",
+   "arbor": "crank",
+   "kind": "spur",
+   "teeth": 33,
+   "module": 0.026,
+   "y": 3.0500000000000003,
+   "thickness": 0.05,
+   "bore": 0.03
+  }
+ ],
+ "drive": [
+  {
+   "driver": "Y.pinion",
+   "driven": "F.drive"
+  },
+  {
+   "driver": "mercury.a",
+   "driven": "mercury.b"
+  },
+  {
+   "driver": "mercury.c",
+   "driven": "mercury.d"
+  },
+  {
+   "driver": "venus.a",
+   "driven": "venus.b"
+  },
+  {
+   "driver": "venus.c",
+   "driven": "venus.d"
+  },
+  {
+   "driver": "earth.a",
+   "driven": "earth.b"
+  },
+  {
+   "driver": "earth.c",
+   "driven": "earth.d"
+  },
+  {
+   "driver": "mars.a",
+   "driven": "mars.b"
+  },
+  {
+   "driver": "mars.c",
+   "driven": "mars.d"
+  },
+  {
+   "driver": "jupiter.a",
+   "driven": "jupiter.b"
+  },
+  {
+   "driver": "jupiter.c",
+   "driven": "jupiter.d"
+  },
+  {
+   "driver": "saturn.a",
+   "driven": "saturn.b"
+  },
+  {
+   "driver": "saturn.c",
+   "driven": "saturn.d"
+  },
+  {
+   "driver": "uranus.a",
+   "driven": "uranus.b"
+  },
+  {
+   "driver": "uranus.c",
+   "driven": "uranus.d"
+  },
+  {
+   "driver": "neptune.a",
+   "driven": "neptune.b"
+  },
+  {
+   "driver": "neptune.c",
+   "driven": "neptune.d"
+  }
+ ],
+ "going": [
+  {
+   "driver": "E.pinion",
+   "driven": "A1.wheel"
+  },
+  {
+   "driver": "A1.pinion",
+   "driven": "A2.wheel"
+  },
+  {
+   "driver": "A2.pinion",
+   "driven": "A3.wheel"
+  },
+  {
+   "driver": "A3.pinion",
+   "driven": "A4.wheel"
+  },
+  {
+   "driver": "A4.pinion",
+   "driven": "Y.wheel"
+  }
+ ],
+ "crank": {
+  "driver": "crank.gear",
+  "driven": "Y.wheel"
+ },
+ "planets": [
+  {
+   "id": "mercury",
+   "tube": "tube.mercury",
+   "stage1": [
+    "mercury.a",
+    "mercury.b"
+   ],
+   "stage2": [
+    "mercury.c",
+    "mercury.d"
+   ],
+   "ratio": 24.912587412587413,
+   "target": 24.912590648307194
+  },
+  {
+   "id": "venus",
+   "tube": "tube.venus",
+   "stage1": [
+    "venus.a",
+    "venus.b"
+   ],
+   "stage2": [
+    "venus.c",
+    "venus.d"
+   ],
+   "ratio": 9.753086419753087,
+   "target": 9.753143962308261
+  },
+  {
+   "id": "earth",
+   "tube": "tube.earth",
+   "stage1": [
+    "earth.a",
+    "earth.b"
+   ],
+   "stage2": [
+    "earth.c",
+    "earth.d"
+   ],
+   "ratio": 6,
+   "target": 6
+  },
+  {
+   "id": "mars",
+   "tube": "tube.mars",
+   "stage1": [
+    "mars.a",
+    "mars.b"
+   ],
+   "stage2": [
+    "mars.c",
+    "mars.d"
+   ],
+   "ratio": 3.190106951871658,
+   "target": 3.1901066784240273
+  },
+  {
+   "id": "jupiter",
+   "tube": "tube.jupiter",
+   "stage1": [
+    "jupiter.a",
+    "jupiter.b"
+   ],
+   "stage2": [
+    "jupiter.c",
+    "jupiter.d"
+   ],
+   "ratio": 0.5058267716535433,
+   "target": 0.5058264649612507
+  },
+  {
+   "id": "saturn",
+   "tube": "tube.saturn",
+   "stage1": [
+    "saturn.a",
+    "saturn.b"
+   ],
+   "stage2": [
+    "saturn.c",
+    "saturn.d"
+   ],
+   "ratio": 0.20368852459016396,
+   "target": 0.20368931744122717
+  },
+  {
+   "id": "uranus",
+   "tube": "tube.uranus",
+   "stage1": [
+    "uranus.a",
+    "uranus.b"
+   ],
+   "stage2": [
+    "uranus.c",
+    "uranus.d"
+   ],
+   "ratio": 0.07141804245283019,
+   "target": 0.07141957341276307
+  },
+  {
+   "id": "neptune",
+   "tube": "tube.neptune",
+   "stage1": [
+    "neptune.a",
+    "neptune.b"
+   ],
+   "stage2": [
+    "neptune.c",
+    "neptune.d"
+   ],
+   "ratio": 0.03641061780596665,
+   "target": 0.036410941833225345
+  }
+ ]
+}

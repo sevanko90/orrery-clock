@@ -1,22 +1,17 @@
 import type { PlanetId } from '../astro/orbits';
+import { TABLE_TOP, tubeRadius } from '../mechanism/heights';
 
 /**
- * World layout of the instrument (world units, y up). The orrery's
- * ecliptic plane is y = PLANE_Y; ecliptic longitude θ maps to
- * (cos θ, −sin θ) on (x, z) so motion is counter-clockwise seen from above.
+ * World layout of the instrument (world units, y up). The movement lives in a
+ * walnut cabinet whose top is at TABLE_TOP; the planet arms ride above it.
+ * Ecliptic longitude θ maps to (cos θ, −sin θ) on (x, z): counter-clockwise
+ * seen from above.
  */
+export { TABLE_TOP };
 export const TABLE_RADIUS = 19.5;
-export const TABLE_TOP = 0.6;
-export const MOVEMENT = {
-  bottom: 0.75,
-  top: 2.75,
-  radius: 4.4,
-  layshaftDistance: 3.2,
-  /** Angle (radians) of the layshaft around the main axis. */
-  layshaftAngle: -Math.PI / 2 - 0.35,
-  module: 0.1,
-};
-export const PLANE_Y = 7.4;
+export const ARM_BASE = TABLE_TOP + 0.38;
+export const ARM_STEP = 0.3;
+export const PLANE_Y = ARM_BASE + 7 * ARM_STEP + 1.95;
 export const SUN_RADIUS = 1.55;
 
 export interface ArmSpec {
@@ -25,44 +20,23 @@ export interface ArmSpec {
   radius: number;
   /** Planet sphere radius. */
   size: number;
-  /** Height of the arm above the table. */
+  /** Height of the arm. */
   armY: number;
-  /** Height of this tube's drive gear inside the movement. */
-  gearY: number;
-  /** Concentric tube radius around the main axis. */
   tubeRadius: number;
-  /** Teeth on the tube's gear / meshing pinion on the layshaft. */
-  teeth: [driven: number, pinion: number];
 }
 
 const ORDER: ArmSpec['id'][] = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'];
 const RADII = [3.1, 4.3, 5.5, 6.7, 10.1, 12.6, 14.9, 16.9];
 const SIZES = [0.2, 0.32, 0.34, 0.26, 0.95, 0.8, 0.52, 0.5];
-// Each pair shares the same centre distance (driven + pinion = 64 teeth).
-const TEETH: [number, number][] = [
-  [20, 44],
-  [26, 38],
-  [30, 34],
-  [34, 30],
-  [42, 22],
-  [46, 18],
-  [50, 14],
-  [54, 10],
-];
 
-export const ARMS: ArmSpec[] = ORDER.map((id, i) => {
-  const outerIndex = ORDER.length - 1 - i; // Neptune = 0
-  return {
-    id,
-    radius: RADII[i],
-    size: SIZES[i],
-    // Outer planets ride the lowest, widest tubes; inner planets the highest, thinnest.
-    armY: MOVEMENT.top + 0.35 + outerIndex * 0.34,
-    gearY: MOVEMENT.bottom + 0.2 + i * 0.22,
-    tubeRadius: 0.2 + i * 0.075,
-    teeth: TEETH[i],
-  };
-});
+export const ARMS: ArmSpec[] = ORDER.map((id, i) => ({
+  id,
+  radius: RADII[i],
+  size: SIZES[i],
+  // Outer planets ride the lowest, widest tubes; inner planets the highest, thinnest.
+  armY: ARM_BASE + (ORDER.length - 1 - i) * ARM_STEP,
+  tubeRadius: tubeRadius(i),
+}));
 
 export const PLUTO_SIZE = 0.24;
 

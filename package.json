@@ -9,7 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "textures": "node scripts/fetch-textures.mjs"
+    "textures": "node scripts/fetch-textures.mjs",
+    "design": "node --experimental-strip-types scripts/design-mechanism.ts"
   },
   "dependencies": {
     "three": "^0.187.0"

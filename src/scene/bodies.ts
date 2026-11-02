@@ -463,12 +463,6 @@ export class Bodies {
     }
   }
 
-  /** Ecliptic longitudes (radians) for the arm-mounted planets at a date. */
-  longitudes(date: Date): Record<string, number> {
-    const out: Record<string, number> = {};
-    for (const spec of ARMS) out[spec.id] = planetPosition(spec.id, date).lon;
-    return out;
-  }
 
   update(simMs: number, realDt: number, elapsed: number) {
     const date = new Date(simMs);

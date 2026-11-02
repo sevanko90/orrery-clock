@@ -108,6 +108,7 @@ export interface Materials {
   brassDark: THREE.MeshStandardMaterial;
   copper: THREE.MeshStandardMaterial;
   steel: THREE.MeshStandardMaterial;
+  plate: THREE.MeshStandardMaterial;
   wood: THREE.MeshStandardMaterial;
   woodEdge: THREE.MeshStandardMaterial;
   felt: THREE.MeshStandardMaterial;
@@ -144,6 +145,8 @@ export function createMaterials(lowQuality: boolean): Materials {
     brassDark: metal('#9b7434', 0.58),
     copper: metal('#c0784a', 0.36),
     steel: metal('#9aa3ab', 0.28),
+    // Aged, frosted gilt for the movement plates so bright gears stand out.
+    plate: metal('#6b5128', 0.62),
     wood: woodMat,
     woodEdge: new THREE.MeshStandardMaterial({ map: edgeMap, roughness: 0.6, metalness: 0, envMapIntensity: 0.4 }),
     felt: new THREE.MeshStandardMaterial({ color: '#14100c', roughness: 1, metalness: 0 }),

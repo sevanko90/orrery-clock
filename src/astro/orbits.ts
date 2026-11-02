@@ -209,3 +209,11 @@ export function sampleOrbit(
   }
   return pts;
 }
+
+/** Mean ecliptic longitude (radians, [0, 2π)): uniform circular motion. */
+export function meanLongitude(id: PlanetId, date: Date): number {
+  const T = (julianDate(date) - J2000) / 36525;
+  const L = PLANET_ELEMENTS[id].L;
+  const deg = (((L[0] + L[1] * T) % 360) + 360) % 360;
+  return deg * DEG;
+}
