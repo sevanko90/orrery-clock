@@ -48,6 +48,7 @@ interface DiscMaterials {
   shell: THREE.Material;
   steel: THREE.Material;
   ear: THREE.Material;
+  earSheet: THREE.Material;
   eye: THREE.Material;
 }
 
@@ -64,7 +65,9 @@ function makeMaterials(mats: Materials): DiscMaterials {
     bronze,
     shell,
     steel: mats.steel,
-    ear: Object.assign(mats.brassDark.clone(), { side: THREE.DoubleSide }),
+    ear: Object.assign(mats.brassDark.clone(), { side: THREE.DoubleSide, roughness: 0.62 }),
+    // No brushed map: it pinches at the dish's pole.
+    earSheet: Object.assign(bronze.clone(), { side: THREE.DoubleSide, roughnessMap: null }),
     eye: new THREE.MeshStandardMaterial({ color: '#ffb347', emissive: '#ff9a2a', emissiveIntensity: 2.2, roughness: 0.3 }),
   };
 }
@@ -87,11 +90,168 @@ function strut(a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, mat: 
 
 // ---- Elephant -----------------------------------------------------------------
 
+/**
+ * One jointed leg: hip and knee hinge about axles across the body (z), and
+ * the ankle keeps the hoof level.
+ */
+interface LegRig {
+  hip: THREE.Group;
+  knee: THREE.Group;
+  ankle: THREE.Group;
+  shin: THREE.Mesh;
+}
+
+const THIGH = 2.25;
+const SHIN = 2.05;
+const HOOF = 0.3;
+const HIP_Y = 4.6;
+
+/** Lengthen or shorten the shin (and drop the hoof) by `delta`. */
+function setShinExtension(leg: LegRig, delta: number) {
+  const len = SHIN + delta;
+  leg.shin.scale.y = len / SHIN;
+  leg.shin.position.y = -len / 2;
+  leg.ankle.position.y = -len;
+}
+
+/** Pose a leg (radians; positive hip swings the foot forward). */
+function poseLeg(leg: LegRig, hipA: number, kneeA: number) {
+  leg.hip.rotation.z = hipA;
+  leg.knee.rotation.z = kneeA;
+  leg.ankle.rotation.z = -(hipA + kneeA) * 0.85;
+}
+
+/** A joint: a bronze drum across the leg (z) with small brass caps. */
+function joint(m: DiscMaterials, r: number, len: number) {
+  const g = new THREE.Group();
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 24), m.bronze);
+  drum.rotation.x = Math.PI / 2;
+  g.add(drum);
+  for (const s of [1, -1]) {
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.4, r * 0.5, 0.08, 16), m.brassDark);
+    cap.rotation.x = Math.PI / 2;
+    cap.position.z = s * (len / 2 + 0.03);
+    g.add(cap);
+  }
+  return g;
+}
+
+function buildLeg(m: DiscMaterials, x: number, z: number): LegRig {
+  const hip = new THREE.Group();
+  hip.position.set(x, HIP_Y, z);
+  hip.add(joint(m, 0.52, 2.0));
+  const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 0.78, THIGH - 0.2, 16), m.bronze);
+  thigh.position.y = -THIGH / 2 - 0.05;
+  hip.add(thigh);
+
+  const knee = new THREE.Group();
+  knee.position.y = -THIGH;
+  knee.add(joint(m, 0.62, 1.75));
+  const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.86, SHIN, 16), m.bronze);
+  knee.add(shin);
+  hip.add(knee);
+
+  const ankle = new THREE.Group();
+  const hoof = new THREE.Mesh(new THREE.CylinderGeometry(0.98, 1.1, HOOF, 20), m.brassDark);
+  hoof.position.y = -HOOF / 2;
+  ankle.add(hoof);
+  knee.add(ankle);
+
+  const leg: LegRig = { hip, knee, ankle, shin };
+  setShinExtension(leg, 0);
+  return leg;
+}
+
+/**
+ * Elephant body ellipsoid: long and fairly shallow, so the belly sits about
+ * halfway up and the legs read long (after a side-on photo of a herd).
+ */
+const BODY = { cy: 5.3, rx: 3.4, ry: 1.95, rz: 2.1 };
+
+/** Half-width (|z|) of an ellipsoid centred on the elephant's midline at (x, y), or 0 outside it. */
+function halfWidth(x: number, y: number, cx: number, cy: number, rx: number, ry: number, rz: number) {
+  const k = 1 - ((x - cx) / rx) ** 2 - ((y - cy) / ry) ** 2;
+  return k > 0 ? rz * Math.sqrt(k) : 0;
+}
+
+/** Where an ear hinges: on the side of the head, at its root. */
+const EAR_PIVOT = new THREE.Vector3(3.0, 5.7, 1.25);
+
+/**
+ * A cast ear: a big oval dish (a spherical cap) cupped outward, drawn into a
+ * teardrop with the lobe toward the head and the top edge curling out, with
+ * a rolled rim. It hangs over the front shoulder, standing just outside the
+ * band the front leg swings in, and its root is set into the side of the
+ * head. Built in the elephant's frame (+x forward) and returned as a group
+ * pivoting at the root, so it can flare forward and out.
+ */
+function buildEar(m: DiscMaterials, side: number) {
+  const capAngle = 1.0;
+  const R = Math.sin(capAngle);
+  const SX = 1.45,
+    SY = 2.15;
+  const shape = (geo: THREE.BufferGeometry) => {
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const yn = pos.getY(i) / R;
+      let x = pos.getX(i) * SX;
+      if (yn < 0) x = x * (1 - 0.3 * yn * yn) + 0.45 * yn * yn; // narrow lobe, toward the head
+      const y = pos.getY(i) * SY;
+      const z = pos.getZ(i) * 0.7 + 0.18 * Math.max(0, yn) ** 2; // cupped; top edge curls out
+      pos.setXYZ(i, x, y, z);
+    }
+    return geo;
+  };
+
+  const place = new THREE.Matrix4().compose(
+    new THREE.Vector3(1.95, 5.6, side * 2.25),
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), side * 0.12),
+    new THREE.Vector3(1, 1, side),
+  );
+  const smoothMax = (a: number, b: number, k: number) => 0.5 * (a + b + Math.sqrt((a - b) ** 2 + k * k));
+  const fit = (geo: THREE.BufferGeometry) => {
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const front = Array.from({ length: pos.count }, (_, i) => THREE.MathUtils.smoothstep(pos.getX(i) / (R * SX), 0.45, 1));
+    geo.applyMatrix4(place);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i),
+        y = pos.getY(i);
+      let z = Math.abs(pos.getZ(i));
+      // Stand clear of the body, and outside the front leg's hip and swing.
+      const legBand =
+        2.42 *
+        THREE.MathUtils.smoothstep(x, 0.9, 1.4) *
+        (1 - THREE.MathUtils.smoothstep(x, 2.7, 3.3)) *
+        (1 - THREE.MathUtils.smoothstep(y, 5.0, 5.6));
+      z = smoothMax(z, Math.max(halfWidth(x, y, 0, BODY.cy, BODY.rx, BODY.ry, BODY.rz) + 0.14, legBand), 0.35);
+      // Draw the root onto the side of the head.
+      const head = Math.max(halfWidth(x, y, 3.8, 6.1, 1.6, 1.75, 1.5), halfWidth(x, y, 3.4, 7.1, 1.2, 0.9, 1.2));
+      // Only where the head is broad; below it the lobe hangs free.
+      const w = front[i] * THREE.MathUtils.smoothstep(head, 0.7, 1.05);
+      if (w > 0) z = THREE.MathUtils.lerp(z, Math.min(z, head - 0.06), w);
+      pos.setXYZ(i, x - EAR_PIVOT.x, y - EAR_PIVOT.y, side * z - side * EAR_PIVOT.z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  };
+
+  const dish = new THREE.SphereGeometry(1, 48, 18, 0, Math.PI * 2, 0, capAngle);
+  dish.rotateX(Math.PI / 2);
+  dish.translate(0, 0, -Math.cos(capAngle));
+  const rim = new THREE.TorusGeometry(R, 0.06, 8, 80);
+
+  const ear = new THREE.Group();
+  ear.position.set(EAR_PIVOT.x, EAR_PIVOT.y, side * EAR_PIVOT.z);
+  ear.add(new THREE.Mesh(fit(shape(dish)), m.earSheet), new THREE.Mesh(fit(shape(rim)), m.ear));
+  return ear;
+}
+
 interface ElephantRig {
   group: THREE.Group;
-  legs: THREE.Group[];
+  legs: LegRig[];
+  /** +z ear first, matching legs[0]. */
+  ears: THREE.Group[];
   head: THREE.Group;
-  ears: THREE.Object3D[];
   trunk: THREE.Group;
   phase: number;
 }
@@ -146,19 +306,19 @@ function plaqueTexture(name: string) {
 
 /**
  * A nameplate conforming to the elephant's flank (body ellipsoid centred at
- * (0, 5, 0) with half-axes 3.3, 2.3, 2.2). `side` is +1 or −1 for ±z; text
+ * BODY). `side` is +1 or −1 for ±z; text
  * reads correctly from outside on both flanks.
  */
 function flankPlaque(tex: THREE.Texture, side: number, rivetMat: THREE.Material) {
   const group = new THREE.Group();
   const cx = PLAQUE.cx,
-    cy = 5.15,
+    cy = BODY.cy + 0.1,
     w = PLAQUE.w,
     h = PLAQUE.h;
   const onBody = (u: number, v: number, lift: number) => {
     const x = cx + side * u;
     const y = cy + v;
-    const z = 2.2 * Math.sqrt(Math.max(0, 1 - (x / 3.3) ** 2 - ((y - 5) / 2.3) ** 2)) + lift;
+    const z = halfWidth(x, y, 0, BODY.cy, BODY.rx, BODY.ry, BODY.rz) + lift;
     return new THREE.Vector3(x, y, side * z);
   };
   const geo = new THREE.PlaneGeometry(w, h, 24, 4);
@@ -187,11 +347,11 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
   const group = new THREE.Group();
 
   // Body with riveted brass girth bands.
-  group.add(mesh(sphere, m.bronze, [0, 5.0, 0], [3.3, 2.3, 2.2]));
+  group.add(mesh(sphere, m.bronze, [0, BODY.cy, 0], [BODY.rx, BODY.ry, BODY.rz]));
   const band = new THREE.TorusGeometry(1, 0.07, 8, 48);
   for (const x of [-1.85, 1.9]) {
-    const k = Math.sqrt(1 - (x / 3.3) ** 2);
-    const b = mesh(band, m.brass, [x, 5.0, 0], [2.2 * k + 0.03, 2.3 * k + 0.03, 1]);
+    const k = Math.sqrt(1 - (x / BODY.rx) ** 2);
+    const b = mesh(band, m.brass, [x, BODY.cy, 0], [BODY.rz * k + 0.03, BODY.ry * k + 0.03, 1]);
     b.rotation.y = Math.PI / 2;
     group.add(b);
   }
@@ -201,22 +361,17 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
   group.add(mesh(new THREE.CylinderGeometry(1.0, 1.3, 0.5, 24), m.bronze, [0, 7.6, 0]));
   group.add(mesh(new THREE.CylinderGeometry(1.9, 1.6, 0.16, 32), m.brass, [0, 7.92, 0]));
 
-  // Legs: hip pivots so they can lift; jointed with brass knees and hoof caps.
-  const legs: THREE.Group[] = [];
+  // Jointed legs.
+  const legs: LegRig[] = [];
   for (const [x, z] of [
     [2.0, 1.2],
     [2.0, -1.2],
     [-2.0, 1.2],
     [-2.0, -1.2],
   ]) {
-    const hip = new THREE.Group();
-    hip.position.set(x, 4.6, z);
-    hip.add(mesh(new THREE.CylinderGeometry(0.85, 0.72, 2.4, 16), m.bronze, [0, -1.2, 0]));
-    hip.add(mesh(sphere, m.brass, [0, -2.45, 0], [0.74, 0.74, 0.74]));
-    hip.add(mesh(new THREE.CylinderGeometry(0.7, 0.82, 1.9, 16), m.bronze, [0, -3.4, 0]));
-    hip.add(mesh(new THREE.CylinderGeometry(0.98, 0.98, 0.3, 20), m.brass, [0, -4.45, 0]));
-    group.add(hip);
-    legs.push(hip);
+    const leg = buildLeg(m, x, z);
+    group.add(leg.hip);
+    legs.push(leg);
   }
 
   // Head, ears, tusks, eyes and an articulated trunk.
@@ -224,25 +379,13 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
   head.position.set(3.2, 5.8, 0);
   head.add(mesh(sphere, m.bronze, [0.6, 0.3, 0], [1.6, 1.75, 1.5]));
   head.add(mesh(sphere, m.bronze, [0.2, 1.3, 0], [1.2, 0.9, 1.2]));
-  const ears: THREE.Object3D[] = [];
-  const earGeo = new THREE.CircleGeometry(1, 28);
   for (const s of [1, -1]) {
-    const pivot = new THREE.Group();
-    pivot.position.set(-0.1, 0.6, s * 1.25);
-    const ear = mesh(earGeo, m.ear, [-0.9, -0.3, s * 0.4], [1.3, 1.7, 1]);
-    ear.rotation.y = s * 0.45;
-    const rim = mesh(new THREE.TorusGeometry(1, 0.06, 6, 40), m.brass, [-0.9, -0.3, s * 0.4], [1.3, 1.7, 1]);
-    rim.rotation.y = s * 0.45;
-    pivot.add(ear, rim);
-    head.add(pivot);
-    ears.push(pivot);
-
     const tusk = new THREE.TubeGeometry(
       new THREE.CatmullRomCurve3([
         new THREE.Vector3(1.4, -0.7, s * 0.6),
-        new THREE.Vector3(2.3, -1.4, s * 0.8),
-        new THREE.Vector3(3.2, -1.1, s * 0.95),
-        new THREE.Vector3(3.6, -0.4, s * 0.9),
+        new THREE.Vector3(2.0, -1.3, s * 0.72),
+        new THREE.Vector3(2.6, -1.55, s * 0.8),
+        new THREE.Vector3(3.0, -1.4, s * 0.82),
       ]),
       16,
       0.16,
@@ -286,10 +429,13 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
   group.add(flankPlaque(tex, 1, m.brassDark), flankPlaque(tex, -1, m.brassDark));
 
   // Tail.
-  group.add(strut(new THREE.Vector3(-3.2, 5.4, 0), new THREE.Vector3(-3.7, 3.2, 0), 0.14, 0.08, m.bronze, 8));
-  group.add(mesh(sphere, m.brass, [-3.72, 3.1, 0], [0.18, 0.3, 0.18]));
+  group.add(strut(new THREE.Vector3(-3.3, 5.7, 0), new THREE.Vector3(-3.75, 3.4, 0), 0.14, 0.08, m.bronze, 8));
+  group.add(mesh(sphere, m.brass, [-3.77, 3.3, 0], [0.18, 0.3, 0.18]));
 
-  return { group, legs, head, ears, trunk, phase: Math.random() * Math.PI * 2 };
+  const ears = [buildEar(m, 1), buildEar(m, -1)];
+  group.add(...ears);
+
+  return { group, legs, ears, head, trunk, phase: Math.random() * Math.PI * 2 };
 }
 
 /** Height of the shell dome above its rim at (x, z) in the turtle's frame. */
@@ -301,14 +447,14 @@ function shellHeight(x: number, z: number) {
 function fitLegsToShell(rig: ElephantRig, a: number) {
   const S = ELEPHANT_SCALE;
   const g = rig.group.position;
-  const hipY = g.y + 4.6 * S;
+  const hipY = g.y + HIP_Y * S;
   for (const leg of rig.legs) {
-    const lx = leg.position.x * S,
-      lz = leg.position.z * S;
+    const lx = leg.hip.position.x * S,
+      lz = leg.hip.position.z * S;
     const x = g.x + lx * Math.cos(a) + lz * Math.sin(a);
     const z = g.z - lx * Math.sin(a) + lz * Math.cos(a);
     const footY = SHELL_Y + shellHeight(x, z) - 0.12;
-    leg.scale.y = (hipY - footY) / (4.6 * S);
+    setShinExtension(leg, (hipY - footY) / S - (THIGH + SHIN + HOOF));
   }
 }
 
@@ -671,11 +817,12 @@ export class Discworld {
     // Elephants: ears and trunks sway, and each shifts its weight a little.
     for (const e of this.elephants) {
       const w = t * 0.5 + e.phase;
-      e.ears.forEach((ear, i) => (ear.rotation.y = (i === 0 ? 1 : -1) * (0.1 + Math.sin(w * 1.3) * 0.12)));
+      // A slow, slight fan of the ears (pivoting at the root, swinging out).
+      const fan = 0.04 + 0.04 * Math.sin(w * 0.9);
+      e.ears.forEach((ear, i) => (ear.rotation.y = (i === 0 ? 1 : -1) * fan));
       e.trunk.rotation.z = Math.sin(w * 0.7) * 0.12;
       e.trunk.rotation.x = Math.sin(w * 0.45) * 0.1;
       e.head.rotation.y = Math.sin(w * 0.23) * 0.06;
-      e.legs.forEach((leg) => (leg.rotation.z = 0));
     }
 
     // Now and then an elephant lifts a foot and the Disc shudders.
@@ -686,8 +833,14 @@ export class Discworld {
     if (this.lift) {
       const L = this.lift;
       L.t += dt / 2.6;
+      // Hip swings forward, knee folds back, hoof stays level; then stamp.
       const k = Math.sin(Math.min(1, L.t) * Math.PI);
-      L.rig.legs[L.leg].rotation.z = k * 0.7;
+      poseLeg(L.rig.legs[L.leg], k * 0.6, -k * 1.3);
+      // Ears flare forward and out (leading the leg) to show the stamp,
+      // the near ear most.
+      const t = Math.min(1, L.t);
+      const flare = THREE.MathUtils.smoothstep(t, 0, 0.22) * (1 - THREE.MathUtils.smoothstep(t, 0.8, 1));
+      L.rig.ears.forEach((ear, i) => (ear.rotation.y += (i === 0 ? 1 : -1) * flare * (i === L.leg ? 1.1 : 0.45)));
       if (L.t > 0.78 && L.t < 1) this.quake = Math.max(this.quake, 1);
       if (L.t >= 1) this.lift = null;
     }
