@@ -1,6 +1,7 @@
 import { planetPosition, cometPosition, orbitalPeriodDays, PLANET_ELEMENTS, type PlanetId } from '../astro/orbits';
 import { COMETS } from '../astro/bodies';
 import type { Body } from '../scene/bodies';
+import type { Lore } from '../scene/discworld';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const AU_KM = 149_597_870.7;
@@ -30,6 +31,7 @@ function helio(id: string, date: Date) {
 export class InfoCard {
   private el = $('info');
   private body: Body | null = null;
+  private lore: Lore | null = null;
   private lastRender = 0;
 
   constructor(
@@ -41,6 +43,7 @@ export class InfoCard {
 
   show(body: Body, simMs: number) {
     this.body = body;
+    this.lore = null;
     this.el.hidden = false;
     $('info-name').textContent = body.name;
     $('info-kind').textContent = body.facts?.kind ?? 'Periodic comet';
@@ -48,18 +51,35 @@ export class InfoCard {
     this.render(simMs, true);
   }
 
+  /** Show a Discworld figure's lore instead of a body's figures. */
+  showLore(lore: Lore) {
+    this.body = null;
+    this.lore = lore;
+    this.el.hidden = false;
+    $('info-name').textContent = lore.name;
+    $('info-kind').textContent = lore.kind;
+    $('info-blurb').textContent = lore.blurb;
+    this.setRows(lore.rows());
+  }
+
+  get showing() {
+    return this.body !== null || this.lore !== null;
+  }
+
   hide() {
     this.body = null;
+    this.lore = null;
     this.el.hidden = true;
   }
 
   /** Refresh live figures a few times a second. */
   update(simMs: number) {
-    if (!this.body) return;
+    if (!this.body && !this.lore) return;
     const t = performance.now();
     if (t - this.lastRender < 250) return;
     this.lastRender = t;
-    this.render(simMs, false);
+    if (this.lore) this.setRows(this.lore.rows());
+    else this.render(simMs, false);
   }
 
   private render(simMs: number, _full: boolean) {
@@ -114,6 +134,10 @@ export class InfoCard {
       }
     }
 
+    this.setRows(rows);
+  }
+
+  private setRows(rows: [string, string][]) {
     const dl = $('info-stats');
     dl.replaceChildren(
       ...rows.flatMap(([k, v]) => {

@@ -125,7 +125,10 @@ function select(body: Body) {
   info.show(body, clock.nowMs());
 }
 function unfocus() {
-  if (!focus.focused) return;
+  if (!focus.focused) {
+    info.hide(); // e.g. a Discworld lore card
+    return;
+  }
   focus.goHome();
   info.hide();
 }
@@ -229,7 +232,9 @@ canvas.addEventListener('pointerup', (e) => {
   downAt = null;
   if (moved > 6 || !quick) return;
   const body = pick(e.clientX, e.clientY);
-  if (body) select(body);
+  if (body) return select(body);
+  const lore = discworld?.pickLore(raycaster);
+  if (lore) info.showLore(lore);
   else unfocus();
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -242,7 +247,8 @@ canvas.addEventListener('pointermove', (e) => {
   const body = hit ? (bodies.bodies.find((b) => b.pickProxy === hit.object) ?? null) : null;
   const markerId = body ? null : pickMarker();
   const markerName = markerId ? bodies.bodies.find((b) => b.id === markerId)?.name : null;
-  const label = body ? body.name : markerName ? `${markerName}: true position` : null;
+  const lore = body || markerName ? null : (discworld?.pickLore(raycaster) ?? null);
+  const label = body ? body.name : markerName ? `${markerName}: true position` : (lore?.name ?? null);
   canvas.style.cursor = label ? 'pointer' : '';
   hoverTag.hidden = !label;
   if (label) {
@@ -250,6 +256,10 @@ canvas.addEventListener('pointermove', (e) => {
     if (markerName) {
       const note = document.createElement('small');
       note.textContent = `The gears turn ${markerName} at its average speed; this glow marks where it really is.`;
+      hoverTag.append(note);
+    } else if (lore) {
+      const note = document.createElement('small');
+      note.textContent = `${lore.kind}. Click for lore.`;
       hoverTag.append(note);
     }
     hoverTag.style.left = `${e.clientX}px`;

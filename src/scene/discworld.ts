@@ -88,6 +88,14 @@ function strut(a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, mat: 
   return m;
 }
 
+function swimWord(rate: number) {
+  if (rate === 0.1) return 'Drifting';
+  if (rate < 0) return 'Backstroke';
+  if (rate < 0.4) return 'Steady paddle';
+  if (rate < 1.1) return 'Brisk';
+  return 'Flat out';
+}
+
 // ---- Elephant -----------------------------------------------------------------
 
 /**
@@ -261,6 +269,41 @@ const PLAQUE = { cx: -0.5, w: 2.5, h: 0.8 };
 
 const ELEPHANT_NAMES = ['Berilia', 'Tubul', "Great T'Phon", 'Jerakeen'];
 
+/** What the info card shows for a Discworld figure. */
+export interface Lore {
+  id: string;
+  name: string;
+  kind: string;
+  blurb: string;
+  /** Stat rows; may change while shown (e.g. A'Tuin's swimming pace). */
+  rows: () => [string, string][];
+}
+
+const ELEPHANT_BLURBS: Record<string, string> = {
+  Berilia:
+    "The Disc's small sun circles the world, passing between the elephants, and each must lift a leg to let it by. The elephants on this orrery shift their feet now and then as well.",
+  Tubul:
+    'There were once five elephants. The fifth slid from the turtle\'s back, fell onto the Disc and was buried deep in Überwald, where its fat and bones are still mined.',
+  "Great T'Phon":
+    "Everything that flows to the edge of the Disc pours over in the Rimfall. Along part of the edge, the island of Krull strings the Circumfence to catch whatever is swept towards the drop.",
+  Jerakeen:
+    "The Disc turns slowly on the elephants' shoulders. 'Turnwise' is the direction it spins and 'widdershins' the other; the other two directions are 'hubward' and 'rimward'.",
+};
+
+function elephantLore(name: string): Lore {
+  return {
+    id: `elephant:${name}`,
+    name,
+    kind: 'World-elephant',
+    blurb: ELEPHANT_BLURBS[name],
+    rows: () => [
+      ['Stands on', "Great A'Tuin"],
+      ['Carries', 'The Disc'],
+      ['Faces', 'Rimward'],
+    ],
+  };
+}
+
 /** Engraved brass nameplate artwork; redrawn once the display font arrives. */
 function plaqueTexture(name: string) {
   const c = document.createElement('canvas');
@@ -426,7 +469,9 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
 
   // Riveted nameplates on both flanks.
   const tex = plaqueTexture(name);
-  group.add(flankPlaque(tex, 1, m.brassDark), flankPlaque(tex, -1, m.brassDark));
+  const plaques = [flankPlaque(tex, 1, m.brassDark), flankPlaque(tex, -1, m.brassDark)];
+  for (const pl of plaques) pl.userData.lore = elephantLore(name);
+  group.add(...plaques);
 
   // Tail.
   group.add(strut(new THREE.Vector3(-3.3, 5.7, 0), new THREE.Vector3(-3.75, 3.4, 0), 0.14, 0.08, m.bronze, 8));
@@ -550,6 +595,7 @@ function buildTurtle(m: DiscMaterials, sphere: THREE.SphereGeometry, lowQuality:
     skull.add(bezel);
   }
   head.add(skull);
+  skull.userData.lore = 'atuin';
   group.add(head);
 
   // Flippers: big front pair, small rear pair.
@@ -699,6 +745,22 @@ export class Discworld {
   private time = 0;
   private nextQuake = 18;
   private lift: { rig: ElephantRig; leg: number; t: number } | null = null;
+  /** Current stroke rate (signed; negative swims backwards). */
+  private rate = 0;
+  private pickables: THREE.Object3D[] = [];
+  private turtleLore: Lore = {
+    id: 'atuin',
+    name: "Great A'Tuin",
+    kind: 'Star turtle',
+    blurb:
+      "The star turtle carries the four elephants, and they the Disc, through space. Nobody knows its sex or its destination. The 'Steady Gait' theory says it swims forever at the same pace; the 'Big Bang' theory says it is heading for a mating place. Astrozoologists from Krull once launched a voyage over the Rim to find out.",
+    rows: () => [
+      ['Species', 'Chelys galactica'],
+      ['Sex', 'Unknown'],
+      ['Shell', 'about 10,000 miles'],
+      ['Swimming', swimWord(this.rate)],
+    ],
+  };
 
   constructor(mats: Materials, opts: { lowQuality: boolean; pixelRatio: number }) {
     this.root.name = 'discworld';
@@ -768,6 +830,27 @@ export class Discworld {
     return { rig: best, leg: local.z >= 0 ? 0 : 1, t: 0 };
   }
 
+  /**
+   * The lore under a ray (the elephants' nameplates, A'Tuin's head), or null.
+   * Only once the stack has fully assembled.
+   */
+  pickLore(raycaster: THREE.Raycaster): Lore | null {
+    if (this.progress < 1 || !this.enabled) return null;
+    // Test every solid part, so a plaque behind the shell or another
+    // elephant isn't picked through it.
+    if (!this.pickables.length) {
+      this.stack.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) this.pickables.push(o);
+      });
+    }
+    const hit = raycaster.intersectObjects(this.pickables, false)[0];
+    for (let o: THREE.Object3D | null = hit?.object ?? null; o; o = o.parent) {
+      const lore = o.userData.lore as Lore | 'atuin' | undefined;
+      if (lore) return lore === 'atuin' ? this.turtleLore : lore;
+    }
+    return null;
+  }
+
   get enabled() {
     return this.target === 1;
   }
@@ -800,6 +883,7 @@ export class Discworld {
     // Swimming: faster time means harder paddling; reverse time, reverse strokes.
     const mag = Math.abs(simSpeed);
     const rate = simSpeed === 0 ? 0.1 : Math.sign(simSpeed) * (0.25 + 1.4 * THREE.MathUtils.clamp(Math.log10(mag) / 7.5, 0, 1));
+    this.rate = rate;
     this.swimPhase += dt * rate * Math.PI * 2 * 0.35;
     this.swimDistance += dt * rate * 6;
     this.dust.mat.uniforms.uOffset.value = this.swimDistance;
