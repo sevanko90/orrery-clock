@@ -863,8 +863,8 @@ export class Discworld {
   update(dt: number, simSpeed: number, camera: THREE.Camera) {
     // Entrance (~4 s) overlaps the camera's ~2.4 s flight so the arrival is
     // visible; the exit is quicker.
-    this.progress =
-      this.target > this.progress ? Math.min(1, this.progress + dt / 4) : Math.max(0, this.progress - dt / 3);
+    // (Clamped step toward the target, so it rests exactly at 0 or 1.)
+    this.progress += THREE.MathUtils.clamp(this.target - this.progress, -dt / 3, dt / 4);
     const p = this.progress;
     this.root.visible = p > 0;
     this.quake = Math.max(0, this.quake - dt * 1.5);
