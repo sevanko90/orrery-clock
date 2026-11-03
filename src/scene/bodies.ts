@@ -297,6 +297,8 @@ export interface BodiesOptions {
  * never vanish against the night.
  */
 const NIGHT_FILL = 0.6;
+/** Sunlight colour; the night fill takes the same hue so tints (e.g. Mercury's) hold across the terminator. */
+const SUN_COLOR = new THREE.Color(0xfff0dd);
 const NIGHT_FILL_BOOST: Record<string, number> = { pluto: 1.2, mercury: 0.9, belt: 1.0 };
 
 /** The lighting chunk with directional lights switched off (see sunlit()). */
@@ -353,7 +355,7 @@ function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth 
       .replace('#include <lights_fragment_begin>', SUNLIT_LIGHTS_BEGIN)
       .replace(
         '#include <lights_fragment_end>',
-        `irradiance = vec3( ${fill.toFixed(3)} );
+        `irradiance = vec3( ${(SUN_COLOR.r * fill).toFixed(3)}, ${(SUN_COLOR.g * fill).toFixed(3)}, ${(SUN_COLOR.b * fill).toFixed(3)} );
 iblIrradiance = vec3( 0.0 );
 #if defined( RE_IndirectSpecular )
 \tradiance = vec3( 0.0 );
@@ -405,7 +407,7 @@ export class Bodies {
     this.sunMesh.add(this.sunGlow);
     this.root.add(this.sunMesh);
 
-    this.sunLight = new THREE.PointLight(0xfff0dd, 2.2, 0, 0);
+    this.sunLight = new THREE.PointLight(SUN_COLOR, 2.2, 0, 0);
     this.sunLight.position.copy(this.sunMesh.position);
     this.sunLight.castShadow = !opts.lowQuality;
     this.sunLight.shadow.mapSize.set(1024, 1024);
