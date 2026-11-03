@@ -326,6 +326,13 @@ function step(now: number) {
     stage.controls.autoRotate = true;
   }
   stage.controls.update(dt);
+  // Scale the near plane with zoom: depth precision falls off with distance,
+  // so a fixed 0.1 makes thin inlays flicker when zoomed out.
+  const near = THREE.MathUtils.clamp(stage.camera.position.distanceTo(stage.controls.target) * 0.006, 0.1, 0.5);
+  if (Math.abs(near - stage.camera.near) > 0.01) {
+    stage.camera.near = near;
+    stage.camera.updateProjectionMatrix();
+  }
   // An elephant shifting its feet shakes the whole Disc (and the camera).
   const quake = discworld?.quake ?? 0;
   const shake = quake > 0 ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;

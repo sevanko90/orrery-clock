@@ -229,12 +229,18 @@ export function buildOrrery(mats: Materials): Orrery {
   table.castShadow = false;
   cabinet.add(glass, sideGlass);
 
+  // Inlays sit a hair above the surface; a depth offset keeps them in front at
+  // any viewing distance (otherwise they z-fight when zoomed out).
+  const inlay = <T extends THREE.Material>(m: T) =>
+    Object.assign(m, { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+
   // Orbit grooves: inlaid brass on the wood, fine silver lines on the glass.
+  const grooveBrass = inlay(mats.brassDark.clone());
   for (const arm of ARMS) {
     const onGlass = arm.radius < WINDOW_RADIUS;
     const mat = onGlass
-      ? new THREE.MeshBasicMaterial({ color: 0xd8c08a, transparent: true, opacity: 0.35, depthWrite: false })
-      : mats.brassDark;
+      ? inlay(new THREE.MeshBasicMaterial({ color: 0xd8c08a, transparent: true, opacity: 0.35, depthWrite: false }))
+      : grooveBrass;
     const w = onGlass ? 0.012 : 0.025;
     const groove = new THREE.Mesh(new THREE.RingGeometry(arm.radius - w, arm.radius + w, 256), mat);
     groove.rotation.x = -Math.PI / 2;
@@ -246,7 +252,7 @@ export function buildOrrery(mats: Materials): Orrery {
   const zInner = TABLE_RADIUS - 2.0,
     zOuter = TABLE_RADIUS - 0.35,
     extent = TABLE_RADIUS;
-  const zodiacMat = mats.brass.clone();
+  const zodiacMat = inlay(mats.brass.clone());
   // Satin finish: a large flat ring of polished brass mirrors the Sun as a glare.
   zodiacMat.roughness = 0.55;
   zodiacMat.alphaTest = 0.5;
