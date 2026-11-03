@@ -291,8 +291,13 @@ export interface BodiesOptions {
   lowQuality: boolean;
 }
 
-/** Flat light on a body's night side (irradiance), so it stays readable. */
+/**
+ * Flat light on a body's night side (irradiance), so it stays readable.
+ * Aesthetics over realism: dark worlds and small rocks get extra so they
+ * never vanish against the night.
+ */
 const NIGHT_FILL = 0.6;
+const NIGHT_FILL_BOOST: Record<string, number> = { pluto: 1.2, mercury: 0.9, belt: 1.0 };
 
 /** The lighting chunk with directional lights switched off (see sunlit()). */
 const SUNLIT_LIGHTS_BEGIN = THREE.ShaderChunk.lights_fragment_begin.replace(
@@ -304,16 +309,30 @@ const SUNLIT_LIGHTS_BEGIN = THREE.ShaderChunk.lights_fragment_begin.replace(
  * Direct light with a soft terminator: instead of Lambert's cos, which stops
  * dead at 90° and reads as a hard line against the flat night fill, the
  * light eases out a little past the terminator (as an atmosphere scatters
- * it). Diffuse irradiance only; it doesn't change where the day side is.
+ * it). Diffuse only: easing the specular term too makes it spike into
+ * flashing glints at the limb, where the specular maths expects no light.
  */
 const TERMINATOR_WRAP = 0.25;
 const SUNLIT_DIRECT = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
-  'vec3 irradiance = dotNL * directLight.color;',
+  'reflectedLight.directDiffuse += irradiance * diffuseBRDF * ( 1.0 - F );',
   `float wrapNL = saturate( ( dot( geometryNormal, directLight.direction ) + ${TERMINATOR_WRAP.toFixed(2)} ) / ${(1 + TERMINATOR_WRAP).toFixed(2)} );
-	vec3 irradiance = wrapNL * wrapNL * directLight.color;`,
+	reflectedLight.directDiffuse += wrapNL * wrapNL * directLight.color * diffuseBRDF * ( 1.0 - F );`,
 );
 
-if (SUNLIT_DIRECT === THREE.ShaderChunk.lights_physical_pars_fragment || SUNLIT_LIGHTS_BEGIN === THREE.ShaderChunk.lights_fragment_begin) {
+/**
+ * Pluto's map is black where New Horizons never imaged it (much of the south).
+ * Fill those texels from the mirrored northern hemisphere, blended softly, so
+ * Pluto never shows a black hemisphere.
+ */
+const MIRROR_UNMAPPED_SOUTH = THREE.ShaderChunk.map_fragment.replace(
+  'vec4 sampledDiffuseColor = texture2D( map, vMapUv );',
+  `vec4 sampledDiffuseColor = texture2D( map, vMapUv );
+	vec4 mirroredNorth = texture2D( map, vec2( vMapUv.x, 1.0 - vMapUv.y ) );
+	float mappedLum = dot( sampledDiffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
+	sampledDiffuseColor = mix( mirroredNorth, sampledDiffuseColor, smoothstep( 0.01, 0.05, mappedLum ) );`,
+);
+
+if (MIRROR_UNMAPPED_SOUTH === THREE.ShaderChunk.map_fragment || SUNLIT_DIRECT === THREE.ShaderChunk.lights_physical_pars_fragment || SUNLIT_LIGHTS_BEGIN === THREE.ShaderChunk.lights_fragment_begin) {
   console.warn('sunlit(): three.js lighting chunks changed; planet terminators are not applied');
 }
 
@@ -326,14 +345,15 @@ if (SUNLIT_DIRECT === THREE.ShaderChunk.lights_physical_pars_fragment || SUNLIT_
  * ignored. (`envMapIntensity: 0` alone doesn't do it: a material without its
  * own envMap takes the scene's environmentIntensity.)
  */
-function sunlit(mat: THREE.MeshStandardMaterial) {
+function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth = false) {
   mat.onBeforeCompile = (shader) => {
+    if (mirrorSouth) shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', MIRROR_UNMAPPED_SOUTH);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <lights_physical_pars_fragment>', SUNLIT_DIRECT)
       .replace('#include <lights_fragment_begin>', SUNLIT_LIGHTS_BEGIN)
       .replace(
         '#include <lights_fragment_end>',
-        `irradiance = vec3( ${NIGHT_FILL.toFixed(3)} );
+        `irradiance = vec3( ${fill.toFixed(3)} );
 iblIrradiance = vec3( 0.0 );
 #if defined( RE_IndirectSpecular )
 \tradiance = vec3( 0.0 );
@@ -341,7 +361,7 @@ iblIrradiance = vec3( 0.0 );
 #include <lights_fragment_end>`,
       );
   };
-  mat.customProgramCacheKey = () => 'sunlit';
+  mat.customProgramCacheKey = () => `sunlit-${fill}${mirrorSouth ? '-mirror' : ''}`;
 }
 
 export class Bodies {
@@ -484,6 +504,7 @@ export class Bodies {
       flatShading: true,
     });
     this.belt = new THREE.InstancedMesh(rockGeo, rockMat, count);
+    this.belt.name = 'belt';
     this.belt.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.beltData = new Float32Array(count * 6);
     for (let i = 0; i < count; i++) {
@@ -518,7 +539,14 @@ export class Bodies {
     // Day and night sides: everything lit (planets, clouds, rocks, comets).
     this.root.traverse((o) => {
       const m = (o as THREE.Mesh).material;
-      if (m instanceof THREE.MeshStandardMaterial) sunlit(m);
+      if (!(m instanceof THREE.MeshStandardMaterial)) return;
+      let fill = NIGHT_FILL;
+      let pluto = false;
+      for (let a: THREE.Object3D | null = o; a; a = a.parent) {
+        if (a.name in NIGHT_FILL_BOOST) fill = NIGHT_FILL_BOOST[a.name];
+        if (a.name === 'pluto') pluto = true;
+      }
+      sunlit(m, fill, pluto);
     });
   }
 
