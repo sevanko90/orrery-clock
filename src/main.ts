@@ -6,6 +6,8 @@ import { createMaterials } from './scene/materials';
 import { buildOrrery } from './scene/orrery';
 import { Bodies, type Body } from './scene/bodies';
 import { FocusController } from './scene/focus';
+import { Discworld, DISC_HOME_CAMERA, DISC_HOME_TARGET } from './scene/discworld';
+import { HOME_CAMERA, HOME_TARGET } from './scene/stage';
 import { SimClock } from './sim/clock';
 import { Kinematics } from './mechanism/kinematics';
 import { design } from './scene/mechanism3d';
@@ -141,6 +143,43 @@ addEventListener('keydown', (e) => {
 
 const { syncDate } = bindControls(clock, unfocus);
 
+// ---- Discworld mode ------------------------------------------------------------
+// Built on first use so normal mode pays nothing for it.
+let discworld: Discworld | null = null;
+const discButton = document.getElementById('c-disc') as HTMLButtonElement;
+const NORMAL_LIMITS = { maxPolar: stage.controls.maxPolarAngle, maxDistance: stage.controls.maxDistance };
+function setDiscworld(on: boolean) {
+  if (on && !discworld) {
+    discworld = new Discworld(mats, { lowQuality: quality.low, pixelRatio: quality.pixelRatio });
+    stage.scene.add(discworld.root);
+  }
+  discworld?.setEnabled(on);
+  discButton.setAttribute('aria-pressed', String(on));
+  discButton.title = on ? 'Leave Discworld mode (D)' : 'Discworld mode (D)';
+  if (on) {
+    // Free the camera to swing under the Disc and far enough to frame A'Tuin.
+    stage.controls.maxPolarAngle = Math.PI * 0.97;
+    stage.controls.maxDistance = 170;
+    focus.setHome(DISC_HOME_TARGET, DISC_HOME_CAMERA);
+  } else {
+    // Limits are restored once the camera is back above the table (see step()).
+    focus.setHome(HOME_TARGET, HOME_CAMERA);
+  }
+  info.hide();
+  focus.goHome(2.4);
+  lastInteraction = performance.now();
+  try {
+    localStorage.setItem('discworld', on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+discButton.addEventListener('click', () => setDiscworld(!discworld?.enabled));
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'd' || e.key === 'D') setDiscworld(!discworld?.enabled);
+});
+
 const credits = document.getElementById('credits') as HTMLDialogElement;
 document.getElementById('credits-btn')!.addEventListener('click', () => credits.showModal());
 
@@ -265,12 +304,24 @@ function step(now: number) {
   }
   bodies.update(simMs, dt, elapsed);
   focus.update(dt);
+  if (discworld) {
+    discworld.update(dt, clock.speed, stage.camera);
+    if (!discworld.enabled && !focus.flying && stage.controls.maxPolarAngle !== NORMAL_LIMITS.maxPolar) {
+      stage.controls.maxPolarAngle = NORMAL_LIMITS.maxPolar;
+      stage.controls.maxDistance = NORMAL_LIMITS.maxDistance;
+    }
+  }
 
   if (!stage.controls.autoRotate && !focus.flying && now - lastInteraction > 20_000) {
     stage.controls.autoRotate = true;
   }
   stage.controls.update(dt);
+  // An elephant shifting its feet shakes the whole Disc (and the camera).
+  const quake = discworld?.quake ?? 0;
+  const shake = quake > 0 ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
+  if (shake) stage.camera.position.add(shake);
   stage.render();
+  if (shake) stage.camera.position.sub(shake);
 
   readout.update();
   info.update(simMs);
@@ -278,7 +329,18 @@ function step(now: number) {
 
   if (++frames === 3) veil.classList.add('gone');
 }
+// Restore Discworld mode last: it touches state declared throughout this file.
+{
+  const param = new URLSearchParams(location.search).get('disc');
+  let saved = false;
+  try {
+    saved = localStorage.getItem('discworld') === '1';
+  } catch {
+    /* ignore */
+  }
+  if (param === '1' || (param !== '0' && saved)) setDiscworld(true);
+}
 requestAnimationFrame(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld } });

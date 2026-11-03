@@ -496,6 +496,13 @@ input[type='range']::-moz-range-thumb {
   stroke: var(--ink-faint);
   opacity: 0.6;
 }
+#c-disc[aria-pressed='true'] {
+  border-color: var(--amber);
+  box-shadow: 0 0 10px rgba(255, 170, 70, 0.35);
+}
+#c-disc[aria-pressed='true'] svg {
+  fill: var(--amber);
+}
 #hover-tag[hidden] {
   display: none;
 }

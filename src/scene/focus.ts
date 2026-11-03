@@ -17,6 +17,8 @@ export class FocusController {
     home: boolean;
   } | null = null;
   private lastBodyPos = new THREE.Vector3();
+  private homeTarget = HOME_TARGET.clone();
+  private homeCamera = HOME_CAMERA.clone();
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -47,12 +49,18 @@ export class FocusController {
     body.upgrade();
   }
 
-  goHome() {
-    const offset = HOME_CAMERA.clone().sub(HOME_TARGET);
+  /** Change the resting view that goHome() flies back to. */
+  setHome(target: THREE.Vector3, camera: THREE.Vector3) {
+    this.homeTarget.copy(target);
+    this.homeCamera.copy(camera);
+  }
+
+  goHome(duration = 1.6) {
+    const offset = this.homeCamera.clone().sub(this.homeTarget);
     if (innerWidth < innerHeight) offset.multiplyScalar(1.5);
     this.flight = {
       t: 0,
-      duration: 1.6,
+      duration,
       fromTarget: this.controls.target.clone(),
       fromCam: this.camera.position.clone(),
       offset,
@@ -69,7 +77,7 @@ export class FocusController {
       const f = this.flight;
       f.t = Math.min(1, f.t + dt / f.duration);
       const k = ease(f.t);
-      const goal = f.home ? HOME_TARGET : bodyPos!;
+      const goal = f.home ? this.homeTarget : bodyPos!;
       this.controls.target.lerpVectors(f.fromTarget, goal, k);
       const camGoal = goal.clone().add(f.offset);
       this.camera.position.lerpVectors(f.fromCam, camGoal, k);
