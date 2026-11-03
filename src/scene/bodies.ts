@@ -299,7 +299,12 @@ export interface BodiesOptions {
 const NIGHT_FILL = 0.6;
 /** Sunlight colour; the night fill takes the same hue so tints (e.g. Mercury's) hold across the terminator. */
 const SUN_COLOR = new THREE.Color(0xfff0dd);
-const NIGHT_FILL_BOOST: Record<string, number> = { pluto: 1.2, mercury: 0.9, belt: 1.0 };
+const NIGHT_FILL_BOOST: Record<string, number> = { pluto: 1.2, mercury: 1.0, belt: 1.0 };
+/**
+ * Extra hue for a body's night fill. Dim, lightly tinted colours read as grey,
+ * so Mercury's brown tint needs pushing to survive on its night side.
+ */
+const NIGHT_TINT: Record<string, THREE.Color> = { mercury: new THREE.Color('#ffc890') };
 
 /** The lighting chunk with directional lights switched off (see sunlit()). */
 const SUNLIT_LIGHTS_BEGIN = THREE.ShaderChunk.lights_fragment_begin.replace(
@@ -347,7 +352,8 @@ if (MIRROR_UNMAPPED_SOUTH === THREE.ShaderChunk.map_fragment || SUNLIT_DIRECT ==
  * ignored. (`envMapIntensity: 0` alone doesn't do it: a material without its
  * own envMap takes the scene's environmentIntensity.)
  */
-function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth = false) {
+function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth = false, tint = new THREE.Color(1, 1, 1)) {
+  const night = SUN_COLOR.clone().multiply(tint).multiplyScalar(fill);
   mat.onBeforeCompile = (shader) => {
     if (mirrorSouth) shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', MIRROR_UNMAPPED_SOUTH);
     shader.fragmentShader = shader.fragmentShader
@@ -355,7 +361,7 @@ function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth 
       .replace('#include <lights_fragment_begin>', SUNLIT_LIGHTS_BEGIN)
       .replace(
         '#include <lights_fragment_end>',
-        `irradiance = vec3( ${(SUN_COLOR.r * fill).toFixed(3)}, ${(SUN_COLOR.g * fill).toFixed(3)}, ${(SUN_COLOR.b * fill).toFixed(3)} );
+        `irradiance = vec3( ${night.r.toFixed(3)}, ${night.g.toFixed(3)}, ${night.b.toFixed(3)} );
 iblIrradiance = vec3( 0.0 );
 #if defined( RE_IndirectSpecular )
 \tradiance = vec3( 0.0 );
@@ -363,7 +369,8 @@ iblIrradiance = vec3( 0.0 );
 #include <lights_fragment_end>`,
       );
   };
-  mat.customProgramCacheKey = () => `sunlit-${fill}${mirrorSouth ? '-mirror' : ''}`;
+  const key = `sunlit-${night.toArray().map((v) => v.toFixed(3)).join(',')}${mirrorSouth ? '-mirror' : ''}`;
+  mat.customProgramCacheKey = () => key;
 }
 
 export class Bodies {
@@ -544,11 +551,13 @@ export class Bodies {
       if (!(m instanceof THREE.MeshStandardMaterial)) return;
       let fill = NIGHT_FILL;
       let pluto = false;
+      let tint: THREE.Color | undefined;
       for (let a: THREE.Object3D | null = o; a; a = a.parent) {
         if (a.name in NIGHT_FILL_BOOST) fill = NIGHT_FILL_BOOST[a.name];
+        if (a.name in NIGHT_TINT) tint = NIGHT_TINT[a.name];
         if (a.name === 'pluto') pluto = true;
       }
-      sunlit(m, fill, pluto);
+      sunlit(m, fill, pluto, tint);
     });
   }
 
