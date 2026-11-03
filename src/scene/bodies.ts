@@ -291,6 +291,59 @@ export interface BodiesOptions {
   lowQuality: boolean;
 }
 
+/** Flat light on a body's night side (irradiance), so it stays readable. */
+const NIGHT_FILL = 0.6;
+
+/** The lighting chunk with directional lights switched off (see sunlit()). */
+const SUNLIT_LIGHTS_BEGIN = THREE.ShaderChunk.lights_fragment_begin.replace(
+  'directionalLight = directionalLights[ i ];',
+  'directionalLight = directionalLights[ i ];\n\t\tdirectionalLight.color = vec3( 0.0 );',
+);
+
+/**
+ * Direct light with a soft terminator: instead of Lambert's cos, which stops
+ * dead at 90° and reads as a hard line against the flat night fill, the
+ * light eases out a little past the terminator (as an atmosphere scatters
+ * it). Diffuse irradiance only; it doesn't change where the day side is.
+ */
+const TERMINATOR_WRAP = 0.25;
+const SUNLIT_DIRECT = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+  'vec3 irradiance = dotNL * directLight.color;',
+  `float wrapNL = saturate( ( dot( geometryNormal, directLight.direction ) + ${TERMINATOR_WRAP.toFixed(2)} ) / ${(1 + TERMINATOR_WRAP).toFixed(2)} );
+	vec3 irradiance = wrapNL * wrapNL * directLight.color;`,
+);
+
+if (SUNLIT_DIRECT === THREE.ShaderChunk.lights_physical_pars_fragment || SUNLIT_LIGHTS_BEGIN === THREE.ShaderChunk.lights_fragment_begin) {
+  console.warn('sunlit(): three.js lighting chunks changed; planet terminators are not applied');
+}
+
+/**
+ * Light a body like a world in sunlight, so it shows a day side and a
+ * terminator: the Sun (a point light) at full strength, and in place of the
+ * scene's fill (hemisphere light and the room environment, which light it
+ * evenly from all round) a flat, dim glow on the night side. Directional
+ * lights, which are there for the woodwork and the Discworld stack, are
+ * ignored. (`envMapIntensity: 0` alone doesn't do it: a material without its
+ * own envMap takes the scene's environmentIntensity.)
+ */
+function sunlit(mat: THREE.MeshStandardMaterial) {
+  mat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <lights_physical_pars_fragment>', SUNLIT_DIRECT)
+      .replace('#include <lights_fragment_begin>', SUNLIT_LIGHTS_BEGIN)
+      .replace(
+        '#include <lights_fragment_end>',
+        `irradiance = vec3( ${NIGHT_FILL.toFixed(3)} );
+iblIrradiance = vec3( 0.0 );
+#if defined( RE_IndirectSpecular )
+\tradiance = vec3( 0.0 );
+#endif
+#include <lights_fragment_end>`,
+      );
+  };
+  mat.customProgramCacheKey = () => 'sunlit';
+}
+
 export class Bodies {
   readonly root = new THREE.Group();
   readonly bodies: Body[] = [];
@@ -461,6 +514,12 @@ export class Bodies {
       ring.position.y = PLANE_Y;
       this.root.add(ring);
     }
+
+    // Day and night sides: everything lit (planets, clouds, rocks, comets).
+    this.root.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      if (m instanceof THREE.MeshStandardMaterial) sunlit(m);
+    });
   }
 
 
