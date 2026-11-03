@@ -88,8 +88,6 @@ function makePlanet(
   group.add(tilt);
 
   const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.0 });
-  // Mercury's true colour is a slightly warmer, browner grey than the Moon.
-  if (id === 'mercury') mat.color.set('#e6d6c0');
   const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 64, 48), mat);
   sphere.castShadow = true;
   sphere.receiveShadow = false;
@@ -297,14 +295,9 @@ export interface BodiesOptions {
  * never vanish against the night.
  */
 const NIGHT_FILL = 0.6;
-/** Sunlight colour; the night fill takes the same hue so tints (e.g. Mercury's) hold across the terminator. */
+/** Sunlight colour; the night fill takes the same hue so a body's colour holds across the terminator. */
 const SUN_COLOR = new THREE.Color(0xfff0dd);
-const NIGHT_FILL_BOOST: Record<string, number> = { pluto: 1.2, mercury: 1.0, belt: 1.0 };
-/**
- * Extra hue for a body's night fill. Dim, lightly tinted colours read as grey,
- * so Mercury's brown tint needs pushing to survive on its night side.
- */
-const NIGHT_TINT: Record<string, THREE.Color> = { mercury: new THREE.Color('#ffc890') };
+const NIGHT_FILL_BOOST: Record<string, number> = { pluto: 1.2, mercury: 0.9, belt: 1.0 };
 
 /** The lighting chunk with directional lights switched off (see sunlit()). */
 const SUNLIT_LIGHTS_BEGIN = THREE.ShaderChunk.lights_fragment_begin.replace(
@@ -352,8 +345,8 @@ if (MIRROR_UNMAPPED_SOUTH === THREE.ShaderChunk.map_fragment || SUNLIT_DIRECT ==
  * ignored. (`envMapIntensity: 0` alone doesn't do it: a material without its
  * own envMap takes the scene's environmentIntensity.)
  */
-function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth = false, tint = new THREE.Color(1, 1, 1)) {
-  const night = SUN_COLOR.clone().multiply(tint).multiplyScalar(fill);
+function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth = false) {
+  const night = SUN_COLOR.clone().multiplyScalar(fill);
   mat.onBeforeCompile = (shader) => {
     if (mirrorSouth) shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', MIRROR_UNMAPPED_SOUTH);
     shader.fragmentShader = shader.fragmentShader
@@ -551,13 +544,11 @@ export class Bodies {
       if (!(m instanceof THREE.MeshStandardMaterial)) return;
       let fill = NIGHT_FILL;
       let pluto = false;
-      let tint: THREE.Color | undefined;
       for (let a: THREE.Object3D | null = o; a; a = a.parent) {
         if (a.name in NIGHT_FILL_BOOST) fill = NIGHT_FILL_BOOST[a.name];
-        if (a.name in NIGHT_TINT) tint = NIGHT_TINT[a.name];
         if (a.name === 'pluto') pluto = true;
       }
-      sunlit(m, fill, pluto, tint);
+      sunlit(m, fill, pluto);
     });
   }
 
