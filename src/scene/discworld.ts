@@ -778,18 +778,21 @@ export class Discworld {
 
   /** `simSpeed` is the clock's simulated seconds per real second. */
   update(dt: number, simSpeed: number, camera: THREE.Camera) {
-    const step = dt / 3.2;
-    this.progress = this.target > this.progress ? Math.min(1, this.progress + step) : Math.max(0, this.progress - step);
+    // Entrance (~4 s) overlaps the camera's ~2.4 s flight so the arrival is
+    // visible; the exit is quicker.
+    this.progress =
+      this.target > this.progress ? Math.min(1, this.progress + dt / 4) : Math.max(0, this.progress - dt / 3);
     const p = this.progress;
     this.root.visible = p > 0;
     this.quake = Math.max(0, this.quake - dt * 1.5);
     if (p === 0) return;
     this.time += dt;
 
-    // Elephants rise into place first, then the turtle comes up beneath them.
-    this.elephantGroup.position.y = -(1 - easeOut(smooth(0, 0.55, p))) * 45;
-    this.turtle.group.position.y = SHELL_Y - (1 - easeOut(smooth(0.3, 1, p))) * 80;
-    this.rimfall.mat.uniforms.uOpacity.value = smooth(0.15, 0.7, p);
+    // The Rimfall starts as the camera swings down; the elephants rise as it
+    // arrives (~1.2–2.9 s) and the turtle surfaces alongside (~1.6–4 s).
+    this.elephantGroup.position.y = -(1 - smooth(0.3, 0.72, p)) * 45;
+    this.turtle.group.position.y = SHELL_Y - (1 - easeOut(smooth(0.4, 1, p))) * 80;
+    this.rimfall.mat.uniforms.uOpacity.value = smooth(0.08, 0.45, p);
     this.rimfall.mat.uniforms.uTime.value = this.time;
     this.dust.mat.uniforms.uOpacity.value = smooth(0.5, 1, p);
     for (const { light, base } of this.lights) light.intensity = base * p;
