@@ -817,7 +817,7 @@ class Wormhole {
 
 const HOUR = 3_600_000;
 const SHIPS = 7;
-const CHUNKS = 40;
+const CHUNKS = 64;
 const VOGON_YELLOW = new THREE.Color(0xffe27a);
 
 /** Smooth 0→1 as `x` runs from `a` to `b`. */
@@ -887,20 +887,495 @@ class LaneMaterial extends THREE.ShaderMaterial {
 /** Fades the bypass traffic the same way as the lane. */
 const laneFade = (p: THREE.Vector3) => 1 - THREE.MathUtils.smoothstep(Math.hypot(p.x, p.z), TABLE_RADIUS * 0.5, TABLE_RADIUS);
 
+/** GLSL value noise (2D and 3D) and fBm, for the explosion's shaders. */
+const NOISE_GLSL = /* glsl */ `
+  float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+  float fbm(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 5; i++) { v += a * vnoise(p); p *= 2.03; a *= 0.5; }
+    return v;
+  }
+  float hash13(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
+  }
+  float vnoise3(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    vec3 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), u.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), u.x), u.y),
+      mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), u.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), u.x), u.y),
+      u.z);
+  }
+`;
+
+const PLANE_VERT = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+/**
+ * The shockwave: a turbulent ring racing outward on a 2×2 plane. White-hot at
+ * the front, cooling through orange to blue as it spreads and fades, with a
+ * ragged, wobbling edge and haze trailing behind it.
+ */
+class ShockwaveMaterial extends THREE.ShaderMaterial {
+  constructor(seed: number) {
+    super({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uAge: { value: 0 }, uFront: { value: 0 }, uSeed: { value: seed } },
+      vertexShader: PLANE_VERT,
+      fragmentShader: /* glsl */ `
+        uniform float uAge;
+        uniform float uFront;
+        uniform float uSeed;
+        varying vec2 vUv;
+        ${NOISE_GLSL}
+        void main() {
+          vec2 p = vUv * 2.0 - 1.0;
+          float r = length(p);
+          vec2 dir = p / max(r, 1e-4);
+          float wobble = (fbm(dir * 3.0 + uSeed) - 0.5) * 0.18 * uFront;
+          float d = r - (uFront + wobble);
+          float width = 0.02 + 0.1 * uAge;
+          float ring = exp(-d * d / (width * width));
+          float haze = d < 0.0 ? exp(d / (0.3 * uFront + 0.01)) : 0.0;
+          float tex = 0.35 + fbm(p * 7.0 + vec2(uAge * 2.0, uSeed)) * 1.1;
+          float heat = 1.0 - uAge;
+          vec3 cool = vec3(0.35, 0.55, 1.0);
+          vec3 warm = vec3(1.0, 0.5, 0.15);
+          vec3 hot = vec3(1.0, 0.95, 0.8);
+          vec3 col = mix(mix(cool, warm, smoothstep(0.0, 0.6, heat)), hot, smoothstep(0.65, 1.0, heat));
+          float a = (ring * 1.7 + haze * 0.3) * tex * pow(1.0 - uAge, 1.3);
+          gl_FragColor = vec4(col * a, a);
+        }
+      `,
+    });
+  }
+}
+
+/** The fireball: an expanding shell, brightest round its rim. */
+class FireballMaterial extends THREE.ShaderMaterial {
+  constructor() {
+    super({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uFade: { value: 0 } },
+      vertexShader: /* glsl */ `
+        varying vec3 vN;
+        varying vec3 vV;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vN = normalize(normalMatrix * normal);
+          vV = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uFade;
+        varying vec3 vN;
+        varying vec3 vV;
+        void main() {
+          float mu = abs(dot(normalize(vN), normalize(vV)));
+          float a = (0.25 + 0.75 * pow(1.0 - mu, 2.0)) * uFade;
+          vec3 col = mix(vec3(1.0, 0.45, 0.12), vec3(1.0, 0.92, 0.75), uFade);
+          gl_FragColor = vec4(col * a, a);
+        }
+      `,
+    });
+  }
+}
+
+/** Glowing cracks spreading over the planet in its last seconds. */
+class CracksMaterial extends THREE.ShaderMaterial {
+  constructor() {
+    super({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uIntensity: { value: 0 }, uTime: { value: 0 } },
+      vertexShader: /* glsl */ `
+        varying vec3 vObj;
+        void main() {
+          vObj = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uIntensity;
+        uniform float uTime;
+        varying vec3 vObj;
+        ${NOISE_GLSL}
+        void main() {
+          vec3 p = normalize(vObj);
+          float n = vnoise3(p * 5.0) * 0.6 + vnoise3(p * 11.0 + 3.1) * 0.4;
+          float w = 0.012 + 0.06 * uIntensity;
+          float crack = 1.0 - smoothstep(0.0, w, abs(n - 0.5));
+          float flicker = 0.85 + 0.15 * sin(uTime * 23.0 + n * 40.0);
+          float a = (crack * 1.6 + 0.12) * uIntensity * flicker;
+          vec3 col = mix(vec3(1.0, 0.35, 0.05), vec3(1.0, 0.85, 0.4), crack * uIntensity);
+          gl_FragColor = vec4(col * a, a);
+        }
+      `,
+    });
+  }
+}
+
+/**
+ * A demolition beam: a hot core with pulses of energy racing down toward
+ * Earth, flickering, growing heavier as the moment comes. The cylinder runs
+ * from the ship (v = 0) to Earth (v = 1).
+ */
+class BeamMaterial extends THREE.ShaderMaterial {
+  constructor(seed: number, edge = new THREE.Color(1.0, 0.8, 0.35), core = new THREE.Color(1.0, 1.0, 0.92)) {
+    super({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uPower: { value: 0 }, uTime: { value: 0 }, uSeed: { value: seed }, uEdge: { value: edge }, uCore: { value: core } },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        varying vec3 vN;
+        varying vec3 vV;
+        void main() {
+          vUv = uv;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vN = normalize(normalMatrix * normal);
+          vV = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uPower;
+        uniform float uTime;
+        uniform float uSeed;
+        uniform vec3 uEdge;
+        uniform vec3 uCore;
+        varying vec2 vUv;
+        varying vec3 vN;
+        varying vec3 vV;
+        void main() {
+          float core = pow(abs(dot(normalize(vN), normalize(vV))), 2.0);
+          float pulses = pow(0.5 + 0.5 * sin(vUv.y * 40.0 - uTime * 14.0 + uSeed), 8.0);
+          float flick = 0.8 + 0.2 * sin(uTime * 37.0 + uSeed * 3.0);
+          float a = uPower * (0.3 + 0.7 * core) * (0.55 + 1.3 * pulses) * flick;
+          vec3 col = mix(uEdge, uCore, core);
+          gl_FragColor = vec4(col * a, a);
+        }
+      `,
+    });
+  }
+}
+
+const HOLO_CYAN = 'vec3(0.45, 0.9, 1.0)';
+
+/**
+ * Hologram of the planet that was: a cyan lat-long wireframe with a glowing
+ * rim, drawn in from the bottom by a bright scan line, flickering.
+ */
+class HoloGlobeMaterial extends THREE.ShaderMaterial {
+  constructor() {
+    super({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uReveal: { value: 0 }, uOpacity: { value: 0 }, uTime: { value: 0 } },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        varying vec3 vN;
+        varying vec3 vV;
+        void main() {
+          vUv = uv;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vN = normalize(normalMatrix * normal);
+          vV = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uReveal;
+        uniform float uOpacity;
+        uniform float uTime;
+        varying vec2 vUv;
+        varying vec3 vN;
+        varying vec3 vV;
+        float gridLine(float x, float n) {
+          float d = 0.5 - abs(fract(x * n) - 0.5);
+          return 1.0 - smoothstep(0.0, 0.05, d);
+        }
+        void main() {
+          if (vUv.y > uReveal) discard;
+          float grid = max(gridLine(vUv.y, 12.0), gridLine(vUv.x, 24.0));
+          float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
+          float edge = exp(-pow((uReveal - vUv.y) / 0.02, 2.0)) * step(uReveal, 0.999);
+          float scan = 0.85 + 0.15 * sin(vUv.y * 200.0 - uTime * 6.0);
+          float flicker = 0.9 + 0.1 * sin(uTime * 41.0);
+          float a = (grid * 0.8 + rim * 0.35 + edge * 1.5) * scan * flicker * uOpacity;
+          vec3 col = mix(${HOLO_CYAN}, vec3(1.0), edge);
+          gl_FragColor = vec4(col * a, a);
+        }
+      `,
+    });
+  }
+}
+
+/**
+ * The survey line: a dashed holographic line marching along the route the
+ * bypass will take, spreading out from Earth's position to the table's rim.
+ */
+class SurveyLineMaterial extends THREE.ShaderMaterial {
+  constructor() {
+    super({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uReveal: { value: 0 }, uOpacity: { value: 0 }, uTime: { value: 0 }, uRadius: { value: TABLE_RADIUS } },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        varying vec3 vWorld;
+        void main() {
+          vUv = uv;
+          vec4 w = modelMatrix * vec4(position, 1.0);
+          vWorld = w.xyz;
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uReveal;
+        uniform float uOpacity;
+        uniform float uTime;
+        uniform float uRadius;
+        varying vec2 vUv;
+        varying vec3 vWorld;
+        void main() {
+          if (abs(vUv.y - 0.5) * 2.0 > uReveal) discard;
+          float dash = step(0.45, fract(vUv.y * 160.0 - uTime * 1.5));
+          float fade = 1.0 - smoothstep(uRadius * 0.5, uRadius, length(vWorld.xz));
+          float a = dash * fade * uOpacity * 0.9;
+          vec3 col = mix(vec3(1.0, 0.85, 0.25), ${HOLO_CYAN}, 0.35);
+          gl_FragColor = vec4(col * a, a);
+        }
+      `,
+    });
+  }
+}
+
+/**
+ * The construction sign, as a hologram: hazard stripes and lettering drawn
+ * once to a canvas, shown with scanlines, flicker, an occasional glitch, and
+ * wiped in from the left.
+ */
+class HoloSignMaterial extends THREE.ShaderMaterial {
+  constructor(map: THREE.Texture) {
+    super({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uMap: { value: map }, uReveal: { value: 0 }, uOpacity: { value: 0 }, uTime: { value: 0 } },
+      vertexShader: PLANE_VERT,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uMap;
+        uniform float uReveal;
+        uniform float uOpacity;
+        uniform float uTime;
+        varying vec2 vUv;
+        void main() {
+          if (vUv.x > uReveal) discard;
+          vec2 uv = vUv;
+          // Now and then a band of the sign slips sideways.
+          float glitch = step(0.93, fract(sin(floor(uTime * 7.0)) * 43758.5453));
+          uv.x += glitch * 0.012 * sin(uv.y * 70.0 + uTime * 30.0);
+          vec4 tex = texture2D(uMap, uv);
+          float scan = 0.7 + 0.3 * sin(vUv.y * 140.0 - uTime * 5.0);
+          float flicker = 0.88 + 0.12 * sin(uTime * 37.0) * sin(uTime * 13.0);
+          float edge = exp(-pow((uReveal - vUv.x) / 0.015, 2.0)) * step(uReveal, 0.999);
+          float a = (tex.a * scan * flicker + edge * 0.8) * uOpacity;
+          vec3 col = tex.rgb + vec3(edge);
+          gl_FragColor = vec4(col * a, a);
+        }
+      `,
+    });
+  }
+}
+
+/** Draw the construction sign: hazard-striped frame, lettering, on a clear ground. */
+function constructionSignTexture() {
+  const w = 1024,
+    h = 340;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  // Hazard-striped frame.
+  const band = 34;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.rect(band, band, w - band * 2, h - band * 2);
+  ctx.clip('evenodd');
+  ctx.fillStyle = '#ffcf3a';
+  for (let x = -h; x < w + h; x += 56) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + 28, 0);
+    ctx.lineTo(x + 28 - h, h);
+    ctx.lineTo(x - h, h);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  // Lettering.
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#c8f6ff';
+  ctx.font = '800 76px "Helvetica Neue", Arial, sans-serif';
+  ctx.fillText('HYPERSPACE BYPASS', w / 2, 128);
+  ctx.fillStyle = '#ffd95a';
+  ctx.font = '800 56px "Helvetica Neue", Arial, sans-serif';
+  ctx.fillText('UNDER CONSTRUCTION', w / 2, 214);
+  ctx.fillStyle = '#8fdcff';
+  ctx.font = '600 26px "Helvetica Neue", Arial, sans-serif';
+  ctx.fillText('VOGON CONSTRUCTOR FLEET', w / 2, 272);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/**
+ * The hitchhikers' teleport, in sim seconds from the blast: the white beam
+ * comes on, two figures rise up it, arrive aboard with a flash, beam fades.
+ */
+const TELEPORT = { on: -21, rise: -19.5, arrive: -14, off: -12, ship: 0 };
+
+/**
+ * The departure, in minutes after VOGON.depart: the ships leave one after
+ * another, the bypass fades in, and the construction hologram stutters and
+ * dies, all as one moment.
+ */
+const LEAVING = { shipStagger: 0.4, shipTakes: 3.5, bypassFrom: 1, bypassTo: 6, siteFadeFrom: 2, siteGone: 7, paceUntil: 8 };
+
+/** How long (real seconds) the explosion's parts play out. */
+const BLAST = { shock: 3.5, echo: 2.6, fireball: 1.3, embers: 4.5 };
+const EMBERS = 60;
+
 interface Chunk {
   mesh: THREE.Mesh;
   size: number;
+  /** Stretch, so pieces are shards and slabs rather than balls. */
+  shape: THREE.Vector3;
   dir: THREE.Vector3;
   speed: number;
   spin: THREE.Vector3;
 }
 
 /**
- * Every Thursday the Vogon fleet drops out of hyperspace over Earth, takes up
- * formation, locks on its beams and at ten o'clock demolishes the planet: a
- * flash, a shockwave and the pieces tumbling away. The fleet leaves, a
- * hyperspace bypass shimmers through where Earth was, and Earth is quietly
- * back on its arm once the scene ends.
+ * THE DEMOLITION OF EARTH: design brief
+ * ======================================
+ * (The Hitchhiker's Guide to the Galaxy.) This is the intent, written so the
+ * scene can be rebuilt from it with a better engine or more time; the code
+ * below is one way of meeting it, not the definition of it.
+ *
+ * Aim: cinematic, not physical. On a Thursday morning you should see the
+ * planet explode. The orrery's look applies: effects are light, gas and fire
+ * rather than solid objects; craft are yellow-enamel-and-brass automata.
+ *
+ * When: every Thursday, local time, whenever fiction mode is on, including
+ * when the clock is simply running in real time. Times are from VOGON in the
+ * catalogue (hours after the fleet's 08:00 arrival).
+ *
+ *   08:00–09:30  The Vogon fleet (seven blocky yellow ships) drops out of
+ *                hyperspace on golden streaks and takes up a ring formation
+ *                over Earth. Arrival is staggered ship by ship.
+ *   09:30–09:45  The announcement: the lead ship broadcasts to Earth (pulsing
+ *                ripples toward the planet). The fleet never just sits there:
+ *                the formation slowly circles Earth and closes in, lower and
+ *                tighter, like a noose.
+ *   09:45        Demolition beams lock on from every ship. They should feel
+ *                like demolition beams: a hot core, pulses of energy racing
+ *                down them toward Earth, flicker, and flares where they strike
+ *                the surface.
+ *   ~20 s before The hitchhikers: a bright white teleport beam shoots from
+ *                Earth's surface up to one of the ships, thin, at an angle from
+ *                elsewhere on the planet into the ship's underside (never along
+ *                its demolition beam); two figures (Arthur
+ *                and Ford) rise up it and arrive aboard with a flash; the
+ *                beam fades. Just before the end, as in the book.
+ *   last ~10 s   Crescendo. The beams grow heavier and pulse faster; glowing
+ *                cracks spread across the planet's surface.
+ *   10:00        Earth explodes:
+ *                  - a big flash, and the camera shakes;
+ *                  - the fleet rocks in the blast;
+ *                  - a fireball shell expands for about a second;
+ *                  - shockwaves race outward FAST (seconds, never minutes),
+ *                    textured and turbulent rather than a plain polygon ring:
+ *                    white-hot at the front, cooling through orange to blue,
+ *                    ragged-edged, with haze behind; tilted off the plane for
+ *                    depth;
+ *                  - Earth flies apart: chunks carrying its real surface, plus
+ *                    molten glowing pieces from inside, and a spray of embers.
+ *                    The pieces burst out quickly, then drift and fade.
+ *                The globe is hidden from 10:00; its arm and rod stay, empty.
+ *                The Moon stays where it is.
+ *   10:01–10:15  The construction site, while the fleet waits: a holographic
+ *                cyan wireframe of the planet that was, drawn in by a scan
+ *                line; a holographic HYPERSPACE BYPASS / UNDER CONSTRUCTION
+ *                sign (hazard-striped, scanlines, flicker, the odd glitch)
+ *                above it; a dashed survey line marching out along the future
+ *                route to the rim; each ship visibly at work from the start,
+ *                with a pulsing projector under its hull playing a defined
+ *                beam (core and running pulses) over the hologram. The sign
+ *                stays up, steady, until the fleet starts to leave.
+ *   10:15        One beat: the fleet leaves the way it came, ship by ship over
+ *                a few minutes (not drifting off for half an hour); the
+ *                construction hologram stutters, glitches and fades out; and
+ *                the hyperspace bypass fades in: a glowing lane straight through where Earth was, along its
+ *                old orbit, running rim to rim across the whole orrery and
+ *                fading out toward the table's edge, with traffic already on it.
+ *                It has its own hover tooltip and card.
+ *   12:00        Scene over: Earth is quietly back on its arm, ready for next
+ *                week.
+ *
+ * The ships are hoverable ("Vogon Constructor Fleet") and clickable (this
+ * scene's card) while they are there, real time or replay.
+ *
+ * Time: the explosion itself (flash, fireball, shockwaves, the pieces'
+ * initial burst, embers, shake) plays in REAL seconds, triggered when the
+ * clock runs forward through 10:00, so it looks the same at any speed and
+ * never sits frozen on screen at real time. Everything else follows sim time,
+ * so it scrubs and runs backwards. Arriving after 10:00 by a jump shows the
+ * aftermath (scattered pieces, no shockwave); running backwards through 10:00
+ * brings Earth back without an explosion.
+ *
+ * Replay (from the catalogue): jump to just before the fleet arrives, then
+ * pace it like a film: brisk (10 min/s) for the arrival, easing down (1 min/s)
+ * to REAL TIME for the teleport, the crescendo and the explosion, a minute a
+ * second while the construction site goes up, then brisk again (10 min/s) for
+ * the departure and the bypass. The camera frames Earth and the
+ * fleet; after the blast it eases back to take in the shockwave spreading and
+ * fading, and once the bypass opens it pulls right back to show the lane
+ * crossing the whole disc. If the viewer changes the speed, or takes the
+ * camera, stop steering that. When the scene ends, return to now at real time
+ * and fly the camera home.
  */
 class Demolition {
   readonly group = new THREE.Group();
@@ -911,22 +1386,54 @@ class Demolition {
   private bypassOpened = 0;
   suppressed = false;
   active = false;
+  /** Camera shake, 0..1, decaying after the blast. */
+  quake = 0;
   private ships: {
     ship: THREE.Group;
     streak: THREE.Mesh<THREE.ConeGeometry, GasConeMaterial>;
-    beam: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
+    beam: THREE.Mesh<THREE.CylinderGeometry, BeamMaterial>;
+    impact: THREE.Sprite;
+    /** Construction: a pulsing projector under the hull and the ray it plays on the hologram. */
+    emitter: THREE.Sprite;
+    ray: THREE.Mesh<THREE.CylinderGeometry, BeamMaterial>;
   }[] = [];
+  /** The ships themselves can be hovered ("Vogon Constructor Fleet") and clicked for the scene's card. */
+  readonly fleetBody: Body;
   private chunks: Chunk[] = [];
+  private embers: { sprite: THREE.Sprite; dir: THREE.Vector3; speed: number }[] = [];
   private flash = glow(0xfff3d0);
-  private shock: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+  private shock = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new ShockwaveMaterial(1.7));
+  private echo = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new ShockwaveMaterial(5.3));
+  private fireball = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), new FireballMaterial());
+  private cracks = new THREE.Mesh(new THREE.SphereGeometry(0.346, 64, 48), new CracksMaterial());
+  /** The announcement: ripples broadcast from the lead ship toward Earth. */
+  private ripples: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>[] = [];
+  /** The teleport: a white beam (core and glow), two hitchhikers rising up it, an arrival flash. */
+  private teleCore = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.006, 0.006, 1, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  private teleGlow = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.022, 0.022, 1, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xdfeaff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  private hitchhikers = [glow(0xffffff, 0), glow(0xcfe6ff, 0)];
+  private arrival = glow(0xffffff, 0);
+  /** The construction site: Earth's ghost, the sign, the survey line, and the ships' projector rays. */
+  private ghost = new THREE.Mesh(new THREE.SphereGeometry(0.34, 48, 32), new HoloGlobeMaterial());
+  private sign = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.43), new HoloSignMaterial(constructionSignTexture()));
+  private survey = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1, 6, 1, true), new SurveyLineMaterial());
+
   private lane: THREE.Mesh<THREE.CylinderGeometry, LaneMaterial>;
   private traffic: THREE.Sprite[] = [];
   private focus = new THREE.Group();
-  private flashAge = Infinity;
+  /** Real seconds since the blast; Infinity when it wasn't seen (arrived after it, or not yet). */
+  private blastAge = Infinity;
   private lastSim: number | null = null;
   private hours = -1;
   private start = 0;
   private time = 0;
+  private beamClock = 0;
   private earth = new THREE.Vector3();
 
   constructor(
@@ -935,52 +1442,59 @@ class Demolition {
   ) {
     this.group.name = 'vogons';
     const enamel = new THREE.MeshStandardMaterial({ color: 0xd9b43a, metalness: 0.5, roughness: 0.45 });
-    const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
+    const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true);
     for (let i = 0; i < SHIPS; i++) {
       const ship = vogonShip(mats, enamel);
       const streak = new THREE.Mesh(CONE, new GasConeMaterial(VOGON_YELLOW));
       streak.frustumCulled = false;
-      const beam = new THREE.Mesh(
-        beamGeo,
-        new THREE.MeshBasicMaterial({ color: 0xfff1b8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
-      );
-      this.ships.push({ ship, streak, beam });
-      this.group.add(ship, streak, beam);
+      const beam = new THREE.Mesh(beamGeo, new BeamMaterial(i * 1.9));
+      beam.frustumCulled = false;
+      const impact = glow(0xfff0c0, 0);
+      const emitter = glow(0x8fefff, 0);
+      emitter.position.set(0, -0.045, 0);
+      ship.add(emitter);
+      const ray = new THREE.Mesh(beamGeo, new BeamMaterial(i * 2.7, new THREE.Color(0.3, 0.75, 1.0), new THREE.Color(0.85, 1.0, 1.0)));
+      ray.frustumCulled = false;
+      ship.add(pickProxy(0.17));
+      this.ships.push({ ship, streak, beam, impact, emitter, ray });
+      this.group.add(ship, streak, beam, impact, ray);
     }
 
-    // The pieces: ocean, land, desert, ice, rock and a few glowing with magma.
-    const palette = [0x2b5d9b, 0x2b5d9b, 0x4f7d3a, 0xb89a5e, 0xe8eef2, 0x6e5a48];
+    // The pieces: Earth's own surface, and molten rock from inside.
+    const surface = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0, flatShading: true });
+    new ProgressiveTexture('earth', (t) => ((surface.map = t), (surface.needsUpdate = true))).start('2k');
+    sunlit(surface);
+    const molten = new THREE.MeshStandardMaterial({ color: 0x5a1e0a, emissive: 0xff5a14, emissiveIntensity: 0.8, roughness: 1, flatShading: true });
     const chunkGeo = new THREE.IcosahedronGeometry(1, 0);
     for (let i = 0; i < CHUNKS; i++) {
-      const magma = i % 6 === 0;
-      const mat = new THREE.MeshStandardMaterial({
-        color: magma ? 0x7a2a10 : palette[i % palette.length],
-        emissive: magma ? 0xff6a1a : 0x000000,
-        emissiveIntensity: magma ? 1.4 : 0,
-        roughness: 1,
-        flatShading: true,
-        envMapIntensity: 0,
-      });
-      if (!magma) sunlit(mat);
-      const mesh = new THREE.Mesh(chunkGeo, mat);
+      const hot = i % 5 === 0;
+      const mesh = new THREE.Mesh(chunkGeo, hot ? molten : surface);
+      mesh.visible = false;
+      const r = () => 0.45 + Math.random() * 0.9;
       this.chunks.push({
         mesh,
-        size: 0.025 + Math.random() * 0.05,
+        size: (hot ? 0.015 : 0.02) + Math.random() * 0.04,
+        shape: new THREE.Vector3(r(), r() * 0.6, r()),
         dir: new THREE.Vector3().randomDirection(),
-        speed: 0.6 + Math.random(),
-        spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(8),
+        speed: 0.5 + Math.random() * 0.9,
+        spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(4),
       });
       this.group.add(mesh);
     }
+    for (let i = 0; i < EMBERS; i++) {
+      const sprite = glow(i % 3 ? 0xff8a30 : 0xffe0a0, 0);
+      this.embers.push({ sprite, dir: new THREE.Vector3().randomDirection(), speed: 1 + Math.random() * 2 });
+      this.group.add(sprite);
+    }
 
-    this.shock = new THREE.Mesh(
-      new THREE.RingGeometry(0.9, 1, 64),
-      new THREE.MeshBasicMaterial({ color: 0xffb060, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
-    );
-    this.shock.rotation.x = -Math.PI / 2;
+    // Shockwaves lie a little off the plane, at different tilts, for depth.
+    this.shock.rotation.set(-Math.PI / 2 + 0.28, 0, 0.2);
+    this.echo.rotation.set(-Math.PI / 2 - 0.35, 0.3, 0);
+    this.shock.frustumCulled = this.echo.frustumCulled = false;
+    this.cracks.renderOrder = 2;
 
     // The hyperspace bypass, with traffic already using it.
-    this.lane = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1, 10, 1, true), new LaneMaterial());
+    this.lane = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 1, 10, 1, true), new LaneMaterial());
     this.lane.frustumCulled = false;
     for (let i = 0; i < 14; i++) {
       const car = glow(0xd8f0ff, 0);
@@ -988,7 +1502,19 @@ class Demolition {
       this.traffic.push(car);
       this.group.add(car);
     }
-    this.group.add(this.flash, this.shock, this.lane, this.focus, this.bypassFocus);
+    for (let i = 0; i < 4; i++) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.92, 1, 48),
+        new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+      );
+      this.ripples.push(ring);
+      this.group.add(ring);
+    }
+    this.teleCore.frustumCulled = this.teleGlow.frustumCulled = false;
+    this.group.add(this.teleGlow, this.teleCore, ...this.hitchhikers, this.arrival);
+    for (const m of [this.ghost, this.sign, this.survey]) m.frustumCulled = false;
+    this.group.add(this.ghost, this.survey, this.sign);
+    this.group.add(this.flash, this.shock, this.echo, this.fireball, this.cracks, this.lane, this.focus, this.bypassFocus);
 
     // A generous invisible sleeve along the lane, so it can be hovered and clicked anywhere.
     const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1, 8, 1, true), new THREE.MeshBasicMaterial({ visible: false }));
@@ -1029,12 +1555,28 @@ class Demolition {
       available: () => this.group.visible,
       rows: () => this.rows(),
     };
+    const shipProxies = this.ships.map(({ ship }) => ship.children[ship.children.length - 1] as THREE.Mesh);
+    this.fleetBody = {
+      ...this.body,
+      id: 'vogon-fleet',
+      hoverLabel: 'Vogon Constructor Fleet',
+      pickProxy: shipProxies[0],
+      extraProxies: shipProxies.slice(1),
+    };
   }
 
-  /** Where ship `i` sits in the formation over Earth. */
-  private station(i: number, out: THREE.Vector3) {
-    const a = (i / SHIPS) * Math.PI * 2 + 0.3;
-    return out.set(Math.cos(a) * 1.05, 0.55 + 0.12 * Math.sin(i * 2.1), Math.sin(a) * 1.05).add(this.earth);
+  /**
+   * Where ship `i` sits in the formation over Earth at `h` hours into the
+   * scene. Once in place the formation slowly circles the planet, and through
+   * the announcement it closes in, lower and tighter, until the beams lock on.
+   */
+  private station(i: number, out: THREE.Vector3, h = 0) {
+    const circling = Math.max(0, h - VOGON.inPlace) * 0.9;
+    const close = ramp(h, VOGON.inPlace, VOGON.beams);
+    const a = (i / SHIPS) * Math.PI * 2 + 0.3 + circling;
+    const radius = 1.05 - 0.15 * close;
+    const height = 0.55 - 0.15 * close + 0.12 * Math.sin(i * 2.1);
+    return out.set(Math.cos(a) * radius, height, Math.sin(a) * radius).add(this.earth);
   }
 
   /** Give the real Earth back. */
@@ -1042,43 +1584,78 @@ class Demolition {
     this.bodies.setPlanetHidden('earth', false);
   }
 
-  update(simMs: number, dt: number, jumped: boolean) {
+  /**
+   * Replay speed (sim seconds per second) for the scene at `simMs`: brisk for
+   * the fleet's arrival, easing to real time for the explosion, then brisk
+   * again for the departure and the bypass.
+   */
+  pace(simMs: number): number {
+    const t = (simMs - (vogonOccurrence(simMs) + VOGON.demolish * HOUR)) / 1000;
+    if (t < -150) return 600;
+    if (t < -22) return 60;
+    if (t < 8) return 1;
+    // A minute a second while the construction site goes up and the fleet leaves.
+    if (t < (VOGON.depart - VOGON.demolish) * 3600 + LEAVING.paceUntil * 60) return 60;
+    return 600;
+  }
+
+  update(simMs: number, dt: number, jumped: boolean, camera: THREE.Camera) {
     const start = vogonOccurrence(simMs);
     const h = (simMs - start) / HOUR;
+    const blast = start + VOGON.demolish * HOUR;
+    /** Sim seconds from the blast (negative before). */
+    const toBlast = (simMs - blast) / 1000;
     this.start = start;
     this.hours = h;
     this.active = h >= 0 && h <= VOGON.end;
     this.time += dt;
 
+    // Going forward through ten o'clock (not by a jump) sets it off.
     const prev = this.lastSim;
     this.lastSim = simMs;
-    const blast = start + VOGON.demolish * HOUR;
-    if (prev !== null && !jumped && Math.abs(simMs - prev) < 2 * DAY) {
-      if (blast > Math.min(prev, simMs) && blast <= Math.max(prev, simMs)) this.flashAge = 0;
+    if (prev !== null && !jumped && simMs > prev && simMs - prev < 2 * DAY && blast > prev && blast <= simMs) {
+      this.blastAge = 0;
+      this.quake = 1;
+    } else if (toBlast < 0) {
+      this.blastAge = Infinity;
     }
-    this.flashAge += dt;
+    this.blastAge += dt;
+    this.quake = Math.max(0, this.quake - dt * 0.7);
+    const age = this.blastAge;
+    const seen = Number.isFinite(age);
 
     const show = !this.suppressed && this.active;
-    this.group.visible = show || (!this.suppressed && this.flashAge < 3);
-    this.bodies.setPlanetHidden('earth', show && h >= VOGON.demolish);
-    if (!this.group.visible) return;
+    this.group.visible = show || (!this.suppressed && seen && age < BLAST.embers);
+    this.bodies.setPlanetHidden('earth', show && toBlast >= 0);
+    if (!this.group.visible) {
+      this.quake = 0;
+      return;
+    }
 
     this.bodies.positionOf('earth', this.earth);
     this.focus.position.copy(this.earth);
     const spot = new THREE.Vector3();
     const dir = new THREE.Vector3();
 
+    // Beams: lock on at 09:45, build to a crescendo in the last seconds, cut at the blast.
+    const crescendo = ramp(toBlast, -10, 0);
+    const power = toBlast < 0 ? ramp(h, VOGON.beams, VOGON.demolish - 0.05) * (0.7 + 0.6 * crescendo) : 0;
+    this.beamClock += dt * (1 + 2.5 * crescendo);
+
     // The fleet: down out of hyperspace, hold station, beams, and away again.
-    this.ships.forEach(({ ship, streak, beam }, i) => {
+    this.ships.forEach(({ ship, streak, beam, impact }, i) => {
       const lag = i * 0.08;
       const arrive = ramp(h, lag, VOGON.inPlace - 0.4 + lag);
-      const leave = ramp(h, VOGON.depart + lag * 0.5, VOGON.depart + 0.5 + lag * 0.5);
+      const goes = VOGON.depart + (i * LEAVING.shipStagger) / 60;
+      const leave = ramp(h, goes, goes + LEAVING.shipTakes / 60);
       ship.visible = this.active && arrive > 0 && leave < 1;
-      streak.visible = beam.visible = false;
+      streak.visible = beam.visible = impact.visible = false;
       if (!ship.visible) return;
-      this.station(i, spot);
+      this.station(i, spot, h);
       const rise = 8 * ((1 - arrive) ** 2 + leave ** 2);
-      ship.position.copy(spot).addScaledVector(UP, rise + 0.015 * Math.sin(this.time * 0.8 + i));
+      // The blast rocks the fleet.
+      const rock = seen ? Math.exp(-age * 1.5) * 0.06 * Math.sin(age * 18 + i) : 0;
+      ship.position.copy(spot).addScaledVector(UP, rise + 0.015 * Math.sin(this.time * 0.8 + i) + rock);
       ship.lookAt(this.earth.x, ship.position.y, this.earth.z);
       ship.rotateY(-Math.PI / 2);
 
@@ -1094,50 +1671,222 @@ class Demolition {
         streak.material.uniforms.uTime.value = this.time;
       }
 
-      // Demolition beams: lock on, brighten, cut out at the blast.
-      const power = ramp(h, VOGON.beams, VOGON.demolish) * (1 - ramp(h, VOGON.demolish, VOGON.demolish + 0.08));
       if (power > 0.01) {
-        beam.visible = true;
+        beam.visible = impact.visible = true;
         dir.copy(this.earth).sub(ship.position);
         const len = dir.length();
-        beam.position.copy(ship.position).addScaledVector(dir, 0.5);
-        beam.quaternion.setFromUnitVectors(UP, dir.divideScalar(len));
-        const w = 0.004 + 0.01 * power;
+        dir.divideScalar(len);
+        beam.position.copy(ship.position).addScaledVector(dir, len / 2);
+        beam.quaternion.setFromUnitVectors(UP, dir);
+        const w = 0.008 + 0.02 * power;
         beam.scale.set(w, len, w);
-        beam.material.opacity = power * (0.7 + 0.3 * Math.sin(this.time * 20 + i));
+        beam.material.uniforms.uPower.value = power;
+        beam.material.uniforms.uTime.value = this.beamClock;
+        // A flare where the beam strikes the surface.
+        impact.position.copy(this.earth).addScaledVector(dir, -0.35);
+        const flare = 0.7 + 0.3 * Math.sin(this.time * 31 + i * 2.3);
+        impact.scale.setScalar((0.08 + 0.14 * power) * flare);
+        impact.material.opacity = Math.min(1, power) * flare;
       }
     });
 
-    // The blast: flash in real time; shockwave and pieces in sim time.
-    const f = Math.exp(-this.flashAge * 1.1);
+    // Cracks glowing across the planet in its last seconds.
+    this.cracks.visible = toBlast < 0 && crescendo > 0;
+    if (this.cracks.visible) {
+      this.cracks.position.copy(this.earth);
+      this.cracks.material.uniforms.uIntensity.value = crescendo;
+      this.cracks.material.uniforms.uTime.value = this.time;
+    }
+
+    // The announcement: the lead ship broadcasts to Earth, ripples pulsing
+    // out toward the planet (in real time, so they pulse at any speed).
+    const lead = this.ships[0].ship;
+    const announcing = this.active && lead.visible && h >= VOGON.inPlace && h < VOGON.beams;
+    this.ripples.forEach((ring, k) => {
+      ring.visible = announcing;
+      if (!announcing) return;
+      const u = (this.time * 0.6 + k / this.ripples.length) % 1;
+      ring.position.lerpVectors(lead.position, this.earth, u * 0.7);
+      ring.lookAt(this.earth);
+      ring.scale.setScalar(0.06 + 0.3 * u);
+      ring.material.opacity = Math.sin(Math.PI * u) * 0.7;
+    });
+
+    // The hitchhikers: just before the end, a white teleport beam lifts two
+    // figures from Earth to one of the ships.
+    const tp = this.ships[TELEPORT.ship].ship;
+    const beamOn = toBlast < 0 && tp.visible ? ramp(toBlast, TELEPORT.on, TELEPORT.on + 1) * (1 - ramp(toBlast, TELEPORT.arrive, TELEPORT.off)) : 0;
+    this.teleCore.visible = this.teleGlow.visible = beamOn > 0.01;
+    if (this.teleCore.visible) {
+      // Up at an angle from elsewhere on Earth (well clear of this ship's
+      // demolition beam) into the underside of the ship.
+      // Of the two sides of the ship, use the one facing the camera, so it's seen.
+      const toShip = tp.position.clone().sub(this.earth).normalize();
+      const toCamera = camera.position.clone().sub(this.earth).normalize();
+      const sides = [1.0, -1.0].map((turn) => toShip.clone().applyAxisAngle(UP, turn).addScaledVector(UP, -0.25).normalize());
+      const footDir = sides[0].dot(toCamera) >= sides[1].dot(toCamera) ? sides[0] : sides[1];
+      const foot = this.earth.clone().addScaledVector(footDir, 0.34);
+      const hatch = tp.position.clone().addScaledVector(UP, -0.03);
+      dir.copy(hatch).sub(foot);
+      const len = dir.length();
+      dir.divideScalar(len);
+      for (const m of [this.teleCore, this.teleGlow]) {
+        m.position.lerpVectors(foot, hatch, 0.5);
+        m.quaternion.setFromUnitVectors(UP, dir);
+        m.scale.set(1, len, 1);
+      }
+      const shimmer = 0.85 + 0.15 * Math.sin(this.time * 25);
+      this.teleCore.material.opacity = beamOn * shimmer;
+      this.teleGlow.material.opacity = beamOn * 0.35 * shimmer;
+      this.hitchhikers.forEach((s, k) => {
+        const u = THREE.MathUtils.clamp((toBlast - TELEPORT.rise - k * 0.6) / (TELEPORT.arrive - TELEPORT.rise - 0.6), 0, 1);
+        s.visible = u > 0 && u < 1;
+        if (!s.visible) return;
+        s.position.lerpVectors(foot, hatch, u * u * (3 - 2 * u));
+        s.position.addScaledVector(new THREE.Vector3(-dir.z, 0, dir.x).normalize(), (k ? 1 : -1) * 0.008);
+        s.scale.setScalar(0.05 * (0.8 + 0.2 * Math.sin(this.time * 30 + k * 2)));
+        s.material.opacity = 1;
+      });
+    } else {
+      this.hitchhikers.forEach((s) => (s.visible = false));
+    }
+    const sinceArrive = toBlast - TELEPORT.arrive;
+    this.arrival.visible = toBlast < 0 && tp.visible && sinceArrive >= 0 && sinceArrive < 3;
+    if (this.arrival.visible) {
+      this.arrival.position.copy(tp.position).addScaledVector(UP, -0.03);
+      this.arrival.scale.setScalar(0.15 + 0.35 * Math.exp(-sinceArrive * 2));
+      this.arrival.material.opacity = Math.exp(-sinceArrive * 1.5);
+    }
+
+    // The explosion, in real time: flash, fireball, two shockwaves, embers.
+    const f = seen ? Math.exp(-age * 1.4) : 0;
     this.flash.visible = f > 0.01;
     this.flash.position.copy(this.earth);
-    this.flash.scale.setScalar(0.8 + 3.2 * Math.exp(-this.flashAge * 2));
+    this.flash.scale.setScalar(1 + 4.5 * Math.exp(-age * 2.2));
     this.flash.material.opacity = f;
 
-    const since = h - VOGON.demolish;
-    const shock = since >= 0 && since < 0.7 ? since / 0.7 : -1;
-    this.shock.visible = shock >= 0 && this.active;
-    if (this.shock.visible) {
-      this.shock.position.copy(this.earth);
-      this.shock.scale.setScalar(0.4 + 2.6 * shock);
-      this.shock.material.opacity = (1 - shock) ** 2 * 0.8;
+    const fb = age / BLAST.fireball;
+    this.fireball.visible = fb < 1;
+    if (this.fireball.visible) {
+      this.fireball.position.copy(this.earth);
+      this.fireball.scale.setScalar(0.36 + 1.1 * (1 - (1 - fb) ** 3));
+      this.fireball.material.uniforms.uFade.value = (1 - fb) ** 2;
     }
-    const scatter = since >= 0 && this.active;
+    for (const [mesh, life, reach, delay] of [
+      [this.shock, BLAST.shock, 3.4, 0],
+      [this.echo, BLAST.echo, 2.3, 0.25],
+    ] as const) {
+      const u = (age - delay) / life;
+      mesh.visible = u >= 0 && u < 1;
+      if (!mesh.visible) continue;
+      mesh.position.copy(this.earth);
+      mesh.scale.setScalar(reach);
+      mesh.material.uniforms.uAge.value = u;
+      mesh.material.uniforms.uFront.value = 1 - (1 - u) ** 3;
+    }
+    const e = age / BLAST.embers;
+    for (const em of this.embers) {
+      em.sprite.visible = e < 1;
+      if (e >= 1) continue;
+      em.sprite.position.copy(this.earth).addScaledVector(em.dir, 0.3 + em.speed * (1 - Math.exp(-age * 1.3)) * 1.1);
+      em.sprite.scale.setScalar(0.05 * (1 - e) + 0.01);
+      em.sprite.material.opacity = (1 - e) ** 1.5;
+    }
+
+    // The pieces: a fast burst (real time, if it was seen), then a slow drift and fade (sim time).
+    const hoursSince = h - VOGON.demolish;
+    const scatter = toBlast >= 0 && this.active;
+    const burst = 1 - Math.exp(-(seen ? age : 99) * 0.9);
+    const fade = 1 - ramp(hoursSince, 1.2, VOGON.end - VOGON.demolish);
     for (const c of this.chunks) {
-      c.mesh.visible = scatter;
-      if (!scatter) continue;
-      const out = 0.15 + c.speed * 0.9 * Math.pow(since, 0.7);
+      c.mesh.visible = scatter && fade > 0.02;
+      if (!c.mesh.visible) continue;
+      const out = 0.22 + c.speed * (1.1 * burst + 0.12 * hoursSince);
       c.mesh.position.copy(this.earth).addScaledVector(c.dir, out);
-      c.mesh.rotation.set(c.spin.x * since, c.spin.y * since, c.spin.z * since);
-      const fade = 1 - ramp(since, 1.2, VOGON.end - VOGON.demolish);
-      c.mesh.visible = fade > 0.02;
-      c.mesh.scale.setScalar(c.size * fade);
+      const turn = Math.min(seen ? age : 30, 30) * 0.4 + hoursSince * 3;
+      c.mesh.rotation.set(c.spin.x * turn, c.spin.y * turn, c.spin.z * turn);
+      c.mesh.scale.copy(c.shape).multiplyScalar(c.size * fade);
     }
+
+    // The construction site, while the fleet waits: Earth's ghost drawn in,
+    // the sign wiped in above it, the survey line spreading along the route,
+    // all fading as the real bypass opens.
+    const min = 1 / 60;
+    const d0 = VOGON.demolish;
+    // Steady until the fleet starts to go; then it stutters, dropping out more
+    // and more, and fades as the ships leave and the bypass comes in.
+    const dying = ramp(h, VOGON.depart, VOGON.depart + LEAVING.siteGone * min);
+    const fadeOut = 1 - ramp(h, VOGON.depart + LEAVING.siteFadeFrom * min, VOGON.depart + LEAVING.siteGone * min);
+    const stutter = dying > 0 && Math.sin(this.time * 53) * Math.sin(this.time * 17.3) > 0.7 - 1.2 * dying ? 0.12 : 1;
+    const site = this.active ? fadeOut * stutter : 0;
+    const globe = ramp(h, d0 + 1 * min, d0 + 5 * min);
+    const signIn = ramp(h, d0 + 3 * min, d0 + 6 * min);
+    const surveyIn = ramp(h, d0 + 5 * min, d0 + 11 * min);
+    this.ghost.visible = site > 0 && globe > 0;
+    this.sign.visible = site > 0 && signIn > 0;
+    this.survey.visible = site > 0 && surveyIn > 0;
+    // Projectors come on a little before the hologram starts to appear, so
+    // the ships are visibly at work from the first moment.
+    const projecting = this.active && h >= d0 + 0.5 * min && h < VOGON.depart ? site * ramp(h, d0 + 0.5 * min, d0 + 1.5 * min) : 0;
+    if (this.ghost.visible) {
+      this.ghost.position.copy(this.earth);
+      this.ghost.rotation.y = this.time * 0.15;
+      this.ghost.material.uniforms.uReveal.value = globe;
+      this.ghost.material.uniforms.uOpacity.value = site;
+      this.ghost.material.uniforms.uTime.value = this.time;
+    }
+    if (this.sign.visible) {
+      this.sign.position.copy(this.earth).addScaledVector(UP, 0.72);
+      this.sign.quaternion.copy(camera.quaternion);
+      this.sign.material.uniforms.uReveal.value = signIn;
+      this.sign.material.uniforms.uOpacity.value = site;
+      this.sign.material.uniforms.uTime.value = this.time;
+    }
+    if (this.survey.visible) {
+      const tangent = new THREE.Vector3(-(this.earth.z - SUN.z), 0, this.earth.x - SUN.x).normalize();
+      const fromCentre = Math.hypot(this.earth.x - SUN.x, this.earth.z - SUN.z);
+      const length = 2 * Math.sqrt(Math.max(1, TABLE_RADIUS ** 2 - fromCentre ** 2));
+      this.survey.position.copy(this.earth);
+      this.survey.quaternion.setFromUnitVectors(UP, tangent);
+      this.survey.scale.set(1, length, 1);
+      this.survey.material.uniforms.uReveal.value = surveyIn;
+      this.survey.material.uniforms.uOpacity.value = site;
+      this.survey.material.uniforms.uTime.value = this.time;
+    }
+    // Each ship's projector pulses under its hull and plays a ray over the
+    // hologram, sweeping across it.
+    const side = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    this.ships.forEach(({ ship, emitter, ray }, i) => {
+      const on = ship.visible && projecting > 0.01;
+      emitter.visible = ray.visible = on;
+      if (!on) return;
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 6 + i * 1.3);
+      emitter.scale.setScalar(0.07 + 0.06 * pulse);
+      emitter.material.opacity = projecting * (0.55 + 0.45 * pulse);
+      dir.copy(ship.position).sub(this.earth).normalize();
+      side.set(-dir.z, 0, dir.x).normalize();
+      target
+        .copy(dir)
+        .addScaledVector(side, 0.5 * Math.sin(this.time * 1.3 + i * 1.7))
+        .addScaledVector(UP, 0.4 * Math.cos(this.time * 0.9 + i))
+        .normalize()
+        .multiplyScalar(0.34)
+        .add(this.earth);
+      const from = emitter.getWorldPosition(spot);
+      const along = target.sub(from);
+      const len = along.length();
+      along.divideScalar(len);
+      ray.position.copy(from).addScaledVector(along, len / 2);
+      ray.quaternion.setFromUnitVectors(UP, along);
+      ray.scale.set(0.006, len, 0.006);
+      ray.material.uniforms.uPower.value = projecting * 0.9;
+      ray.material.uniforms.uTime.value = this.time;
+    });
 
     // The bypass: a straight lane through where Earth was, along its old
     // orbit, right across the orrery; traffic already on it.
-    const open = this.active ? ramp(h, VOGON.depart, VOGON.depart + 0.4) : 0;
+    const open = this.active ? ramp(h, VOGON.depart + LEAVING.bypassFrom / 60, VOGON.depart + LEAVING.bypassTo / 60) : 0;
     this.lane.visible = open > 0;
     this.traffic.forEach((t) => (t.visible = open > 0));
     if (open > 0) {
@@ -1164,13 +1913,61 @@ class Demolition {
     const when = (hours: number) =>
       new Date(this.start + hours * HOUR).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     if (!this.active) return [['Next demolition', when(VOGON.demolish)]];
+    const toBlast = (h - VOGON.demolish) * 3600;
     const status =
-      h < VOGON.inPlace ? 'Fleet arriving' : h < VOGON.demolish ? 'Fleet in position' : h < VOGON.depart ? 'Demolished' : 'Bypass open';
+      h < VOGON.inPlace
+        ? 'Fleet arriving'
+        : h < VOGON.beams
+          ? 'Announcing'
+          : toBlast < TELEPORT.arrive
+            ? 'Beams locked on'
+            : h < VOGON.demolish
+              ? 'Two hitchhikers aboard'
+              : h < VOGON.demolish + 1 / 60
+                ? 'Demolished'
+                : h < VOGON.depart
+                  ? 'Bypass under construction'
+                  : 'Bypass open';
     return [
       ['Demolition', when(VOGON.demolish)],
       ['Status', status],
       ['Earth back', when(VOGON.end)],
     ];
+  }
+
+  /**
+   * Camera beats for the replay: after the blast, ease out to take in the
+   * shockwave spreading and fading; once the bypass opens, pull right back to
+   * show it crossing the whole orrery. Null while the opening framing holds.
+   */
+  beat(simMs: number): { key: string; points: THREE.Vector3[]; duration: number } | null {
+    const start = vogonOccurrence(simMs);
+    const h = (simMs - start) / HOUR;
+    this.bodies.positionOf('earth', this.earth);
+    if (h >= VOGON.depart + LEAVING.bypassFrom / 60) {
+      const tangent = new THREE.Vector3(-(this.earth.z - SUN.z), 0, this.earth.x - SUN.x).normalize();
+      const fromCentre = Math.hypot(this.earth.x - SUN.x, this.earth.z - SUN.z);
+      const half = Math.sqrt(Math.max(1, TABLE_RADIUS ** 2 - fromCentre ** 2)) * 0.8;
+      return {
+        key: 'bypass',
+        points: [this.earth.clone().addScaledVector(tangent, half), this.earth.clone().addScaledVector(tangent, -half), this.earth.clone()],
+        duration: 3,
+      };
+    }
+    if (simMs >= start + VOGON.demolish * HOUR && this.blastAge > 0.5) {
+      const r = 3.4;
+      return {
+        key: 'shock',
+        points: [
+          this.earth.clone().add(new THREE.Vector3(r, 0, 0)),
+          this.earth.clone().add(new THREE.Vector3(-r, 0, 0)),
+          this.earth.clone().add(new THREE.Vector3(0, 0, r)),
+          this.earth.clone().add(new THREE.Vector3(0, 0, -r)),
+        ],
+        duration: 2.5,
+      };
+    }
+    return null;
   }
 
   /** Earth and the fleet's formation round it. */
@@ -1639,6 +2436,7 @@ export class Fiction {
       this.breakaway.body,
       this.demolition.body,
       this.demolition.bypassBody,
+      this.demolition.fleetBody,
       this.utopia.body,
       this.wormhole.body,
       petrova.body,
@@ -1685,12 +2483,27 @@ export class Fiction {
     if (!this.on || this.breakaway.suppressed) this.breakaway.release();
   }
 
-  update(simMs: number, dt: number, elapsed: number, jumped: boolean) {
+  update(simMs: number, dt: number, elapsed: number, jumped: boolean, camera: THREE.Camera) {
     if (!this.on) return;
     this.wotw.update(simMs, dt, jumped);
     this.breakaway.update(simMs, dt, jumped);
-    this.demolition.update(simMs, dt, jumped);
+    this.demolition.update(simMs, dt, jumped, camera);
     for (const p of this.places) if (p.object.visible) p.update(simMs, elapsed);
+  }
+
+  /** Camera shake from fiction (the planet exploding), 0..1. */
+  get quake() {
+    return this.on ? this.demolition.quake : 0;
+  }
+
+  /** A camera beat a scene wants at `simMs` (a new key means fly to frame its points), or null. */
+  sceneBeat(id: string, simMs: number): { key: string; points: THREE.Vector3[]; duration: number } | null {
+    return id === VOGON_DEMOLITION.id ? this.demolition.beat(simMs) : null;
+  }
+
+  /** The replay speed a scene wants at `simMs` (sim seconds per second), or null to leave it be. */
+  scenePace(id: string, simMs: number): number | null {
+    return id === VOGON_DEMOLITION.id ? this.demolition.pace(simMs) : null;
   }
 
   /**

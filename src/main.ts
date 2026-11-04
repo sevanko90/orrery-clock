@@ -229,7 +229,16 @@ let pendingFrame: string | null = null;
  * The scene played from the catalogue, until it ends (then the orrery goes
  * back to now, at real time) or the clock is taken elsewhere (then it's dropped).
  */
-let playing: { id: string; end: number; jumps: number; followed: boolean } | null = null;
+let playing: {
+  id: string;
+  end: number;
+  jumps: number;
+  followed: boolean;
+  /** The speed step the scene last set; if the clock is on another, the user has taken over. */
+  paced: number | null;
+  /** The last camera beat flown to; null once the user takes the camera. */
+  beat: string | null;
+} | null = null;
 /** Places switched off in the catalogue (remembered). */
 const hiddenPlaces = new Set<string>();
 try {
@@ -312,7 +321,7 @@ function playFiction(entry: FictionEntry) {
   clock.jumpTo(start - (entry.leadMs ?? 6 * 3_600_000));
   const step = SPEED_STEPS.findIndex((x) => x.speed === (entry.playSpeed ?? 86_400));
   clock.setStep(step >= 0 ? step : DAY_PER_SECOND);
-  playing = { id: entry.id, end: start + (entry.durationMs ?? 0), jumps: clock.jumps, followed: false };
+  playing = { id: entry.id, end: start + (entry.durationMs ?? 0), jumps: clock.jumps, followed: false, paced: clock.step, beat: '' };
   fiction.setPlaying(entry.id);
   pendingFrame = entry.id;
   info.show(body, clock.nowMs());
@@ -341,6 +350,8 @@ document.getElementById('credits-btn')!.addEventListener('click', () => credits.
 let lastInteraction = -Infinity;
 stage.controls.addEventListener('start', () => {
   lastInteraction = performance.now();
+  // The viewer has taken the camera: a playing scene stops directing it.
+  if (playing) playing.beat = null;
   stage.controls.autoRotate = false;
 });
 stage.controls.addEventListener('end', () => (lastInteraction = performance.now()));
@@ -352,10 +363,20 @@ const pointer = new THREE.Vector2();
 function allBodies(): Body[] {
   return fiction ? [...bodies.bodies, ...fiction.bodies] : bodies.bodies;
 }
+/** Is the object on show, all the way up its parents? (A hidden ship or globe can't be picked.) */
+function shown(o: THREE.Object3D | null): boolean {
+  for (; o; o = o.parent) if (!o.visible) return false;
+  return true;
+}
 function activeProxies() {
   return allBodies()
     .filter((b) => (!b.moon || bodies.moonsVisible) && (b.available?.() ?? true))
-    .map((b) => b.pickProxy);
+    .flatMap((b) => [b.pickProxy, ...(b.extraProxies ?? [])])
+    .filter(shown);
+}
+/** The body a pick target stands for. */
+function bodyOf(o: THREE.Object3D): Body | null {
+  return allBodies().find((b) => b.pickProxy === o || b.extraProxies?.includes(o)) ?? null;
 }
 /**
  * Body under the pointer (call after setPointer). Moons sit inside their
@@ -363,9 +384,8 @@ function activeProxies() {
  */
 function bodyUnderPointer(): Body | null {
   const hits = raycaster.intersectObjects(activeProxies(), false);
-  const all = allBodies();
-  const hit = hits.find((h) => all.find((b) => b.pickProxy === h.object)?.moon) ?? hits[0];
-  return hit ? (all.find((b) => b.pickProxy === hit.object) ?? null) : null;
+  const hit = hits.find((h) => bodyOf(h.object)?.moon) ?? hits[0];
+  return hit ? bodyOf(hit.object) : null;
 }
 const hoverTag = document.getElementById('hover-tag')!;
 const canvas = stage.renderer.domElement;
@@ -416,7 +436,7 @@ canvas.addEventListener('pointermove', (e) => {
   const markerId = body ? null : pickMarker();
   const markerName = markerId ? bodies.bodies.find((b) => b.id === markerId)?.name : null;
   const lore = body || markerName ? null : (discworld?.pickLore(raycaster) ?? null);
-  const label = body ? body.name : markerName ? `${markerName}: true position` : (lore?.name ?? null);
+  const label = body ? (body.hoverLabel ?? body.name) : markerName ? `${markerName}: true position` : (lore?.name ?? null);
   canvas.style.cursor = label ? 'pointer' : '';
   hoverTag.hidden = !label;
   if (label) {
@@ -484,7 +504,29 @@ function step(now: number) {
   if (playing) {
     if (clock.jumps !== playing.jumps) dropScene();
     else if (simMs >= playing.end) finishScene();
-    else if (!playing.followed && fiction) {
+    else if (fiction && playing.paced !== null) {
+      // Some scenes vary their replay speed (slowing for the big moment),
+      // until the user changes the speed themselves.
+      if (clock.step !== playing.paced) playing.paced = null;
+      else {
+        const pace = fiction.scenePace(playing.id, simMs);
+        const step = pace === null ? -1 : SPEED_STEPS.findIndex((x) => x.speed === pace);
+        if (step >= 0 && step !== clock.step) {
+          clock.setStep(step);
+          playing.paced = step;
+        }
+      }
+    }
+    if (playing && playing.beat !== null && fiction) {
+      // Camera beats: the scene reframes itself at its big moments.
+      const beat = fiction.sceneBeat(playing.id, simMs);
+      if (beat && beat.key !== playing.beat) {
+        playing.beat = beat.key;
+        focus.frame(beat.points, beat.duration);
+        lastInteraction = now; // hold off idle auto-rotation while the scene directs
+      }
+    }
+    if (playing && !playing.followed && fiction) {
       // Some scenes hand over from a framed view to riding along with their body.
       const from = fiction.followFrom(playing.id);
       const body = fiction.bodies.find((b) => b.id === playing!.id);
@@ -495,7 +537,7 @@ function step(now: number) {
     }
   }
   if (fiction) {
-    fiction.update(simMs, dt, elapsed, jumped);
+    fiction.update(simMs, dt, elapsed, jumped, stage.camera);
     if (pendingFrame) {
       const points = fiction.framePoints(pendingFrame);
       if (points.length) focus.frame(points, 2.4);
@@ -524,7 +566,7 @@ function step(now: number) {
     stage.camera.updateProjectionMatrix();
   }
   // An elephant shifting its feet shakes the whole Disc (and the camera).
-  const quake = discworld?.quake ?? 0;
+  const quake = Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0);
   const shake = quake > 0 ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
   if (shake) stage.camera.position.add(shake);
   stage.render();

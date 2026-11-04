@@ -110,14 +110,14 @@ export const WORMHOLE: FictionEntry = {
 const HOUR = 3_600_000;
 /** The demolition's timetable, in hours from the fleet's arrival (Thursday 08:00 local). */
 export const VOGON = {
-  /** Ships in formation over Earth. */
+  /** Ships in formation over Earth; the announcement begins. */
   inPlace: 1.5,
   /** Demolition beams lock on. */
   beams: 1.75,
   /** 10:00: Earth goes. */
   demolish: 2,
-  /** The fleet leaves and the bypass opens. */
-  depart: 2.5,
+  /** The fleet leaves (15 minutes after) and the bypass opens. */
+  depart: 2.25,
   /** Earth restored, ready for next week. */
   end: 4,
 };

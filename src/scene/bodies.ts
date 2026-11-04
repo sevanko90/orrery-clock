@@ -32,6 +32,10 @@ export interface Body {
   rows?: () => [string, string][];
   /** False while the body is not on show (so it can't be picked). */
   available?: () => boolean;
+  /** Hover text in place of the name (e.g. a fleet whose card is its scene's). */
+  hoverLabel?: string;
+  /** Further pick targets standing for the same body (e.g. each ship of a fleet). */
+  extraProxies?: THREE.Object3D[];
 }
 
 function glowTexture(inner: string, outer: string) {
