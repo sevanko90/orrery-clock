@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MOON_SYSTEMS, moonSize, sunlit, type Bodies, type Body } from './bodies';
 import type { Materials } from './materials';
-import { ARMS, PLANE_Y, TABLE_RADIUS, toWorld } from './layout';
+import { ARMS, PLANE_Y, SUN_RADIUS, TABLE_RADIUS, toWorld } from './layout';
 import { cometPosition, sampleOrbit, type CometElements } from '../astro/orbits';
 import { J2000, julianDate } from '../astro/time';
 import { ProgressiveTexture } from './textures';
@@ -13,6 +13,7 @@ import {
   CERES_STATION,
   EROS,
   EROS_ORBIT,
+  PETROVA_LINE,
   RING_GATE,
   RING_GATE_AT,
   TYCHO_ORBIT,
@@ -1181,6 +1182,145 @@ class Demolition {
   }
 }
 
+// ---- Project Hail Mary: the Petrova line --------------------------------------------------
+
+const ASTROPHAGE = 600;
+
+/**
+ * Astrophage in transit: points flowing between two ends, half outbound and
+ * half returning, fanning out toward Venus. Positions are worked out in the
+ * shader from the two ends, so the stream follows Venus round its orbit.
+ */
+class AstrophageMaterial extends THREE.ShaderMaterial {
+  constructor() {
+    super({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uFrom: { value: new THREE.Vector3() },
+        uTo: { value: new THREE.Vector3() },
+        uTime: { value: 0 },
+        uScale: { value: 110 },
+        uColor: { value: new THREE.Color(0xff3b2e) },
+      },
+      vertexShader: /* glsl */ `
+        attribute float aT;
+        attribute float aDir;
+        attribute vec3 aSeed;
+        uniform vec3 uFrom;
+        uniform vec3 uTo;
+        uniform float uTime;
+        uniform float uScale;
+        varying float vA;
+        void main() {
+          float t = fract(aT + uTime * 0.035 * aDir);
+          vec3 p = uFrom + (uTo - uFrom) * t + aSeed * (0.03 + 0.22 * t * t);
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * mv;
+          gl_PointSize = uScale * (0.6 + 0.4 * fract(aT * 7.31)) / -mv.z;
+          vA = smoothstep(0.0, 0.06, t) * smoothstep(1.0, 0.9, t);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor;
+        varying float vA;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          float a = pow(smoothstep(0.5, 0.0, d), 1.5) * vA * 0.6;
+          gl_FragColor = vec4(uColor * a, a);
+        }
+      `,
+    });
+  }
+}
+
+class PetrovaLine {
+  readonly object = new THREE.Group();
+  readonly body: Body;
+  private mat = new AstrophageMaterial();
+  private haze = glow(0xff4a35, 0.2);
+  private sleeve: THREE.Mesh;
+  /** A faint continuous glow along the line, under the particles. */
+  private core = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.035, 1, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xff3b2e, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  private mid = new THREE.Group();
+  private venus = new THREE.Vector3();
+  private from = new THREE.Vector3();
+
+  constructor(private bodies: Bodies) {
+    this.object.name = PETROVA_LINE.id;
+    const geo = new THREE.BufferGeometry();
+    const t = new Float32Array(ASTROPHAGE);
+    const dir = new Float32Array(ASTROPHAGE);
+    const seed = new Float32Array(ASTROPHAGE * 3);
+    for (let i = 0; i < ASTROPHAGE; i++) {
+      t[i] = Math.random();
+      dir[i] = i % 2 ? 1 : -1;
+      const v = new THREE.Vector3().randomDirection().multiplyScalar(Math.random());
+      // The two flows keep slightly apart, so the line has a little body.
+      v.y += dir[i] * 0.15;
+      seed.set([v.x, v.y, v.z], i * 3);
+    }
+    geo.setAttribute('aT', new THREE.BufferAttribute(t, 1));
+    geo.setAttribute('aDir', new THREE.BufferAttribute(dir, 1));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ASTROPHAGE * 3), 3));
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
+    const points = new THREE.Points(geo, this.mat);
+    points.frustumCulled = false;
+
+    // An invisible sleeve along the line for hovering and clicking.
+    this.sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1, 8, 1, true), new THREE.MeshBasicMaterial({ visible: false }));
+    this.haze.scale.setScalar(1.2);
+    this.object.add(this.core, points, this.haze, this.sleeve, this.mid);
+    this.body = {
+      id: PETROVA_LINE.id,
+      facts: null,
+      name: PETROVA_LINE.title,
+      kind: PETROVA_LINE.source,
+      blurb: PETROVA_LINE.blurb,
+      group: this.mid,
+      pickProxy: this.sleeve,
+      radius: 1,
+      upgrade: () => undefined,
+      available: () => this.object.visible,
+      rows: () => [
+        ['From', 'The Sun'],
+        ['To', 'Venus'],
+        ['Seen in', 'Infrared'],
+        ['The Sun', 'Slowly dimming'],
+      ],
+    };
+  }
+
+  update(elapsed: number) {
+    this.bodies.positionOf('venus', this.venus);
+    const axis = this.venus.clone().sub(SUN);
+    const len = axis.length();
+    axis.divideScalar(len);
+    // Leave from the Sun's surface, not its centre.
+    this.from.copy(SUN).addScaledVector(axis, SUN_RADIUS * 1.02);
+    this.mat.uniforms.uFrom.value.copy(this.from);
+    this.mat.uniforms.uTo.value.copy(this.venus);
+    this.mat.uniforms.uTime.value = elapsed;
+    const span = len - SUN_RADIUS;
+    this.mid.position.copy(this.from).addScaledVector(axis, span / 2);
+    this.sleeve.position.copy(this.mid.position);
+    this.sleeve.quaternion.setFromUnitVectors(UP, axis);
+    this.sleeve.scale.set(1, span, 1);
+    this.core.position.copy(this.mid.position);
+    this.core.quaternion.copy(this.sleeve.quaternion);
+    this.core.scale.set(1, span, 1);
+    this.core.material.opacity = 0.12 + 0.03 * Math.sin(elapsed * 1.7);
+    // Breeding haze round Venus.
+    this.haze.position.copy(this.venus);
+    this.haze.material.opacity = 0.16 + 0.06 * Math.sin(elapsed * 0.9);
+  }
+}
+
 // ---- The Expanse --------------------------------------------------------------------------
 
 const xyz = { x: 0, y: 0, z: 0 };
@@ -1484,11 +1624,14 @@ export class Fiction {
     this.utopia = new UtopiaPlanitia(bodies.surfaceFrame('mars')!, mats);
     this.wormhole = new Wormhole(bodies);
     this.root.add(this.wormhole.anchor);
+    const petrova = new PetrovaLine(bodies);
+    this.root.add(petrova.object);
     const expanse = [new CeresStationPlace(mats), new ErosPlace(), new TychoStationPlace(mats), new RingGatePlace()];
     this.root.add(...expanse.map((p) => p.object));
     this.places = [
       { id: UTOPIA_PLANITIA.id, object: this.utopia.anchor, update: (_ms, elapsed) => this.utopia.update(elapsed) },
       { id: WORMHOLE.id, object: this.wormhole.anchor, update: (_ms, elapsed) => this.wormhole.update(elapsed) },
+      { id: PETROVA_LINE.id, object: petrova.object, update: (_ms, elapsed) => petrova.update(elapsed) },
       ...expanse.map((p) => ({ id: p.body.id, object: p.object, update: (ms: number, elapsed: number) => p.update(ms, elapsed) })),
     ];
     this.bodies = [
@@ -1498,6 +1641,7 @@ export class Fiction {
       this.demolition.bypassBody,
       this.utopia.body,
       this.wormhole.body,
+      petrova.body,
       ...expanse.map((p) => p.body),
     ];
     this.setEnabled(false);

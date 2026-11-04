@@ -153,6 +153,18 @@ export const VOGON_DEMOLITION: FictionEntry = {
     'and Earth is back by lunchtime.',
 };
 
+// ---- Project Hail Mary -----------------------------------------------------------------
+
+export const PETROVA_LINE: FictionEntry = {
+  id: 'petrova',
+  title: 'The Petrova Line',
+  source: 'Project Hail Mary · Andy Weir',
+  kind: 'place',
+  blurb:
+    'Astrophage: single-celled life that feeds on starlight, migrating from the surface of the Sun to Venus to breed, ' +
+    'and back again. The stream shows up as a faint infrared line between the two, and the Sun is slowly growing dimmer for it.',
+};
+
 // ---- The Expanse ------------------------------------------------------------------------
 
 const EXPANSE = 'The Expanse';
@@ -216,6 +228,7 @@ export const FICTION: FictionEntry[] = [
   VOGON_DEMOLITION,
   UTOPIA_PLANITIA,
   WORMHOLE,
+  PETROVA_LINE,
   CERES_STATION,
   EROS,
   TYCHO_STATION,
