@@ -89,8 +89,9 @@ export class FictionPanel {
     this.lastRender = t;
     for (const entry of FICTION) {
       const start = nextOccurrence(entry, simMs);
+      const now = start !== null && simMs >= start && simMs <= start + (entry.durationMs ?? 0);
       const label =
-        start === null ? (this.isShown(entry.id) ? 'Always on show · Show' : 'Hidden') : start <= simMs ? 'Happening now · Replay' : `${fmtDate(start)} · Play`;
+        start === null ? (this.isShown(entry.id) ? 'Always on show · Show' : 'Hidden') : now ? 'Happening now · Replay' : `${fmtDate(start)} · Play`;
       const el = this.when.get(entry.id)!;
       if (el.textContent !== label) el.textContent = label;
     }

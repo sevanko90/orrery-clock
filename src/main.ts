@@ -229,7 +229,7 @@ let pendingFrame: string | null = null;
  * The scene played from the catalogue, until it ends (then the orrery goes
  * back to now, at real time) or the clock is taken elsewhere (then it's dropped).
  */
-let playing: { id: string; end: number; jumps: number } | null = null;
+let playing: { id: string; end: number; jumps: number; followed: boolean } | null = null;
 /** Places switched off in the catalogue (remembered). */
 const hiddenPlaces = new Set<string>();
 try {
@@ -309,9 +309,10 @@ function playFiction(entry: FictionEntry) {
     }
     return select(body);
   }
-  clock.jumpTo(start - 6 * 3_600_000);
-  clock.setStep(DAY_PER_SECOND);
-  playing = { id: entry.id, end: start + (entry.durationMs ?? 0), jumps: clock.jumps };
+  clock.jumpTo(start - (entry.leadMs ?? 6 * 3_600_000));
+  const step = SPEED_STEPS.findIndex((x) => x.speed === (entry.playSpeed ?? 86_400));
+  clock.setStep(step >= 0 ? step : DAY_PER_SECOND);
+  playing = { id: entry.id, end: start + (entry.durationMs ?? 0), jumps: clock.jumps, followed: false };
   fiction.setPlaying(entry.id);
   pendingFrame = entry.id;
   info.show(body, clock.nowMs());
@@ -483,6 +484,15 @@ function step(now: number) {
   if (playing) {
     if (clock.jumps !== playing.jumps) dropScene();
     else if (simMs >= playing.end) finishScene();
+    else if (!playing.followed && fiction) {
+      // Some scenes hand over from a framed view to riding along with their body.
+      const from = fiction.followFrom(playing.id);
+      const body = fiction.bodies.find((b) => b.id === playing!.id);
+      if (from !== null && simMs >= from && body) {
+        playing.followed = true;
+        focus.focus(body);
+      }
+    }
   }
   if (fiction) {
     fiction.update(simMs, dt, elapsed, jumped);

@@ -16,6 +16,10 @@ export interface FictionEntry {
   kind: 'event' | 'place';
   /** Dated events: how long one showing lasts, from its start. */
   durationMs?: number;
+  /** Dated events: how far before the start a replay begins (default 6 h). */
+  leadMs?: number;
+  /** Dated events: replay speed, simulated seconds per second (default a day a second). */
+  playSpeed?: number;
 }
 
 // ---- The War of the Worlds -----------------------------------------------------
@@ -66,10 +70,44 @@ export const UTOPIA_PLANITIA: FictionEntry = {
     'On this orrery a brass drydock keeps station over the plain, a hull taking shape inside its frame.',
 };
 
-export const FICTION: FictionEntry[] = [WAR_OF_THE_WORLDS, UTOPIA_PLANITIA];
+// ---- Space: 1999 -------------------------------------------------------------------
 
-/** Start of the dated event at or after `ms` (null for places). */
+/** The waste dumps go up on 13 September 1999 (the hour is ours). */
+export const BREAKAWAY = Date.UTC(1999, 8, 13, 21, 0);
+/** From the blast until the Moon is lost to sight. */
+export const BREAKAWAY_DAYS = 1.25;
+
+export const SPACE_1999: FictionEntry = {
+  id: 'space1999',
+  title: 'Breakaway',
+  source: 'Space: 1999 · 1975',
+  kind: 'event',
+  durationMs: BREAKAWAY_DAYS * DAY,
+  leadMs: 2 * 3_600_000,
+  playSpeed: 3600,
+  blurb:
+    'On 13 September 1999 the nuclear waste stored on the Moon explodes. The blast tears the Moon out of Earth orbit ' +
+    'and flings it off into deep space, carrying the 311 people of Moonbase Alpha with it. ' +
+    'Here the Moon is back in its orbit once the scene has played.',
+};
+
+// ---- Interstellar ---------------------------------------------------------------------
+
+export const WORMHOLE: FictionEntry = {
+  id: 'wormhole',
+  title: 'The Wormhole',
+  source: 'Interstellar · 2014',
+  kind: 'place',
+  blurb:
+    'A wormhole that appears near Saturn, placed there, it seems, by someone who wants humanity to survive. ' +
+    'It looks like a sphere in space, showing a distorted view of another galaxy; the Endurance flies through it in search of a new home.',
+};
+
+export const FICTION: FictionEntry[] = [WAR_OF_THE_WORLDS, SPACE_1999, UTOPIA_PLANITIA, WORMHOLE];
+
+/** Start of the dated event at or after `ms`, or the one-off date (null for places). */
 export function nextOccurrence(entry: FictionEntry, ms: number): number | null {
-  if (entry.id === 'wotw') return wotwOccurrence(ms);
+  if (entry.id === WAR_OF_THE_WORLDS.id) return wotwOccurrence(ms);
+  if (entry.id === SPACE_1999.id) return BREAKAWAY;
   return null;
 }

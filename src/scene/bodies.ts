@@ -303,7 +303,7 @@ function makeComet(def: CometDef, particles: number): { visual: CometVisual; tai
  * stay apart while the far ones (Iapetus, Callisto) don't run into the
  * neighbouring planets.
  */
-const MOON_SYSTEMS: Partial<Record<PlanetId, [number, number]>> = {
+export const MOON_SYSTEMS: Partial<Record<PlanetId, [number, number]>> = {
   earth: [2.5, 2.5],
   mars: [1.8, 2.8],
   jupiter: [1.45, 2.2],
@@ -314,7 +314,7 @@ const MOON_SYSTEMS: Partial<Record<PlanetId, [number, number]>> = {
 };
 
 /** Moon sphere size: compressed hard, so Phobos is visible and Ganymede doesn't rival Mercury. */
-const moonSize = (km: number) => 0.025 + 0.03 * Math.sqrt(km / 1000);
+export const moonSize = (km: number) => 0.025 + 0.03 * Math.sqrt(km / 1000);
 
 /** Largest angle (radians) any moon may move in one frame; faster and the system slows down together. */
 const MOON_MAX_STEP = 0.15;
@@ -396,7 +396,7 @@ if (MIRROR_UNMAPPED_SOUTH === THREE.ShaderChunk.map_fragment || SUNLIT_DIRECT ==
  * ignored. (`envMapIntensity: 0` alone doesn't do it: a material without its
  * own envMap takes the scene's environmentIntensity.)
  */
-function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth = false) {
+export function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth = false) {
   const night = SUN_COLOR.clone().multiplyScalar(fill);
   mat.onBeforeCompile = (shader) => {
     if (mirrorSouth) shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', MIRROR_UNMAPPED_SOUTH);
@@ -431,6 +431,8 @@ export class Bodies {
   private sunGlow: THREE.Sprite;
   private moonSystems: MoonSystem[] | null = null;
   private moonsOn = false;
+  /** Moons hidden while something else (a fiction scene) stands in for them. */
+  private hiddenMoons = new Set<string>();
   private fullTier: TextureTier;
 
   constructor(
@@ -619,6 +621,12 @@ export class Bodies {
     return this.bodies.find((b) => b.id === id)!.group.getWorldPosition(out);
   }
 
+  /** Hide one moon (its orbit ring stays) while a stand-in takes its place. */
+  setMoonHidden(id: string, hidden: boolean) {
+    if (hidden) this.hiddenMoons.add(id);
+    else this.hiddenMoons.delete(id);
+  }
+
   get moonsVisible() {
     return this.moonsOn;
   }
@@ -738,6 +746,7 @@ export class Bodies {
           m.angle += m.rate * dDays * k;
         }
         m.group.position.set(Math.cos(m.angle) * m.orbitRadius, 0, -Math.sin(m.angle) * m.orbitRadius);
+        m.group.visible = !this.hiddenMoons.has(m.def.id);
         // Tidally locked: the same face always toward the planet.
         m.mesh.rotation.y = m.angle;
       }
