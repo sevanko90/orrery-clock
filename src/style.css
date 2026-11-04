@@ -521,6 +521,30 @@ input[type='range']::-moz-range-thumb {
 #f-list[hidden] {
   display: none;
 }
+/* A permanent scrollbar, so it's clear the catalogue scrolls (macOS otherwise
+   hides it until you scroll). Styling it opts Chrome and Safari out of overlay
+   scrollbars; Firefox takes the standard properties instead. */
+#fiction::-webkit-scrollbar {
+  width: 8px;
+}
+#fiction::-webkit-scrollbar-track {
+  background: rgba(255, 220, 160, 0.06);
+  border-radius: 4px;
+  margin: 10px 0;
+}
+#fiction::-webkit-scrollbar-thumb {
+  background: var(--brass-deep);
+  border-radius: 4px;
+}
+#fiction::-webkit-scrollbar-thumb:hover {
+  background: var(--brass);
+}
+@supports not selector(::-webkit-scrollbar) {
+  #fiction {
+    scrollbar-width: thin;
+    scrollbar-color: var(--brass-deep) rgba(255, 220, 160, 0.06);
+  }
+}
 #f-list li {
   display: grid;
   grid-template-columns: 1fr auto;

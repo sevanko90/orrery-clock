@@ -550,4 +550,4 @@ function step(now: number) {
 requestAnimationFrame(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick } });

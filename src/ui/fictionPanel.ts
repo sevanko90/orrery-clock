@@ -4,7 +4,8 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const EYE = '<path d="M12 5C6.5 5 2.7 9.3 1.5 12c1.2 2.7 5 7 10.5 7s9.3-4.3 10.5-7C21.3 9.3 17.5 5 12 5zm0 11.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9zm0-2.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>';
 const SLASH = '<path d="M3.3 2 22 20.7 20.7 22 2 3.3z"/>';
 
-const fmtDate = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtDate = (ms: number) =>
+  new Date(ms).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
 /**
  * Fiction catalogue: every entry, with when the dated ones next happen.

@@ -621,6 +621,18 @@ export class Bodies {
     return this.bodies.find((b) => b.id === id)!.group.getWorldPosition(out);
   }
 
+  /**
+   * Hide a planet's globe (with its clouds, air and rings) while a fiction
+   * scene has it gone; its moons and its arm stay.
+   */
+  setPlanetHidden(id: string, hidden: boolean) {
+    const pv = id === 'pluto' ? this.pluto : this.planets.find((p) => p.id === id);
+    if (!pv) return;
+    for (const child of pv.group.children) {
+      if (!child.name.endsWith('-moons')) child.visible = !hidden;
+    }
+  }
+
   /** Hide one moon (its orbit ring stays) while a stand-in takes its place. */
   setMoonHidden(id: string, hidden: boolean) {
     if (hidden) this.hiddenMoons.add(id);

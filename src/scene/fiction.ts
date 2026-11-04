@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { MOON_SYSTEMS, moonSize, sunlit, type Bodies, type Body } from './bodies';
 import type { Materials } from './materials';
-import { ARMS, PLANE_Y } from './layout';
+import { ARMS, PLANE_Y, TABLE_RADIUS } from './layout';
 import { ProgressiveTexture } from './textures';
 import { moonLongitude } from '../astro/sky';
 import {
   BREAKAWAY,
   BREAKAWAY_DAYS,
+  VOGON,
+  VOGON_DEMOLITION,
+  vogonOccurrence,
   SPACE_1999,
   WORMHOLE,
   UTOPIA_LONGITUDE,
@@ -798,6 +801,375 @@ class Wormhole {
   }
 }
 
+// ---- The Hitchhiker's Guide: the demolition of Earth -----------------------------------
+
+const HOUR = 3_600_000;
+const SHIPS = 7;
+const CHUNKS = 40;
+const VOGON_YELLOW = new THREE.Color(0xffe27a);
+
+/** Smooth 0→1 as `x` runs from `a` to `b`. */
+const ramp = (x: number, a: number, b: number) => THREE.MathUtils.smoothstep(x, a, b);
+
+/** A blocky Vogon constructor ship: yellow enamel slabs with a brass band, engines glowing astern. */
+function vogonShip(mats: Materials, enamel: THREE.Material) {
+  const ship = new THREE.Group();
+  const block = (w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material = enamel) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    ship.add(m);
+  };
+  block(0.22, 0.05, 0.09, 0, 0, 0);
+  block(0.225, 0.008, 0.095, 0, 0.026, 0, mats.brassDark);
+  block(0.14, 0.035, 0.07, -0.02, 0.046, 0);
+  block(0.05, 0.03, 0.05, -0.05, 0.078, 0);
+  block(0.03, 0.04, 0.012, 0.04, -0.04, 0.03);
+  block(0.03, 0.04, 0.012, 0.04, -0.04, -0.03);
+  for (const z of [0.022, -0.022]) {
+    const engine = glow(0xfff0b0, 0.8);
+    engine.scale.setScalar(0.06);
+    engine.position.set(-0.115, 0, z);
+    ship.add(engine);
+  }
+  return ship;
+}
+
+/**
+ * The hyperspace bypass: a glowing lane that fades out with distance from the
+ * orrery's centre, so it runs right across the table and dies away at the rim.
+ */
+class LaneMaterial extends THREE.ShaderMaterial {
+  constructor() {
+    super({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uColor: { value: new THREE.Color(0x9fd8ff) },
+        uOpacity: { value: 0 },
+        uRadius: { value: TABLE_RADIUS },
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorld;
+        void main() {
+          vec4 w = modelMatrix * vec4(position, 1.0);
+          vWorld = w.xyz;
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor;
+        uniform float uOpacity;
+        uniform float uRadius;
+        varying vec3 vWorld;
+        void main() {
+          float fade = 1.0 - smoothstep(uRadius * 0.5, uRadius, length(vWorld.xz));
+          float a = uOpacity * fade;
+          gl_FragColor = vec4(uColor * a, a);
+        }
+      `,
+    });
+  }
+}
+
+/** Fades the bypass traffic the same way as the lane. */
+const laneFade = (p: THREE.Vector3) => 1 - THREE.MathUtils.smoothstep(Math.hypot(p.x, p.z), TABLE_RADIUS * 0.5, TABLE_RADIUS);
+
+interface Chunk {
+  mesh: THREE.Mesh;
+  size: number;
+  dir: THREE.Vector3;
+  speed: number;
+  spin: THREE.Vector3;
+}
+
+/**
+ * Every Thursday the Vogon fleet drops out of hyperspace over Earth, takes up
+ * formation, locks on its beams and at ten o'clock demolishes the planet: a
+ * flash, a shockwave and the pieces tumbling away. The fleet leaves, a
+ * hyperspace bypass shimmers through where Earth was, and Earth is quietly
+ * back on its arm once the scene ends.
+ */
+class Demolition {
+  readonly group = new THREE.Group();
+  readonly body: Body;
+  /** The bypass has its own card. */
+  readonly bypassBody: Body;
+  private bypassFocus = new THREE.Group();
+  private bypassOpened = 0;
+  suppressed = false;
+  active = false;
+  private ships: {
+    ship: THREE.Group;
+    streak: THREE.Mesh<THREE.ConeGeometry, GasConeMaterial>;
+    beam: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
+  }[] = [];
+  private chunks: Chunk[] = [];
+  private flash = glow(0xfff3d0);
+  private shock: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+  private lane: THREE.Mesh<THREE.CylinderGeometry, LaneMaterial>;
+  private traffic: THREE.Sprite[] = [];
+  private focus = new THREE.Group();
+  private flashAge = Infinity;
+  private lastSim: number | null = null;
+  private hours = -1;
+  private start = 0;
+  private time = 0;
+  private earth = new THREE.Vector3();
+
+  constructor(
+    private bodies: Bodies,
+    mats: Materials,
+  ) {
+    this.group.name = 'vogons';
+    const enamel = new THREE.MeshStandardMaterial({ color: 0xd9b43a, metalness: 0.5, roughness: 0.45 });
+    const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
+    for (let i = 0; i < SHIPS; i++) {
+      const ship = vogonShip(mats, enamel);
+      const streak = new THREE.Mesh(CONE, new GasConeMaterial(VOGON_YELLOW));
+      streak.frustumCulled = false;
+      const beam = new THREE.Mesh(
+        beamGeo,
+        new THREE.MeshBasicMaterial({ color: 0xfff1b8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+      );
+      this.ships.push({ ship, streak, beam });
+      this.group.add(ship, streak, beam);
+    }
+
+    // The pieces: ocean, land, desert, ice, rock and a few glowing with magma.
+    const palette = [0x2b5d9b, 0x2b5d9b, 0x4f7d3a, 0xb89a5e, 0xe8eef2, 0x6e5a48];
+    const chunkGeo = new THREE.IcosahedronGeometry(1, 0);
+    for (let i = 0; i < CHUNKS; i++) {
+      const magma = i % 6 === 0;
+      const mat = new THREE.MeshStandardMaterial({
+        color: magma ? 0x7a2a10 : palette[i % palette.length],
+        emissive: magma ? 0xff6a1a : 0x000000,
+        emissiveIntensity: magma ? 1.4 : 0,
+        roughness: 1,
+        flatShading: true,
+        envMapIntensity: 0,
+      });
+      if (!magma) sunlit(mat);
+      const mesh = new THREE.Mesh(chunkGeo, mat);
+      this.chunks.push({
+        mesh,
+        size: 0.025 + Math.random() * 0.05,
+        dir: new THREE.Vector3().randomDirection(),
+        speed: 0.6 + Math.random(),
+        spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(8),
+      });
+      this.group.add(mesh);
+    }
+
+    this.shock = new THREE.Mesh(
+      new THREE.RingGeometry(0.9, 1, 64),
+      new THREE.MeshBasicMaterial({ color: 0xffb060, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    this.shock.rotation.x = -Math.PI / 2;
+
+    // The hyperspace bypass, with traffic already using it.
+    this.lane = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1, 10, 1, true), new LaneMaterial());
+    this.lane.frustumCulled = false;
+    for (let i = 0; i < 14; i++) {
+      const car = glow(0xd8f0ff, 0);
+      car.scale.setScalar(0.07);
+      this.traffic.push(car);
+      this.group.add(car);
+    }
+    this.group.add(this.flash, this.shock, this.lane, this.focus, this.bypassFocus);
+
+    // A generous invisible sleeve along the lane, so it can be hovered and clicked anywhere.
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1, 8, 1, true), new THREE.MeshBasicMaterial({ visible: false }));
+    this.lane.add(sleeve);
+    this.bypassBody = {
+      id: 'bypass',
+      facts: null,
+      name: 'Hyperspace Express Route',
+      kind: VOGON_DEMOLITION.source,
+      blurb:
+        'The reason Earth had to go: a hyperspace express route, built straight through where the planet used to be. ' +
+        'On this orrery it runs from rim to rim across the table, and the traffic is already using it.',
+      group: this.bypassFocus,
+      pickProxy: sleeve,
+      radius: 2,
+      upgrade: () => undefined,
+      available: () => this.group.visible && this.lane.visible,
+      rows: () => [
+        ['Built by', 'Vogon Constructor Fleet'],
+        ['Opened', new Date(this.bypassOpened).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })],
+        ['Through', 'Where Earth was'],
+        ['Traffic', 'Already heavy'],
+      ],
+    };
+
+    const proxy = pickProxy(0.5);
+    this.focus.add(proxy);
+    this.body = {
+      id: VOGON_DEMOLITION.id,
+      facts: null,
+      name: VOGON_DEMOLITION.title,
+      kind: VOGON_DEMOLITION.source,
+      blurb: VOGON_DEMOLITION.blurb,
+      group: this.focus,
+      pickProxy: proxy,
+      radius: 0.8,
+      upgrade: () => undefined,
+      available: () => this.group.visible,
+      rows: () => this.rows(),
+    };
+  }
+
+  /** Where ship `i` sits in the formation over Earth. */
+  private station(i: number, out: THREE.Vector3) {
+    const a = (i / SHIPS) * Math.PI * 2 + 0.3;
+    return out.set(Math.cos(a) * 1.05, 0.55 + 0.12 * Math.sin(i * 2.1), Math.sin(a) * 1.05).add(this.earth);
+  }
+
+  /** Give the real Earth back. */
+  release() {
+    this.bodies.setPlanetHidden('earth', false);
+  }
+
+  update(simMs: number, dt: number, jumped: boolean) {
+    const start = vogonOccurrence(simMs);
+    const h = (simMs - start) / HOUR;
+    this.start = start;
+    this.hours = h;
+    this.active = h >= 0 && h <= VOGON.end;
+    this.time += dt;
+
+    const prev = this.lastSim;
+    this.lastSim = simMs;
+    const blast = start + VOGON.demolish * HOUR;
+    if (prev !== null && !jumped && Math.abs(simMs - prev) < 2 * DAY) {
+      if (blast > Math.min(prev, simMs) && blast <= Math.max(prev, simMs)) this.flashAge = 0;
+    }
+    this.flashAge += dt;
+
+    const show = !this.suppressed && this.active;
+    this.group.visible = show || (!this.suppressed && this.flashAge < 3);
+    this.bodies.setPlanetHidden('earth', show && h >= VOGON.demolish);
+    if (!this.group.visible) return;
+
+    this.bodies.positionOf('earth', this.earth);
+    this.focus.position.copy(this.earth);
+    const spot = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+
+    // The fleet: down out of hyperspace, hold station, beams, and away again.
+    this.ships.forEach(({ ship, streak, beam }, i) => {
+      const lag = i * 0.08;
+      const arrive = ramp(h, lag, VOGON.inPlace - 0.4 + lag);
+      const leave = ramp(h, VOGON.depart + lag * 0.5, VOGON.depart + 0.5 + lag * 0.5);
+      ship.visible = this.active && arrive > 0 && leave < 1;
+      streak.visible = beam.visible = false;
+      if (!ship.visible) return;
+      this.station(i, spot);
+      const rise = 8 * ((1 - arrive) ** 2 + leave ** 2);
+      ship.position.copy(spot).addScaledVector(UP, rise + 0.015 * Math.sin(this.time * 0.8 + i));
+      ship.lookAt(this.earth.x, ship.position.y, this.earth.z);
+      ship.rotateY(-Math.PI / 2);
+
+      // Hyperspace streak while moving fast.
+      const moving = Math.max(1 - arrive, leave);
+      if (moving > 0.02) {
+        streak.visible = true;
+        streak.position.copy(ship.position);
+        streak.quaternion.setFromUnitVectors(DOWN, UP);
+        const len = 0.3 + 2.5 * moving;
+        streak.scale.set(0.06, len, 0.06);
+        streak.material.uniforms.uOpacity.value = 1.6 * moving;
+        streak.material.uniforms.uTime.value = this.time;
+      }
+
+      // Demolition beams: lock on, brighten, cut out at the blast.
+      const power = ramp(h, VOGON.beams, VOGON.demolish) * (1 - ramp(h, VOGON.demolish, VOGON.demolish + 0.08));
+      if (power > 0.01) {
+        beam.visible = true;
+        dir.copy(this.earth).sub(ship.position);
+        const len = dir.length();
+        beam.position.copy(ship.position).addScaledVector(dir, 0.5);
+        beam.quaternion.setFromUnitVectors(UP, dir.divideScalar(len));
+        const w = 0.004 + 0.01 * power;
+        beam.scale.set(w, len, w);
+        beam.material.opacity = power * (0.7 + 0.3 * Math.sin(this.time * 20 + i));
+      }
+    });
+
+    // The blast: flash in real time; shockwave and pieces in sim time.
+    const f = Math.exp(-this.flashAge * 1.1);
+    this.flash.visible = f > 0.01;
+    this.flash.position.copy(this.earth);
+    this.flash.scale.setScalar(0.8 + 3.2 * Math.exp(-this.flashAge * 2));
+    this.flash.material.opacity = f;
+
+    const since = h - VOGON.demolish;
+    const shock = since >= 0 && since < 0.7 ? since / 0.7 : -1;
+    this.shock.visible = shock >= 0 && this.active;
+    if (this.shock.visible) {
+      this.shock.position.copy(this.earth);
+      this.shock.scale.setScalar(0.4 + 2.6 * shock);
+      this.shock.material.opacity = (1 - shock) ** 2 * 0.8;
+    }
+    const scatter = since >= 0 && this.active;
+    for (const c of this.chunks) {
+      c.mesh.visible = scatter;
+      if (!scatter) continue;
+      const out = 0.15 + c.speed * 0.9 * Math.pow(since, 0.7);
+      c.mesh.position.copy(this.earth).addScaledVector(c.dir, out);
+      c.mesh.rotation.set(c.spin.x * since, c.spin.y * since, c.spin.z * since);
+      const fade = 1 - ramp(since, 1.2, VOGON.end - VOGON.demolish);
+      c.mesh.visible = fade > 0.02;
+      c.mesh.scale.setScalar(c.size * fade);
+    }
+
+    // The bypass: a straight lane through where Earth was, along its old
+    // orbit, right across the orrery; traffic already on it.
+    const open = this.active ? ramp(h, VOGON.depart, VOGON.depart + 0.4) : 0;
+    this.lane.visible = open > 0;
+    this.traffic.forEach((t) => (t.visible = open > 0));
+    if (open > 0) {
+      const tangent = new THREE.Vector3(-(this.earth.z - SUN.z), 0, this.earth.x - SUN.x).normalize();
+      // Earth is the lane's nearest point to the centre, so it sits midway.
+      const fromCentre = Math.hypot(this.earth.x - SUN.x, this.earth.z - SUN.z);
+      const length = 2 * Math.sqrt(Math.max(1, TABLE_RADIUS ** 2 - fromCentre ** 2));
+      this.lane.position.copy(this.earth);
+      this.bypassFocus.position.copy(this.earth);
+      this.bypassOpened = this.start + VOGON.depart * HOUR;
+      this.lane.quaternion.setFromUnitVectors(UP, tangent);
+      this.lane.scale.set(1, length, 1);
+      this.lane.material.uniforms.uOpacity.value = open * (0.6 + 0.1 * Math.sin(this.time * 2));
+      this.traffic.forEach((t, i) => {
+        const u = ((this.time * 0.05 + i / this.traffic.length) % 1) - 0.5;
+        t.position.copy(this.earth).addScaledVector(tangent, u * length);
+        t.material.opacity = open * 0.9 * laneFade(t.position);
+      });
+    }
+  }
+
+  private rows(): [string, string][] {
+    const h = this.hours;
+    const when = (hours: number) =>
+      new Date(this.start + hours * HOUR).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    if (!this.active) return [['Next demolition', when(VOGON.demolish)]];
+    const status =
+      h < VOGON.inPlace ? 'Fleet arriving' : h < VOGON.demolish ? 'Fleet in position' : h < VOGON.depart ? 'Demolished' : 'Bypass open';
+    return [
+      ['Demolition', when(VOGON.demolish)],
+      ['Status', status],
+      ['Earth back', when(VOGON.end)],
+    ];
+  }
+
+  /** Earth and the fleet's formation round it. */
+  framePoints(): THREE.Vector3[] {
+    this.bodies.positionOf('earth', this.earth);
+    const pts = [this.earth.clone(), this.earth.clone().addScaledVector(UP, 1.2)];
+    for (let i = 0; i < SHIPS; i++) pts.push(this.station(i, new THREE.Vector3()));
+    return pts;
+  }
+}
+
 // ---- Fiction mode -----------------------------------------------------------------------
 
 export class Fiction {
@@ -805,6 +1177,7 @@ export class Fiction {
   readonly bodies: Body[];
   private wotw: WarOfTheWorlds;
   private breakaway: Breakaway;
+  private demolition: Demolition;
   private utopia: UtopiaPlanitia;
   private wormhole: Wormhole;
   private on = false;
@@ -819,10 +1192,19 @@ export class Fiction {
     this.root.add(this.wotw.group);
     this.breakaway = new Breakaway(bodies);
     this.root.add(this.breakaway.group);
+    this.demolition = new Demolition(bodies, mats);
+    this.root.add(this.demolition.group);
     this.utopia = new UtopiaPlanitia(bodies.surfaceFrame('mars')!, mats);
     this.wormhole = new Wormhole(bodies);
     this.root.add(this.wormhole.anchor);
-    this.bodies = [this.wotw.body, this.breakaway.body, this.utopia.body, this.wormhole.body];
+    this.bodies = [
+      this.wotw.body,
+      this.breakaway.body,
+      this.demolition.body,
+      this.demolition.bypassBody,
+      this.utopia.body,
+      this.wormhole.body,
+    ];
     this.setEnabled(false);
   }
 
@@ -859,6 +1241,8 @@ export class Fiction {
     this.wormhole.anchor.visible = this.on && this.placeShown(WORMHOLE.id) && inScene(WORMHOLE.id);
     this.wotw.suppressed = !inScene(WAR_OF_THE_WORLDS.id);
     this.breakaway.suppressed = !inScene(SPACE_1999.id);
+    this.demolition.suppressed = !inScene(VOGON_DEMOLITION.id);
+    if (!this.on || this.demolition.suppressed) this.demolition.release();
     // Not updated while fiction is off, so give the real Moon back now.
     if (!this.on || this.breakaway.suppressed) this.breakaway.release();
   }
@@ -867,6 +1251,7 @@ export class Fiction {
     if (!this.on) return;
     this.wotw.update(simMs, dt, jumped);
     this.breakaway.update(simMs, dt, jumped);
+    this.demolition.update(simMs, dt, jumped);
     this.utopia.update(elapsed);
     if (this.wormhole.anchor.visible) this.wormhole.update(elapsed);
   }
@@ -883,6 +1268,7 @@ export class Fiction {
   framePoints(id: string): THREE.Vector3[] {
     if (id === WAR_OF_THE_WORLDS.id) return this.wotw.framePoints();
     if (id === SPACE_1999.id) return this.breakaway.framePoints();
+    if (id === VOGON_DEMOLITION.id) return this.demolition.framePoints();
     return [];
   }
 }

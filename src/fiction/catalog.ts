@@ -103,11 +103,60 @@ export const WORMHOLE: FictionEntry = {
     'It looks like a sphere in space, showing a distorted view of another galaxy; the Endurance flies through it in search of a new home.',
 };
 
-export const FICTION: FictionEntry[] = [WAR_OF_THE_WORLDS, SPACE_1999, UTOPIA_PLANITIA, WORMHOLE];
+// ---- The Hitchhiker's Guide to the Galaxy ----------------------------------------------
+
+const HOUR = 3_600_000;
+/** The demolition's timetable, in hours from the fleet's arrival (Thursday 08:00 local). */
+export const VOGON = {
+  /** Ships in formation over Earth. */
+  inPlace: 1.5,
+  /** Demolition beams lock on. */
+  beams: 1.75,
+  /** 10:00: Earth goes. */
+  demolish: 2,
+  /** The fleet leaves and the bypass opens. */
+  depart: 2.5,
+  /** Earth restored, ready for next week. */
+  end: 4,
+};
+
+/** Thursday 08:00 local of the week containing `ms` (weeks run Thursday to Wednesday). */
+function thursdayArrival(ms: number): number {
+  const d = new Date(ms);
+  const back = (d.getDay() - 4 + 7) % 7;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - back, 8, 0, 0).getTime();
+}
+
+/** The demolition running at `ms`, or the next one (fleet arrival time). */
+export function vogonOccurrence(ms: number): number {
+  const start = thursdayArrival(ms);
+  if (ms <= start + VOGON.end * HOUR) return start;
+  const next = new Date(start);
+  next.setDate(next.getDate() + 7);
+  return next.getTime();
+}
+
+export const VOGON_DEMOLITION: FictionEntry = {
+  id: 'vogons',
+  title: 'The Demolition of Earth',
+  source: 'The Hitchhiker’s Guide to the Galaxy · Douglas Adams',
+  kind: 'event',
+  durationMs: VOGON.end * HOUR,
+  leadMs: 0.25 * HOUR,
+  playSpeed: 600,
+  blurb:
+    'One Thursday a Vogon constructor fleet arrives over Earth, announces that the planet is in the way of a new ' +
+    'hyperspace express route, and demolishes it. The plans had been on display at the local planning office in ' +
+    'Alpha Centauri for fifty years, so nobody has any grounds for complaint. Here it happens every Thursday at ten, ' +
+    'and Earth is back by lunchtime.',
+};
+
+export const FICTION: FictionEntry[] = [WAR_OF_THE_WORLDS, SPACE_1999, VOGON_DEMOLITION, UTOPIA_PLANITIA, WORMHOLE];
 
 /** Start of the dated event at or after `ms`, or the one-off date (null for places). */
 export function nextOccurrence(entry: FictionEntry, ms: number): number | null {
   if (entry.id === WAR_OF_THE_WORLDS.id) return wotwOccurrence(ms);
   if (entry.id === SPACE_1999.id) return BREAKAWAY;
+  if (entry.id === VOGON_DEMOLITION.id) return vogonOccurrence(ms);
   return null;
 }
