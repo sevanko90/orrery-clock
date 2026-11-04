@@ -496,11 +496,13 @@ input[type='range']::-moz-range-thumb {
   stroke: var(--ink-faint);
   opacity: 0.6;
 }
-#c-disc[aria-pressed='true'] {
+#c-disc[aria-pressed='true'],
+#c-moons[aria-pressed='true'] {
   border-color: var(--amber);
   box-shadow: 0 0 10px rgba(255, 170, 70, 0.35);
 }
-#c-disc[aria-pressed='true'] svg {
+#c-disc[aria-pressed='true'] svg,
+#c-moons[aria-pressed='true'] svg {
   fill: var(--amber);
 }
 #hover-tag[hidden] {
@@ -526,6 +528,7 @@ input[type='range']::-moz-range-thumb {
   color: var(--ink-dim);
 }
 
+dialog.notice,
 dialog#credits {
   max-width: min(520px, calc(100vw - 32px));
   background: #15100b;
@@ -536,9 +539,11 @@ dialog#credits {
   font-size: 16px;
   line-height: 1.45;
 }
+dialog.notice::backdrop,
 dialog#credits::backdrop {
   background: rgba(0, 0, 0, 0.6);
 }
+dialog.notice h2,
 dialog#credits h2 {
   font-family: var(--caps);
   font-size: 18px;
@@ -548,6 +553,15 @@ dialog#credits h2 {
 }
 dialog#credits a {
   color: var(--amber);
+}
+.notice-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+}
+.notice-actions [hidden] {
+  display: none;
 }
 
 #veil {

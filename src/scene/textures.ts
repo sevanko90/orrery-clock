@@ -3,7 +3,7 @@ import * as THREE from 'three';
 const loader = new THREE.TextureLoader();
 const base = import.meta.env.BASE_URL;
 
-export type TextureTier = '256' | '2k' | '4k';
+export type TextureTier = '256' | '1k' | '2k' | '4k';
 
 function url(name: string, tier: TextureTier) {
   return `${base}textures/${name}-${tier}.webp`;
@@ -53,7 +53,7 @@ export class ProgressiveTexture {
 
   private async set(tier: TextureTier) {
     const tex = await load(this.name, tier, this.colorSpace);
-    const rank = { '256': 0, '2k': 1, '4k': 2 };
+    const rank = { '256': 0, '1k': 1, '2k': 2, '4k': 3 };
     if (this.tier && rank[this.tier] >= rank[tier]) {
       tex.dispose();
       return;

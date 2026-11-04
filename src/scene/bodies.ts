@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { PLANET_FACTS, SUN_FACTS, COMETS, type BodyFacts, type CometDef } from '../astro/bodies';
 import { cometPosition, planetPosition, sampleOrbit, PLANET_ELEMENTS, type PlanetId } from '../astro/orbits';
+import { MOONS, type MoonDef } from '../astro/moons';
+import { moonLongitude } from '../astro/sky';
+import { J2000, julianDate } from '../astro/time';
 import { ARMS, PLANE_Y, PLUTO_SIZE, SUN_RADIUS, toWorld } from './layout';
 import { ProgressiveTexture, type TextureTier } from './textures';
 import type { ArmRig } from './orrery';
@@ -21,6 +24,8 @@ export interface Body {
   upgrade(): void;
   /** Extra info for comets. */
   blurb?: string;
+  /** Set for moons. */
+  moon?: MoonDef;
 }
 
 function glowTexture(inner: string, outer: string) {
@@ -285,6 +290,46 @@ function makeComet(def: CometDef, particles: number): { visual: CometVisual; tai
   return { visual: { def, group, coma, tails }, tailPoints, orbit };
 }
 
+/**
+ * Display layout of each moon system: the innermost and outermost orbit
+ * radii, as multiples of the planet's display size. Moons between are spaced
+ * half by rank and half by log distance, so close-packed inner moons (Saturn's)
+ * stay apart while the far ones (Iapetus, Callisto) don't run into the
+ * neighbouring planets.
+ */
+const MOON_SYSTEMS: Partial<Record<PlanetId, [number, number]>> = {
+  earth: [2.5, 2.5],
+  mars: [1.8, 2.8],
+  jupiter: [1.45, 2.2],
+  saturn: [2.4, 3.3],
+  uranus: [1.7, 2.7],
+  neptune: [2.1, 2.1],
+  pluto: [2.8, 2.8],
+};
+
+/** Moon sphere size: compressed hard, so Phobos is visible and Ganymede doesn't rival Mercury. */
+const moonSize = (km: number) => 0.025 + 0.03 * Math.sqrt(km / 1000);
+
+/** Largest angle (radians) any moon may move in one frame; faster and the system slows down together. */
+const MOON_MAX_STEP = 0.15;
+
+interface MoonVisual {
+  def: MoonDef;
+  /** Moves with the moon (Body group). */
+  group: THREE.Group;
+  mesh: THREE.Mesh;
+  orbitRadius: number;
+  /** Current orbital angle, radians. */
+  angle: number;
+  /** rad/day, signed. */
+  rate: number;
+}
+
+interface MoonSystem {
+  root: THREE.Group;
+  moons: MoonVisual[];
+}
+
 export interface BodiesOptions {
   lowQuality: boolean;
 }
@@ -378,12 +423,16 @@ export class Bodies {
   private lastSimMs: number | null = null;
   private sunMesh: THREE.Mesh;
   private sunGlow: THREE.Sprite;
+  private moonSystems: MoonSystem[] | null = null;
+  private moonsOn = false;
+  private fullTier: TextureTier;
 
   constructor(
     private arms: ArmRig[],
     opts: BodiesOptions,
   ) {
     const fullTier: TextureTier = '2k';
+    this.fullTier = fullTier;
     const allow4k = !opts.lowQuality;
 
     // ---- Sun ----
@@ -553,6 +602,131 @@ export class Bodies {
   }
 
 
+  get moonsVisible() {
+    return this.moonsOn;
+  }
+
+  /** Show or hide the major moons; they are built (and their maps fetched) on first use. */
+  setMoonsVisible(on: boolean) {
+    if (on && !this.moonSystems) this.moonSystems = this.buildMoons();
+    this.moonsOn = on;
+    this.moonSystems?.forEach((s) => (s.root.visible = on));
+    // Snap them straight to their places rather than easing from wherever they were.
+    if (on && this.lastSimMs !== null) this.updateMoons(new Date(this.lastSimMs), 0);
+  }
+
+  private buildMoons(): MoonSystem[] {
+    const visuals = new Map<string, { pv: PlanetVisual; size: number }>();
+    ARMS.forEach((spec, i) => visuals.set(spec.id, { pv: this.planets[i], size: spec.size }));
+    visuals.set('pluto', { pv: this.pluto, size: PLUTO_SIZE });
+
+    const systems: MoonSystem[] = [];
+    for (const [parent, [inner, outer]] of Object.entries(MOON_SYSTEMS) as [PlanetId, [number, number]][]) {
+      const host = visuals.get(parent);
+      const defs = MOONS.filter((m) => m.parent === parent).sort((a, b) => a.aKm - b.aKm);
+      if (!host || !defs.length) continue;
+      const root = new THREE.Group();
+      root.name = `${parent}-moons`;
+      // Earth's Moon keeps close to the ecliptic, so it hangs off the untilted
+      // frame; the others orbit in their planet's equator (Uranus's on edge).
+      (parent === 'earth' ? host.pv.group : host.pv.tilt).add(root);
+
+      const a0 = defs[0].aKm;
+      const aN = defs[defs.length - 1].aKm;
+      const moons = defs.map((def, i) => {
+        const f = defs.length > 1 ? 0.5 * (i / (defs.length - 1) + Math.log(def.aKm / a0) / Math.log(aN / a0)) : 0;
+        const orbitRadius = host.size * (inner + (outer - inner) * f);
+        const size = moonSize(def.radiusKm);
+
+        const plane = new THREE.Group();
+        plane.rotation.x = def.incDeg * DEG;
+        root.add(plane);
+
+        const ring: THREE.Vector3[] = [];
+        for (let k = 0; k < 128; k++) {
+          const t = (k / 128) * Math.PI * 2;
+          ring.push(new THREE.Vector3(Math.cos(t) * orbitRadius, 0, Math.sin(t) * orbitRadius));
+        }
+        plane.add(
+          new THREE.LineLoop(
+            new THREE.BufferGeometry().setFromPoints(ring),
+            new THREE.LineBasicMaterial({ color: 0xe0c38a, transparent: true, opacity: 0.14, depthWrite: false }),
+          ),
+        );
+
+        const group = new THREE.Group();
+        group.name = def.id;
+        const mat = new THREE.MeshStandardMaterial({ color: def.color ?? 0xffffff, roughness: 1, metalness: 0, envMapIntensity: 0 });
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 24), mat);
+        group.add(mesh);
+        if (def.textured) {
+          new ProgressiveTexture(
+            def.id,
+            (t) => {
+              mat.map = t;
+              mat.needsUpdate = true;
+            },
+            THREE.SRGBColorSpace,
+            false,
+          ).start(this.fullTier === '256' ? '256' : '1k');
+        }
+        sunlit(mat, NIGHT_FILL_BOOST[def.parent] ?? NIGHT_FILL, def.partialMap);
+        const proxy = pickProxy(Math.max(size * 2.5, 0.12));
+        group.add(proxy);
+        plane.add(group);
+
+        const parentName = PLANET_FACTS[def.parent].name;
+        this.bodies.push({
+          id: def.id,
+          facts: {
+            id: def.id,
+            name: def.name,
+            kind: `Moon of ${parentName}`,
+            radiusKm: def.radiusKm,
+            // Tidally locked: one turn per orbit.
+            rotationHours: def.periodDays * 24,
+            tiltDeg: 0,
+            moons: null,
+            blurb: def.blurb,
+          },
+          name: def.name,
+          group,
+          pickProxy: proxy,
+          radius: size,
+          upgrade: () => undefined,
+          moon: def,
+        });
+        return { def, group, mesh, orbitRadius, angle: 0, rate: (Math.PI * 2) / def.periodDays };
+      });
+      systems.push({ root, moons });
+    }
+    return systems;
+  }
+
+  /**
+   * Moons ride round at their true periods. At high speeds a system slows
+   * down together (keeping the inner moons fastest) instead of strobing; once
+   * time runs gently again they snap back to their proper places.
+   */
+  private updateMoons(date: Date, dDays: number) {
+    if (!this.moonSystems || !this.moonsOn) return;
+    const sinceJ2000 = julianDate(date) - J2000;
+    for (const sys of this.moonSystems) {
+      const fastest = Math.max(...sys.moons.map((m) => Math.abs(m.rate * dDays)));
+      const k = fastest > MOON_MAX_STEP ? MOON_MAX_STEP / fastest : 1;
+      for (const m of sys.moons) {
+        if (k === 1) {
+          m.angle = m.def.id === 'moon' ? moonLongitude(date) * DEG : m.def.l0 * DEG + m.rate * sinceJ2000;
+        } else {
+          m.angle += m.rate * dDays * k;
+        }
+        m.group.position.set(Math.cos(m.angle) * m.orbitRadius, 0, -Math.sin(m.angle) * m.orbitRadius);
+        // Tidally locked: the same face always toward the planet.
+        m.mesh.rotation.y = m.angle;
+      }
+    }
+  }
+
   update(simMs: number, realDt: number, elapsed: number) {
     const date = new Date(simMs);
     const days = simMs / 86_400_000;
@@ -573,6 +747,7 @@ export class Bodies {
     toWorld(pp.x, pp.y, pp.z, tmp);
     this.pluto.group.position.set(tmp.x, tmp.y, tmp.z);
     this.spin(this.pluto, dDays);
+    this.updateMoons(date, dDays);
 
     // Comets.
     const sun = this.sunMesh.position;

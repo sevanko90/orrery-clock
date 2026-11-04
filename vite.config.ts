@@ -37,7 +37,7 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: {
               cacheName: 'textures-v1',
-              expiration: { maxEntries: 80 },
+              expiration: { maxEntries: 160 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

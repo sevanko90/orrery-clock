@@ -60,6 +60,9 @@
       <button id="c-true" class="icon-btn toggle" type="button" aria-pressed="true" aria-label="True positions" title="Hide true positions (T)">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8.5" fill="none" stroke-width="1.6" opacity=".55"/></svg>
       </button>
+      <button id="c-moons" class="icon-btn toggle" type="button" aria-pressed="false" aria-label="Moons" title="Show moons (M)">
+        <svg viewBox="0 0 24 24"><circle cx="10" cy="13" r="5"/><circle cx="19" cy="6" r="2.3"/><path d="M3.2 17.6C1.6 14 4.6 8.9 10.4 6.3c1.9-.9 3.8-1.4 5.5-1.5l-.2 1.3c-1.5.1-3.2.6-4.8 1.3-5 2.3-7.8 6.5-6.6 9.6z" opacity=".55"/></svg>
+      </button>
       <button id="c-disc" class="icon-btn toggle" type="button" aria-pressed="false" aria-label="Discworld mode" title="Discworld mode (D)">
         <svg viewBox="0 0 24 24"><ellipse cx="11" cy="13" rx="7" ry="4.6"/><ellipse cx="20" cy="13" rx="2.4" ry="1.9"/><path d="M14.5 9.2 17 5.6l1.4.9-1.6 3.6zM14.5 16.8 17 20.4l1.4-.9-1.6-3.6zM6 9.8 4.2 7.2l-1 .8 1.3 2.6zM6 16.2l-1.8 2.6-1-.8 1.3-2.6z"/><path d="M3 5.6h16v1.2H3z" opacity=".7"/><path d="M5.5 6.8h1.4v2.6H5.5zM15.1 6.8h1.4v2.4h-1.4z" opacity=".7"/></svg>
       </button>
@@ -94,10 +97,22 @@
       <h2>Credits</h2>
       <p>Planet textures by <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, via Wikimedia Commons; resized and converted to WebP.</p>
       <p>Pluto map: NASA / Johns Hopkins APL / SwRI (New Horizons), public domain.</p>
+      <p>Moon maps: the Moon by Solar System Scope (CC BY 4.0); Phobos, Deimos, Ganymede and Callisto by Askaniy Anpilogov, after Phil Stooke, John van Vliet, Björn Jónsson, USGS and NASA (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>); the rest from NASA / JPL / USGS, the Cassini imaging team (SSI, LPI) and New Horizons (APL, SwRI), public domain. Unimaged regions are filled from the opposite hemisphere.</p>
       <p>Planet positions from JPL’s approximate Keplerian elements (E. M. Standish). Sunrise and sunset after SunCalc.</p>
       <p>Discworld mode is an affectionate nod to Terry Pratchett’s Discworld: the Disc, the four elephants and Great A’Tuin.</p>
       <p>Sizes and distances are compressed so everything fits on the table. Angles around the Sun are true for the date shown.</p>
+      <p>Moons orbit at their true periods; our Moon is placed from its true longitude, the others are illustrative in phase.</p>
       <form method="dialog"><button class="pill">Close</button></form>
+    </dialog>
+
+    <dialog id="gpu-warning" class="notice">
+      <h2>Graphics acceleration is off</h2>
+      <p class="gpu-lead"></p>
+      <p class="gpu-how"></p>
+      <form method="dialog" class="notice-actions">
+        <button class="link-btn gpu-dismiss" type="submit">Don’t show again</button>
+        <button class="pill" type="submit" autofocus>Continue</button>
+      </form>
     </dialog>
 
     <script type="module" src="/src/main.ts"></script>

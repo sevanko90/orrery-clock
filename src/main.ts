@@ -16,6 +16,7 @@ import { ARMS, PLANE_Y } from './scene/layout';
 import { Readout } from './ui/readout';
 import { bindControls } from './ui/controls';
 import { InfoCard } from './ui/infocard';
+import { detectGpu, warnIfNoGpu } from './ui/gpuCheck';
 
 if (import.meta.env.PROD) {
   // Activate new builds immediately; reload once the new worker takes control.
@@ -38,7 +39,11 @@ addEventListener('error', (e) => showFatal(e.message || String(e.error)));
 addEventListener('unhandledrejection', (e) => showFatal(String(e.reason?.message ?? e.reason)));
 
 const container = document.getElementById('scene')!;
+const gpu = detectGpu();
+warnIfNoGpu(gpu);
 const quality = detectQuality();
+// Without a GPU, drop to the light settings so it at least stays usable.
+if (gpu === 'software') Object.assign(quality, { low: true, pixelRatio: 1, shadows: false, bloom: false });
 const stage = new Stage(container, quality);
 const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
@@ -183,6 +188,35 @@ addEventListener('keydown', (e) => {
   if (e.key === 'd' || e.key === 'D') setDiscworld(!discworld?.enabled);
 });
 
+// ---- Moons ---------------------------------------------------------------------
+const moonButton = document.getElementById('c-moons') as HTMLButtonElement;
+function setMoons(on: boolean) {
+  bodies.setMoonsVisible(on);
+  moonButton.setAttribute('aria-pressed', String(on));
+  moonButton.title = on ? 'Hide moons (M)' : 'Show moons (M)';
+  // Don't leave the camera following a moon that has just vanished.
+  if (!on && focus.focused?.moon) unfocus();
+  try {
+    localStorage.setItem('moons', on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+{
+  let saved = false;
+  try {
+    saved = localStorage.getItem('moons') === '1';
+  } catch {
+    /* ignore */
+  }
+  if (saved) setMoons(true);
+}
+moonButton.addEventListener('click', () => setMoons(!bodies.moonsVisible));
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'm' || e.key === 'M') setMoons(!bodies.moonsVisible);
+});
+
 const credits = document.getElementById('credits') as HTMLDialogElement;
 document.getElementById('credits-btn')!.addEventListener('click', () => credits.showModal());
 
@@ -197,7 +231,19 @@ stage.controls.addEventListener('end', () => (lastInteraction = performance.now(
 // ---- Picking & hover ---------------------------------------------------------
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-const proxies = bodies.bodies.map((b) => b.pickProxy);
+/** Pick proxies of the bodies on show (hidden moons can't be picked). */
+function activeProxies() {
+  return bodies.bodies.filter((b) => !b.moon || bodies.moonsVisible).map((b) => b.pickProxy);
+}
+/**
+ * Body under the pointer (call after setPointer). Moons sit inside their
+ * planet's generous pick sphere, so a moon hit wins over its planet.
+ */
+function bodyUnderPointer(): Body | null {
+  const hits = raycaster.intersectObjects(activeProxies(), false);
+  const hit = hits.find((h) => bodies.bodies.find((b) => b.pickProxy === h.object)?.moon) ?? hits[0];
+  return hit ? (bodies.bodies.find((b) => b.pickProxy === hit.object) ?? null) : null;
+}
 const hoverTag = document.getElementById('hover-tag')!;
 const canvas = stage.renderer.domElement;
 
@@ -209,8 +255,8 @@ function setPointer(clientX: number, clientY: number) {
 
 function pick(clientX: number, clientY: number): Body | null {
   setPointer(clientX, clientY);
-  const hit = raycaster.intersectObjects(proxies, false)[0];
-  if (hit) return bodies.bodies.find((b) => b.pickProxy === hit.object) ?? null;
+  const body = bodyUnderPointer();
+  if (body) return body;
   // Clicking a true-position ring selects its planet.
   const id = pickMarker();
   return id ? (bodies.bodies.find((b) => b.id === id) ?? null) : null;
@@ -243,8 +289,7 @@ canvas.addEventListener('pointermove', (e) => {
     return;
   }
   setPointer(e.clientX, e.clientY);
-  const hit = raycaster.intersectObjects(proxies, false)[0];
-  const body = hit ? (bodies.bodies.find((b) => b.pickProxy === hit.object) ?? null) : null;
+  const body = bodyUnderPointer();
   const markerId = body ? null : pickMarker();
   const markerName = markerId ? bodies.bodies.find((b) => b.id === markerId)?.name : null;
   const lore = body || markerName ? null : (discworld?.pickLore(raycaster) ?? null);

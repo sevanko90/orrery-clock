@@ -115,5 +115,185 @@
     "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_2k_stars_milky_way.jpg",
     "license": "CC BY 4.0",
     "artist": "Solar System Scope"
+  },
+  {
+    "name": "moon",
+    "title": "Solarsystemscope texture 8k moon.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/d/d1/Solarsystemscope_texture_8k_moon.jpg",
+    "width": 8192,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_moon.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
+  },
+  {
+    "name": "phobos",
+    "title": "Phobos map by Askaniy.png",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/3/30/Phobos_map_by_Askaniy.png",
+    "width": 4096,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Phobos_map_by_Askaniy.png",
+    "license": "CC BY-SA 3.0",
+    "artist": "Askaniy Anpilogov, Phil Stooke"
+  },
+  {
+    "name": "deimos",
+    "title": "Deimos map by Askaniy.png",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/7/72/Deimos_map_by_Askaniy.png",
+    "width": 4096,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Deimos_map_by_Askaniy.png",
+    "license": "CC BY-SA 3.0",
+    "artist": "Askaniy Anpilogov, John van Vliet"
+  },
+  {
+    "name": "io",
+    "title": "Io map projection PIA00319.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/0/04/Io_map_projection_PIA00319.jpg",
+    "width": 2468,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Io_map_projection_PIA00319.jpg",
+    "license": "Public domain",
+    "artist": "NASA/JPL/USGS"
+  },
+  {
+    "name": "europa",
+    "title": "Europa Voyager GalileoSSI global mosaic.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/2/26/Europa_Voyager_GalileoSSI_global_mosaic.jpg",
+    "width": 1024,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Europa_Voyager_GalileoSSI_global_mosaic.jpg",
+    "license": "Public domain",
+    "artist": "U.S. Geological Survey / Planetary Data System / Tammy Becker"
+  },
+  {
+    "name": "ganymede",
+    "title": "Ganymede map by Askaniy.png",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/8/81/Ganymede_map_by_Askaniy.png",
+    "width": 11520,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Ganymede_map_by_Askaniy.png",
+    "license": "CC BY-SA 3.0",
+    "artist": "Askaniy Anpilogov, USGS, Björn Jónsson, NASA/JPL-Caltech/SwRI/MSSS/Brian Swift"
+  },
+  {
+    "name": "callisto",
+    "title": "Callisto map by Askaniy.png",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Callisto_map_by_Askaniy.png",
+    "width": 8192,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Callisto_map_by_Askaniy.png",
+    "license": "CC BY-SA 3.0",
+    "artist": "Askaniy Anpilogov, John van Vliet"
+  },
+  {
+    "name": "mimas",
+    "title": "Mimas Color Map.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Map_of_Mimas_colorized_2014-04_PIA18437.jpg",
+    "width": 6356,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Map_of_Mimas_colorized_2014-04_PIA18437.jpg",
+    "license": "Public domain",
+    "artist": "NASA/JPL-Caltech/Space Science Institute/Lunar and Planetary Institute"
+  },
+  {
+    "name": "enceladus",
+    "title": "Enceladus Color Map.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Enceladus_Color_Map.jpg",
+    "width": 15960,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Enceladus_Color_Map.jpg",
+    "license": "Public domain",
+    "artist": "NASA/JPL-Caltech/Space Science Institute/Lunar and Planetary Institute"
+  },
+  {
+    "name": "tethys",
+    "title": "Tethys Color Map.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/4/40/Tethys_Color_Map.jpg",
+    "width": 13467,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Tethys_Color_Map.jpg",
+    "license": "Public domain",
+    "artist": "NASA/JPL-Caltech/Space Science Institute/Lunar and Planetary Institute"
+  },
+  {
+    "name": "dione",
+    "title": "Dione Color Map.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/1/18/Dione_Color_Map.jpg",
+    "width": 14134,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Dione_Color_Map.jpg",
+    "license": "Public domain",
+    "artist": "NASA/JPL-Caltech/Space Science Institute/Lunar and Planetary Institute"
+  },
+  {
+    "name": "rhea",
+    "title": "Rhea Color Map.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/2/21/Rhea_Color_Map.jpg",
+    "width": 12015,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Rhea_Color_Map.jpg",
+    "license": "Public domain",
+    "artist": "NASA/JPL-Caltech/Space Science Institute/Lunar and Planetary Institute"
+  },
+  {
+    "name": "iapetus",
+    "title": "Iapetus Color Map.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/5/53/Iapetus_Color_Map.jpg",
+    "width": 11741,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Iapetus_Color_Map.jpg",
+    "license": "Public domain",
+    "artist": "NASA/JPL-Caltech/Space Science Institute/Lunar and Planetary Institute"
+  },
+  {
+    "name": "miranda",
+    "title": "Miranda map JPL USGS.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/8/81/Miranda_map_JPL_USGS.jpg",
+    "width": 1440,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Miranda_map_JPL_USGS.jpg",
+    "license": "Public domain",
+    "artist": "Caltech/JPL/USGS"
+  },
+  {
+    "name": "ariel",
+    "title": "Ariel map JPL USGS.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/7/74/Ariel_map_JPL_USGS.jpg",
+    "width": 1440,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Ariel_map_JPL_USGS.jpg",
+    "license": "Public domain",
+    "artist": "Caltech/JPL/USGS"
+  },
+  {
+    "name": "umbriel",
+    "title": "Umbriel map JPL USGS.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/4/42/Umbriel_map_JPL_USGS.jpg",
+    "width": 1440,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Umbriel_map_JPL_USGS.jpg",
+    "license": "Public domain",
+    "artist": "Caltech/JPL/USGS"
+  },
+  {
+    "name": "titania",
+    "title": "Titania map JPL USGS.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/8/85/Titania_map_JPL_USGS.jpg",
+    "width": 1440,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Titania_map_JPL_USGS.jpg",
+    "license": "Public domain",
+    "artist": "Caltech/JPL/USGS"
+  },
+  {
+    "name": "oberon",
+    "title": "Oberon map JPL USGS.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/1/1d/Oberon_map_JPL_USGS.jpg",
+    "width": 1440,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Oberon_map_JPL_USGS.jpg",
+    "license": "Public domain",
+    "artist": "Caltech/JPL/USGS"
+  },
+  {
+    "name": "triton",
+    "title": "Triton map no grid.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/6/61/Triton_map_no_grid.jpg",
+    "width": 14138,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Triton_map_no_grid.jpg",
+    "license": "Public domain",
+    "artist": "Image selection, radiometric calibration, geographic registration and photometric correction, and final mosaic assembly were performed by Dr. Paul Schenk at the Lunar and Planetary Institute, Houston, Texas. Image data from Voyager 2 (NASA, JPL)."
+  },
+  {
+    "name": "charon",
+    "title": "Charon map iau1803c.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/3/39/Charon_map_iau1803c.jpg",
+    "width": 6000,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Charon_map_iau1803c.jpg",
+    "license": "Public domain",
+    "artist": "NASA/Johns Hopkins University Applied Physics Laboratory/Southwest Research Institute"
   }
 ]

@@ -1,5 +1,5 @@
 import { planetPosition, cometPosition, orbitalPeriodDays, PLANET_ELEMENTS, type PlanetId } from '../astro/orbits';
-import { COMETS } from '../astro/bodies';
+import { COMETS, PLANET_FACTS } from '../astro/bodies';
 import type { Body } from '../scene/bodies';
 import type { Lore } from '../scene/discworld';
 
@@ -88,7 +88,14 @@ export class InfoCard {
     const rows: [string, string][] = [];
     const f = body.facts;
 
-    if (body.id === 'sun') {
+    if (body.moon) {
+      const m = body.moon;
+      rows.push(['Orbits', PLANET_FACTS[m.parent].name]);
+      rows.push(['Distance', `${nf(m.aKm)} km`]);
+      rows.push(['Orbit', `${duration(Math.abs(m.periodDays))}${m.periodDays < 0 ? ' (retro)' : ''}`]);
+      rows.push(['Day', 'Same as its orbit']);
+      rows.push(['Radius', `${nf(m.radiusKm, m.radiusKm < 100 ? 1 : 0)} km`]);
+    } else if (body.id === 'sun') {
       const earth = planetPosition('earth', date);
       rows.push(['Radius', `${nf(f!.radiusKm)} km`]);
       rows.push(['From Earth', `${nf(earth.r, 4)} AU`]);

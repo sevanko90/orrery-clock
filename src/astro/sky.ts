@@ -9,30 +9,42 @@ export interface MoonPhase {
   waxing: boolean;
 }
 
-/** Low-precision Sun and Moon longitudes (Meeus, truncated). Good to ~0.3°. */
-export function moonPhase(date: Date): MoonPhase {
-  const T = (julianDate(date) - J2000) / 36525;
+/** Geocentric ecliptic longitude of the Moon, degrees (Meeus, truncated; ~0.3°). */
+export function moonLongitude(date: Date): number {
+  return norm360(moonLon(julianDate(date)));
+}
+
+function moonLon(jd: number) {
+  const T = (jd - J2000) / 36525;
   const Lp = 218.3164477 + 481267.88123421 * T;
   const D = (297.8501921 + 445267.1114034 * T) * DEG;
   const M = (357.5291092 + 35999.0502909 * T) * DEG;
   const Mp = (134.9633964 + 477198.8675055 * T) * DEG;
   const F = (93.272095 + 483202.0175233 * T) * DEG;
 
-  const moonLon =
+  return (
     Lp +
     6.289 * Math.sin(Mp) -
     1.274 * Math.sin(2 * D - Mp) +
     0.658 * Math.sin(2 * D) +
     0.214 * Math.sin(2 * Mp) -
     0.186 * Math.sin(M) -
-    0.114 * Math.sin(2 * F);
+    0.114 * Math.sin(2 * F)
+  );
+}
+
+/** Low-precision Sun and Moon longitudes (Meeus, truncated). Good to ~0.3°. */
+export function moonPhase(date: Date): MoonPhase {
+  const T = (julianDate(date) - J2000) / 36525;
+  const M = (357.5291092 + 35999.0502909 * T) * DEG;
+  const moon = moonLon(julianDate(date));
 
   const L0 = 280.46646 + 36000.76983 * T;
   const C =
     (1.914602 - 0.004817 * T) * Math.sin(M) + 0.019993 * Math.sin(2 * M) + 0.000289 * Math.sin(3 * M);
   const sunLon = L0 + C;
 
-  const elong = norm360(moonLon - sunLon);
+  const elong = norm360(moon - sunLon);
   const phase = elong / 360;
   const illumination = (1 - Math.cos(elong * DEG)) / 2;
   const names = [
