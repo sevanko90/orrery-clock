@@ -20,6 +20,8 @@ export interface FictionEntry {
   leadMs?: number;
   /** Dated events: replay speed, simulated seconds per second (default a day a second). */
   playSpeed?: number;
+  /** Entries sharing a group are listed together under its name in the catalogue. */
+  group?: string;
 }
 
 // ---- The War of the Worlds -----------------------------------------------------
@@ -151,7 +153,74 @@ export const VOGON_DEMOLITION: FictionEntry = {
     'and Earth is back by lunchtime.',
 };
 
-export const FICTION: FictionEntry[] = [WAR_OF_THE_WORLDS, SPACE_1999, VOGON_DEMOLITION, UTOPIA_PLANITIA, WORMHOLE];
+// ---- The Expanse ------------------------------------------------------------------------
+
+const EXPANSE = 'The Expanse';
+const EXPANSE_SOURCE = 'The Expanse · James S. A. Corey';
+
+/** Real orbits for Ceres and Eros (JPL Small-Body Database, epoch JD 2461200.5). */
+export const CERES_ORBIT = { q: 2.55, e: 0.0797, i: 10.6, node: 80.2, argPeri: 73.3, perihelionJD: 2461599.841 };
+export const EROS_ORBIT = { q: 1.13, e: 0.223, i: 10.8, node: 304, argPeri: 179, perihelionJD: 2461088.813 };
+/** Tycho Station keeps to the Belt; where in it is our choice. */
+export const TYCHO_ORBIT = { a: 2.6, i: 3, lonAtJ2000: 140 };
+/** The Ring sits still, beyond the orbit of Uranus. */
+export const RING_GATE_AT = { au: 24, lonDeg: 200 };
+
+export const CERES_STATION: FictionEntry = {
+  id: 'ceres',
+  title: 'Ceres Station',
+  source: EXPANSE_SOURCE,
+  kind: 'place',
+  group: EXPANSE,
+  blurb:
+    'The dwarf planet Ceres, spun up for gravity and tunnelled out into the Belt’s great port: millions of Belters, ' +
+    'docks crowded with ships, and an economy running on water and ice. It follows Ceres’s real orbit here.',
+};
+
+export const EROS: FictionEntry = {
+  id: 'eros',
+  title: 'Eros',
+  source: EXPANSE_SOURCE,
+  kind: 'place',
+  group: EXPANSE,
+  blurb:
+    'A near-Earth asteroid with a station full of people, until the protomolecule is let loose on them. ' +
+    'Then the asteroid itself starts to change, glowing with something that is not human. It follows Eros’s real orbit here.',
+};
+
+export const TYCHO_STATION: FictionEntry = {
+  id: 'tycho',
+  title: 'Tycho Station',
+  source: EXPANSE_SOURCE,
+  kind: 'place',
+  group: EXPANSE,
+  blurb:
+    'A vast construction platform out in the Belt, home of Tycho Manufacturing, whose yards built the generation ship Nauvoo. ' +
+    'A spinning habitat ring around a central sphere, its booms always holding some hull under construction.',
+};
+
+export const RING_GATE: FictionEntry = {
+  id: 'ring',
+  title: 'The Ring Gate',
+  source: EXPANSE_SOURCE,
+  kind: 'place',
+  group: EXPANSE,
+  blurb:
+    'An alien ring, built from what the protomolecule made of Venus, that flew out and stopped beyond the orbit of Uranus. ' +
+    'Through it lies the slow zone, and beyond that over a thousand more gates to other stars.',
+};
+
+export const FICTION: FictionEntry[] = [
+  WAR_OF_THE_WORLDS,
+  SPACE_1999,
+  VOGON_DEMOLITION,
+  UTOPIA_PLANITIA,
+  WORMHOLE,
+  CERES_STATION,
+  EROS,
+  TYCHO_STATION,
+  RING_GATE,
+];
 
 /** Start of the dated event at or after `ms`, or the one-off date (null for places). */
 export function nextOccurrence(entry: FictionEntry, ms: number): number | null {

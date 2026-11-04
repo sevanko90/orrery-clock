@@ -572,6 +572,36 @@ input[type='range']::-moz-range-thumb {
 .f-eye:hover svg {
   fill: var(--amber);
 }
+#f-list li.f-group {
+  display: block;
+  padding: 7px 0 2px 10px;
+  border-radius: 9px;
+  background: rgba(255, 220, 160, 0.04);
+}
+.f-group-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px;
+}
+.f-group-head > div {
+  display: grid;
+  gap: 1px;
+}
+.f-sublist {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.f-sublist .f-item {
+  background: none;
+  padding: 5px 8px;
+}
+.f-sublist .f-title {
+  font-size: 12px;
+}
 #f-list {
   list-style: none;
   margin: 8px 0 0;

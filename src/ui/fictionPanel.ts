@@ -15,6 +15,8 @@ export class FictionPanel {
   private el = $('fiction');
   private when = new Map<string, HTMLElement>();
   private eyes = new Map<string, HTMLButtonElement>();
+  /** Group headings' eyes, with the entries each one covers. */
+  private groupEyes: { eye: HTMLButtonElement; name: string; entries: FictionEntry[] }[] = [];
   private lastRender = 0;
 
   /**
@@ -27,7 +29,18 @@ export class FictionPanel {
     private isShown: (id: string) => boolean,
   ) {
     const list = $('f-list');
+    // Grouped entries go under one heading, in a list of their own.
+    const groups = new Map<string, HTMLOListElement>();
     for (const entry of FICTION) {
+      let into: HTMLElement = list;
+      if (entry.group) {
+        let sub = groups.get(entry.group);
+        if (!sub) {
+          sub = this.groupHeading(entry, list);
+          groups.set(entry.group, sub);
+        }
+        into = sub;
+      }
       const li = document.createElement('li');
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -41,7 +54,8 @@ export class FictionPanel {
       const when = document.createElement('span');
       when.className = 'f-when';
       this.when.set(entry.id, when);
-      btn.append(title, source, when);
+      // Under a heading the source is already given.
+      btn.append(...(entry.group ? [title, when] : [title, source, when]));
       btn.addEventListener('click', () => onPick(entry));
       li.append(btn);
       if (entry.kind === 'place') {
@@ -55,7 +69,7 @@ export class FictionPanel {
         this.eyes.set(entry.id, eye);
         li.append(eye);
       }
-      list.append(li);
+      into.append(li);
     }
 
     const toggle = $<HTMLButtonElement>('f-toggle');
@@ -64,6 +78,39 @@ export class FictionPanel {
       toggle.setAttribute('aria-expanded', String(open));
       list.hidden = !open;
     });
+  }
+
+  /** A group's heading row (name, source and an eye for the lot); returns the list its entries go in. */
+  private groupHeading(first: FictionEntry, list: HTMLElement): HTMLOListElement {
+    const name = first.group!;
+    const li = document.createElement('li');
+    li.className = 'f-group';
+    const head = document.createElement('div');
+    head.className = 'f-group-head';
+    const label = document.createElement('div');
+    const title = document.createElement('span');
+    title.className = 'f-title';
+    title.textContent = name;
+    const source = document.createElement('span');
+    source.className = 'f-source';
+    source.textContent = first.source.replace(`${name} · `, '');
+    label.append(title, source);
+    const eye = document.createElement('button');
+    eye.type = 'button';
+    eye.className = 'f-eye';
+    const entries = FICTION.filter((e) => e.group === name && e.kind === 'place');
+    eye.addEventListener('click', () => {
+      const show = !entries.every((e) => this.isShown(e.id));
+      for (const e of entries) this.onToggle(e, show);
+      this.syncToggles();
+    });
+    this.groupEyes.push({ eye, name, entries });
+    head.append(label, eye);
+    const sub = document.createElement('ol');
+    sub.className = 'f-sublist';
+    li.append(head, sub);
+    list.append(li);
+    return sub;
   }
 
   setVisible(on: boolean) {
@@ -79,6 +126,13 @@ export class FictionPanel {
       eye.setAttribute('aria-pressed', String(shown));
       eye.setAttribute('aria-label', `${shown ? 'Hide' : 'Show'} ${title}`);
       eye.title = shown ? 'Hide' : 'Show';
+      eye.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${EYE}${shown ? '' : SLASH}</svg>`;
+    }
+    for (const { eye, name, entries } of this.groupEyes) {
+      const shown = entries.every((e) => this.isShown(e.id));
+      eye.setAttribute('aria-pressed', String(shown));
+      eye.setAttribute('aria-label', `${shown ? 'Hide' : 'Show'} all of ${name}`);
+      eye.title = shown ? 'Hide all' : 'Show all';
       eye.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${EYE}${shown ? '' : SLASH}</svg>`;
     }
   }

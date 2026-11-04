@@ -295,5 +295,14 @@
     "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Charon_map_iau1803c.jpg",
     "license": "Public domain",
     "artist": "NASA/Johns Hopkins University Applied Physics Laboratory/Southwest Research Institute"
+  },
+  {
+    "name": "ceres",
+    "title": "Solarsystemscope texture 4k ceres fictional.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/2/2f/Solarsystemscope_texture_4k_ceres_fictional.jpg",
+    "width": 4096,
+    "descriptionUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_4k_ceres_fictional.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Solar System Scope"
   }
 ]

@@ -51,6 +51,8 @@ const TEXTURES = {
   oberon: { file: 'Oberon map JPL USGS.jpg', moon: true },
   triton: { file: 'Triton map no grid.jpg', moon: true },
   charon: { file: 'Charon map iau1803c.jpg', moon: true },
+  // Fiction mode: Ceres Station. Solar System Scope's artist's impression.
+  ceres: { file: 'Solarsystemscope texture 4k ceres fictional.jpg', moon: true },
 };
 
 async function exists(p) {
