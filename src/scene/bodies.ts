@@ -26,6 +26,12 @@ export interface Body {
   blurb?: string;
   /** Set for moons. */
   moon?: MoonDef;
+  /** Card heading in place of the facts' kind (e.g. a fiction's source). */
+  kind?: string;
+  /** Live card rows in place of the computed ones. */
+  rows?: () => [string, string][];
+  /** False while the body is not on show (so it can't be picked). */
+  available?: () => boolean;
 }
 
 function glowTexture(inner: string, outer: string) {
@@ -601,6 +607,17 @@ export class Bodies {
     });
   }
 
+
+  /** A planet's spinning frame: things fixed to its surface turn with it. */
+  surfaceFrame(id: string): THREE.Object3D | null {
+    const pv = id === 'pluto' ? this.pluto : this.planets.find((p) => p.id === id);
+    return pv?.spin ?? null;
+  }
+
+  /** World position of a body's centre. */
+  positionOf(id: string, out = new THREE.Vector3()): THREE.Vector3 {
+    return this.bodies.find((b) => b.id === id)!.group.getWorldPosition(out);
+  }
 
   get moonsVisible() {
     return this.moonsOn;

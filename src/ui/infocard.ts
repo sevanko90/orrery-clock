@@ -46,7 +46,7 @@ export class InfoCard {
     this.lore = null;
     this.el.hidden = false;
     $('info-name').textContent = body.name;
-    $('info-kind').textContent = body.facts?.kind ?? 'Periodic comet';
+    $('info-kind').textContent = body.kind ?? body.facts?.kind ?? 'Periodic comet';
     $('info-blurb').textContent = body.facts?.blurb ?? body.blurb ?? '';
     this.render(simMs, true);
   }
@@ -60,6 +60,11 @@ export class InfoCard {
     $('info-kind').textContent = lore.kind;
     $('info-blurb').textContent = lore.blurb;
     this.setRows(lore.rows());
+  }
+
+  /** The body whose card is open, if any. */
+  get showingBody() {
+    return this.body;
   }
 
   get showing() {
@@ -88,7 +93,9 @@ export class InfoCard {
     const rows: [string, string][] = [];
     const f = body.facts;
 
-    if (body.moon) {
+    if (body.rows) {
+      rows.push(...body.rows());
+    } else if (body.moon) {
       const m = body.moon;
       rows.push(['Orbits', PLANET_FACTS[m.parent].name]);
       rows.push(['Distance', `${nf(m.aKm)} km`]);

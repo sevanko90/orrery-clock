@@ -8,7 +8,7 @@ import { Bodies, type Body } from './scene/bodies';
 import { FocusController } from './scene/focus';
 import { Discworld, DISC_HOME_CAMERA, DISC_HOME_TARGET } from './scene/discworld';
 import { HOME_CAMERA, HOME_TARGET } from './scene/stage';
-import { SimClock } from './sim/clock';
+import { SimClock, SPEED_STEPS } from './sim/clock';
 import { Kinematics } from './mechanism/kinematics';
 import { design } from './scene/mechanism3d';
 import { meanLongitude, planetPosition, type PlanetId } from './astro/orbits';
@@ -17,6 +17,9 @@ import { Readout } from './ui/readout';
 import { bindControls } from './ui/controls';
 import { InfoCard } from './ui/infocard';
 import { detectGpu, warnIfNoGpu } from './ui/gpuCheck';
+import { Fiction } from './scene/fiction';
+import { FictionPanel } from './ui/fictionPanel';
+import { nextOccurrence, type FictionEntry } from './fiction/catalog';
 
 if (import.meta.env.PROD) {
   // Activate new builds immediately; reload once the new worker takes control.
@@ -217,6 +220,119 @@ addEventListener('keydown', (e) => {
   if (e.key === 'm' || e.key === 'M') setMoons(!bodies.moonsVisible);
 });
 
+// ---- Fiction mode --------------------------------------------------------------
+// Built on first use, like Discworld mode.
+let fiction: Fiction | null = null;
+/** Entry whose show was just started: frame it once the jump has landed. */
+let pendingFrame: string | null = null;
+/**
+ * The scene played from the catalogue, until it ends (then the orrery goes
+ * back to now, at real time) or the clock is taken elsewhere (then it's dropped).
+ */
+let playing: { id: string; end: number; jumps: number } | null = null;
+/** Places switched off in the catalogue (remembered). */
+const hiddenPlaces = new Set<string>();
+try {
+  for (const id of JSON.parse(localStorage.getItem('fiction-hidden') ?? '[]') as string[]) hiddenPlaces.add(id);
+} catch {
+  /* ignore */
+}
+const fictionButton = document.getElementById('c-fiction') as HTMLButtonElement;
+const fictionPanel = new FictionPanel(playFiction, setPlaceShown, (id) => !hiddenPlaces.has(id));
+const DAY_PER_SECOND = SPEED_STEPS.findIndex((s) => s.speed === 86_400);
+
+/** Is the camera on, or a card open for, this fiction body? */
+function fictionInView(id: string) {
+  return focus.focused?.id === id || info.showingBody?.id === id;
+}
+
+function setPlaceShown(entry: FictionEntry, shown: boolean) {
+  if (shown) hiddenPlaces.delete(entry.id);
+  else hiddenPlaces.add(entry.id);
+  fiction?.setPlaceShown(entry.id, shown);
+  if (!shown && fictionInView(entry.id)) unfocus();
+  try {
+    localStorage.setItem('fiction-hidden', JSON.stringify([...hiddenPlaces]));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Forget the playing scene (the user has moved on), leaving the clock alone. */
+function dropScene() {
+  playing = null;
+  fiction?.setPlaying(null);
+}
+
+/** The scene has run its course: back to now, at real time, and the home view. */
+function finishScene() {
+  const id = playing!.id;
+  dropScene();
+  clock.resetToNow();
+  if (fictionInView(id)) info.hide();
+  focus.goHome();
+  lastInteraction = performance.now();
+}
+
+function setFiction(on: boolean) {
+  if (on && !fiction) {
+    fiction = new Fiction(bodies, mats);
+    hiddenPlaces.forEach((id) => fiction!.setPlaceShown(id, false));
+    stage.scene.add(fiction.root);
+  }
+  if (!on && playing) finishScene();
+  fiction?.setEnabled(on);
+  fictionPanel.setVisible(on);
+  fictionButton.setAttribute('aria-pressed', String(on));
+  fictionButton.title = on ? 'Leave fiction mode (F)' : 'Fiction mode (F)';
+  // Don't leave the camera or a card on something that has just vanished.
+  const shown = [focus.focused, info.showingBody];
+  if (!on && fiction && shown.some((b) => b && fiction!.bodies.includes(b))) unfocus();
+  try {
+    localStorage.setItem('fiction', on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Dated events: jump to just before they start and run at a day a second. Places: fly to them. */
+function playFiction(entry: FictionEntry) {
+  const body = fiction?.bodies.find((b) => b.id === entry.id);
+  if (!fiction || !body) return;
+  const start = nextOccurrence(entry, clock.nowMs());
+  if (start === null) {
+    // A place: make sure it's on show (a playing scene hides it), then fly there.
+    if (playing) dropScene();
+    if (hiddenPlaces.has(entry.id)) {
+      setPlaceShown(entry, true);
+      fictionPanel.syncToggles();
+    }
+    return select(body);
+  }
+  clock.jumpTo(start - 6 * 3_600_000);
+  clock.setStep(DAY_PER_SECOND);
+  playing = { id: entry.id, end: start + (entry.durationMs ?? 0), jumps: clock.jumps };
+  fiction.setPlaying(entry.id);
+  pendingFrame = entry.id;
+  info.show(body, clock.nowMs());
+  lastInteraction = performance.now();
+}
+
+{
+  let saved = false;
+  try {
+    saved = localStorage.getItem('fiction') === '1';
+  } catch {
+    /* ignore */
+  }
+  if (saved) setFiction(true);
+}
+fictionButton.addEventListener('click', () => setFiction(!fiction?.enabled));
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'f' || e.key === 'F') setFiction(!fiction?.enabled);
+});
+
 const credits = document.getElementById('credits') as HTMLDialogElement;
 document.getElementById('credits-btn')!.addEventListener('click', () => credits.showModal());
 
@@ -232,8 +348,13 @@ stage.controls.addEventListener('end', () => (lastInteraction = performance.now(
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 /** Pick proxies of the bodies on show (hidden moons can't be picked). */
+function allBodies(): Body[] {
+  return fiction ? [...bodies.bodies, ...fiction.bodies] : bodies.bodies;
+}
 function activeProxies() {
-  return bodies.bodies.filter((b) => !b.moon || bodies.moonsVisible).map((b) => b.pickProxy);
+  return allBodies()
+    .filter((b) => (!b.moon || bodies.moonsVisible) && (b.available?.() ?? true))
+    .map((b) => b.pickProxy);
 }
 /**
  * Body under the pointer (call after setPointer). Moons sit inside their
@@ -241,8 +362,9 @@ function activeProxies() {
  */
 function bodyUnderPointer(): Body | null {
   const hits = raycaster.intersectObjects(activeProxies(), false);
-  const hit = hits.find((h) => bodies.bodies.find((b) => b.pickProxy === h.object)?.moon) ?? hits[0];
-  return hit ? (bodies.bodies.find((b) => b.pickProxy === hit.object) ?? null) : null;
+  const all = allBodies();
+  const hit = hits.find((h) => all.find((b) => b.pickProxy === h.object)?.moon) ?? hits[0];
+  return hit ? (all.find((b) => b.pickProxy === hit.object) ?? null) : null;
 }
 const hoverTag = document.getElementById('hover-tag')!;
 const canvas = stage.renderer.domElement;
@@ -358,6 +480,19 @@ function step(now: number) {
     trueMarkers.get(a.id)!.position.set(Math.cos(lon) * a.radius, PLANE_Y, -Math.sin(lon) * a.radius);
   }
   bodies.update(simMs, dt, elapsed);
+  if (playing) {
+    if (clock.jumps !== playing.jumps) dropScene();
+    else if (simMs >= playing.end) finishScene();
+  }
+  if (fiction) {
+    fiction.update(simMs, dt, elapsed, jumped);
+    if (pendingFrame) {
+      const points = fiction.framePoints(pendingFrame);
+      if (points.length) focus.frame(points, 2.4);
+      pendingFrame = null;
+    }
+  }
+  fictionPanel.update(simMs);
   focus.update(dt);
   if (discworld) {
     discworld.update(dt, clock.speed, stage.camera);
