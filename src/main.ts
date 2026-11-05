@@ -21,6 +21,8 @@ import { Fiction } from './scene/fiction';
 import { FictionPanel } from './ui/fictionPanel';
 import { nextOccurrence, type FictionEntry } from './fiction/catalog';
 import { XrMode, type XrHit } from './xr/xrMode';
+import { DetailCuller } from './xr/detailCull';
+import { XR } from './xr/config';
 import { TABLE_RADIUS } from './scene/layout';
 
 if (import.meta.env.PROD) {
@@ -490,10 +492,20 @@ canvas.addEventListener('pointerleave', () => (hoverTag.hidden = true));
 // The hall is sized from the instrument as built (cabinet and arms).
 orrery.root.updateMatrixWorld(true);
 const orreryBox = new THREE.Box3().setFromObject(orrery.root);
+const culler = new DetailCuller();
 const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS }, {
   pick: xrPick,
-  // From under the cabinet its opaque base hides the whole movement (115 draw calls): skip it.
-  view: (head) => (orrery.mechanism.root.visible = head.y > orreryBox.min.y),
+  view: (head) => {
+    if (!head) {
+      culler.restore();
+      orrery.mechanism.root.visible = true;
+      return;
+    }
+    // From under the cabinet its opaque base hides the whole movement (115 draw calls): skip it.
+    orrery.mechanism.root.visible = head.y > orreryBox.min.y;
+    culler.setRoots([orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
+    culler.update(head, XR.detailCullAngle);
+  },
   faster: () => clock.setStep(clock.step + 1),
   slower: () => clock.setStep(clock.step - 1),
   now: () => clock.resetToNow(),

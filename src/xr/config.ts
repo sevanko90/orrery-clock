@@ -46,6 +46,8 @@ export const XR = {
 
   /** Largest a particle may draw (px per eye): standing inside the rimfall must not fill the view. */
   maxPointPx: 64,
+  /** Meshes smaller than this from the eye (radians across their bounding radius) aren't drawn. */
+  detailCullAngle: 0.0035,
 } as const;
 
 /** Jetpack speeds scale partly with the world, so big hangars stay crossable. */

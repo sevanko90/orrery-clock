@@ -1279,8 +1279,55 @@ const LEAVING = { shipStagger: 0.4, shipTakes: 3.5, bypassFrom: 1, bypassTo: 6, 
 const BLAST = { shock: 3.5, echo: 2.6, fireball: 1.3, embers: 4.5 };
 const EMBERS = 60;
 
+const CHUNK_DUMMY = new THREE.Object3D();
+
+/** The blast's embers as one cloud of soft additive points, sized in world units. */
+function emberPoints(colors: Float32Array) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(colors.length), 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uSize: { value: 0.05 },
+      uOpacity: { value: 0 },
+      // World units to pixels at unit distance for the desktop's 40° view.
+      uScale: { value: (innerHeight * Math.min(devicePixelRatio, 2)) / (2 * Math.tan(THREE.MathUtils.degToRad(20))) },
+      ...POINT_UNIFORMS,
+    },
+    vertexShader: /* glsl */ `
+      uniform float uSize, uScale;
+      ${POINT_GLSL}
+      attribute vec3 color;
+      varying vec3 vColor;
+      void main() {
+        vColor = color;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mv;
+        // A sprite's scale is its full width; the soft dot fills about half of it.
+        gl_PointSize = ${pointSize('uScale * uSize / -mv.z')};
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uOpacity;
+      varying vec3 vColor;
+      void main() {
+        float d = length(gl_PointCoord - 0.5);
+        float soft = smoothstep(0.5, 0.0, d);
+        gl_FragColor = vec4(vColor * soft, soft * uOpacity);
+      }`,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  points.visible = false;
+  return points;
+}
+
 interface Chunk {
-  mesh: THREE.Mesh;
+  /** Which instanced mesh holds it, and its slot there. */
+  mesh: THREE.InstancedMesh;
+  slot: number;
   size: number;
   /** Stretch, so pieces are shards and slabs rather than balls. */
   shape: THREE.Vector3;
@@ -1401,7 +1448,11 @@ class Demolition {
   /** The ships themselves can be hovered ("Vogon Constructor Fleet") and clicked for the scene's card. */
   readonly fleetBody: Body;
   private chunks: Chunk[] = [];
-  private embers: { sprite: THREE.Sprite; dir: THREE.Vector3; speed: number }[] = [];
+  /** The chunks, drawn as two instanced meshes (Earth's surface, molten rock). */
+  private chunkMeshes: THREE.InstancedMesh[] = [];
+  private embers: { dir: THREE.Vector3; speed: number }[] = [];
+  /** The embers, one point cloud. */
+  private emberCloud: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
   private flash = glow(0xfff3d0);
   private shock = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new ShockwaveMaterial(1.7));
   private echo = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new ShockwaveMaterial(5.3));
@@ -1466,27 +1517,41 @@ class Demolition {
     new ProgressiveTexture('earth', (t) => ((surface.map = t), (surface.needsUpdate = true))).start('2k');
     sunlit(surface);
     const molten = new THREE.MeshStandardMaterial({ color: 0x5a1e0a, emissive: 0xff5a14, emissiveIntensity: 0.8, roughness: 1, flatShading: true });
+    // One draw call per material rather than one per chunk (they all move by hand,
+    // so their bounds are never up to date: no culling).
     const chunkGeo = new THREE.IcosahedronGeometry(1, 0);
+    const hotCount = Math.ceil(CHUNKS / 5);
+    const [cold, hotMesh] = [new THREE.InstancedMesh(chunkGeo, surface, CHUNKS - hotCount), new THREE.InstancedMesh(chunkGeo, molten, hotCount)];
+    this.chunkMeshes = [cold, hotMesh];
+    for (const m of this.chunkMeshes) {
+      m.visible = false;
+      m.frustumCulled = false;
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.group.add(m);
+    }
+    let coldSlot = 0,
+      hotSlot = 0;
     for (let i = 0; i < CHUNKS; i++) {
       const hot = i % 5 === 0;
-      const mesh = new THREE.Mesh(chunkGeo, hot ? molten : surface);
-      mesh.visible = false;
       const r = () => 0.45 + Math.random() * 0.9;
       this.chunks.push({
-        mesh,
+        mesh: hot ? hotMesh : cold,
+        slot: hot ? hotSlot++ : coldSlot++,
         size: (hot ? 0.015 : 0.02) + Math.random() * 0.04,
         shape: new THREE.Vector3(r(), r() * 0.6, r()),
         dir: new THREE.Vector3().randomDirection(),
         speed: 0.5 + Math.random() * 0.9,
         spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(4),
       });
-      this.group.add(mesh);
     }
+    const emberColors = new Float32Array(EMBERS * 3);
+    const c = new THREE.Color();
     for (let i = 0; i < EMBERS; i++) {
-      const sprite = glow(i % 3 ? 0xff8a30 : 0xffe0a0, 0);
-      this.embers.push({ sprite, dir: new THREE.Vector3().randomDirection(), speed: 1 + Math.random() * 2 });
-      this.group.add(sprite);
+      this.embers.push({ dir: new THREE.Vector3().randomDirection(), speed: 1 + Math.random() * 2 });
+      c.set(i % 3 ? 0xff8a30 : 0xffe0a0).toArray(emberColors, i * 3);
     }
+    this.emberCloud = emberPoints(emberColors);
+    this.group.add(this.emberCloud);
 
     // Shockwaves lie a little off the plane, at different tilts, for depth.
     this.shock.rotation.set(-Math.PI / 2 + 0.28, 0, 0.2);
@@ -1786,12 +1851,18 @@ class Demolition {
       mesh.material.uniforms.uFront.value = 1 - (1 - u) ** 3;
     }
     const e = age / BLAST.embers;
-    for (const em of this.embers) {
-      em.sprite.visible = e < 1;
-      if (e >= 1) continue;
-      em.sprite.position.copy(this.earth).addScaledVector(em.dir, 0.3 + em.speed * (1 - Math.exp(-age * 1.3)) * 1.1);
-      em.sprite.scale.setScalar(0.05 * (1 - e) + 0.01);
-      em.sprite.material.opacity = (1 - e) ** 1.5;
+    this.emberCloud.visible = e < 1;
+    if (e < 1) {
+      const pos = this.emberCloud.geometry.attributes.position as THREE.BufferAttribute;
+      const p = new THREE.Vector3();
+      this.embers.forEach((em, i) => {
+        p.copy(this.earth).addScaledVector(em.dir, 0.3 + em.speed * (1 - Math.exp(-age * 1.3)) * 1.1);
+        pos.setXYZ(i, p.x, p.y, p.z);
+      });
+      pos.needsUpdate = true;
+      const u = this.emberCloud.material.uniforms;
+      u.uSize.value = 0.05 * (1 - e) + 0.01;
+      u.uOpacity.value = (1 - e) ** 1.5;
     }
 
     // The pieces: a fast burst (real time, if it was seen), then a slow drift and fade (sim time).
@@ -1799,14 +1870,20 @@ class Demolition {
     const scatter = toBlast >= 0 && this.active;
     const burst = 1 - Math.exp(-(seen ? age : 99) * 0.9);
     const fade = 1 - ramp(hoursSince, 1.2, VOGON.end - VOGON.demolish);
-    for (const c of this.chunks) {
-      c.mesh.visible = scatter && fade > 0.02;
-      if (!c.mesh.visible) continue;
-      const out = 0.22 + c.speed * (1.1 * burst + 0.12 * hoursSince);
-      c.mesh.position.copy(this.earth).addScaledVector(c.dir, out);
-      const turn = Math.min(seen ? age : 30, 30) * 0.4 + hoursSince * 3;
-      c.mesh.rotation.set(c.spin.x * turn, c.spin.y * turn, c.spin.z * turn);
-      c.mesh.scale.copy(c.shape).multiplyScalar(c.size * fade);
+    const scattering = scatter && fade > 0.02;
+    for (const m of this.chunkMeshes) m.visible = scattering;
+    if (scattering) {
+      const o = CHUNK_DUMMY;
+      for (const c of this.chunks) {
+        const out = 0.22 + c.speed * (1.1 * burst + 0.12 * hoursSince);
+        o.position.copy(this.earth).addScaledVector(c.dir, out);
+        const turn = Math.min(seen ? age : 30, 30) * 0.4 + hoursSince * 3;
+        o.rotation.set(c.spin.x * turn, c.spin.y * turn, c.spin.z * turn);
+        o.scale.copy(c.shape).multiplyScalar(c.size * fade);
+        o.updateMatrix();
+        c.mesh.setMatrixAt(c.slot, o.matrix);
+      }
+      for (const m of this.chunkMeshes) m.instanceMatrix.needsUpdate = true;
     }
 
     // The construction site, while the fleet waits: Earth's ghost drawn in,

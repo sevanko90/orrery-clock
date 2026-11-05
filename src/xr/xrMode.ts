@@ -23,8 +23,8 @@ export interface XrHooks {
   faster(): void;
   slower(): void;
   now(): void;
-  /** Called each frame in VR with the head's world position (to skip drawing what it can't see). */
-  view?(head: THREE.Vector3): void;
+  /** Called each frame in VR with the head's world position (to skip drawing what it can't see); null on leaving VR. */
+  view?(head: THREE.Vector3 | null): void;
   /** Lines for the wrist readout: the date shown and the speed. */
   status(): string[];
   /** Camera shake the scenes want (0..1); in VR it becomes controller rumble. */
@@ -186,7 +186,7 @@ export class XrMode {
   }
 
   private end() {
-    this.hooks.view?.(new THREE.Vector3(0, Infinity, 0));
+    this.hooks.view?.(null);
     POINT_UNIFORMS.uPointView.value = 1;
     POINT_UNIFORMS.uPointMax.value = 4096;
     this.hangar.visible = this.rig.visible = false;
