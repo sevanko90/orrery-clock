@@ -22,6 +22,7 @@ import { FictionPanel } from './ui/fictionPanel';
 import { nextOccurrence, type FictionEntry } from './fiction/catalog';
 import { XrMode, type XrHit } from './xr/xrMode';
 import { DetailCuller } from './xr/detailCull';
+import { Batcher, raycastLayers } from './scene/batch';
 import { Telemetry, type Command } from './xr/telemetry';
 import { XR } from './xr/config';
 import { TABLE_RADIUS } from './scene/layout';
@@ -76,6 +77,10 @@ boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend });
 const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
+// Draw the instrument's hundreds of parts as a few batches (one per material).
+const orreryBatch = new Batcher(orrery.root, stage.scene);
+// World matrices are brought up to date once a frame, just before the batches copy them.
+stage.scene.matrixWorldAutoUpdate = false;
 const bodies = new Bodies(orrery.arms, { lowQuality: quality.low });
 stage.scene.add(bodies.root);
 
@@ -182,11 +187,13 @@ const { syncDate } = bindControls(clock, unfocus);
 // ---- Discworld mode ------------------------------------------------------------
 // Built on first use so normal mode pays nothing for it.
 let discworld: Discworld | null = null;
+let discBatch: Batcher | null = null;
 const discButton = document.getElementById('c-disc') as HTMLButtonElement;
 const NORMAL_LIMITS = { maxPolar: stage.controls.maxPolarAngle, maxDistance: stage.controls.maxDistance };
 function setDiscworld(on: boolean) {
   if (on && !discworld) {
     discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio });
+    discBatch = new Batcher(discworld.root, stage.scene);
     stage.scene.add(discworld.root);
   }
   discworld?.setEnabled(on);
@@ -383,7 +390,8 @@ stage.controls.addEventListener('start', () => {
 stage.controls.addEventListener('end', () => (lastInteraction = performance.now()));
 
 // ---- Picking & hover ---------------------------------------------------------
-const raycaster = new THREE.Raycaster();
+// Also hits meshes drawn through batches (their originals sit on their own layer).
+const raycaster = raycastLayers(new THREE.Raycaster());
 const pointer = new THREE.Vector2();
 /** Pick proxies of the bodies on show (hidden moons can't be picked). */
 function allBodies(): Body[] {
@@ -515,11 +523,14 @@ orrery.root.updateMatrixWorld(true);
 const orreryBox = new THREE.Box3().setFromObject(orrery.root);
 const culler = new DetailCuller();
 let cullAngle: number = XR.detailCullAngle;
+/** The VR player's head (world units), for culling small batched parts; null outside VR. */
+let xrHead: THREE.Vector3 | null = null;
 const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS }, {
   pick: xrPick,
   view: (head) => {
     if (!head) {
       culler.restore();
+      xrHead = null;
       orrery.mechanism.root.visible = true;
       return;
     }
@@ -527,6 +538,7 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
     orrery.mechanism.root.visible = head.y > orreryBox.min.y;
     culler.setRoots([orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
     culler.update(head, cullAngle);
+    xrHead = head;
   },
   faster: () => clock.setStep(clock.step + 1),
   slower: () => clock.setStep(clock.step - 1),
@@ -704,6 +716,10 @@ function step(now: number) {
   const quake = Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0);
   const shake = quake > 0 && !xr.presenting ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
   if (shake) stage.camera.position.add(shake);
+  stage.scene.updateMatrixWorld();
+  const eye = xr.presenting ? (xrHead ?? undefined) : undefined;
+  orreryBatch.sync(eye, cullAngle);
+  discBatch?.sync(eye, cullAngle);
   stage.render(xr.camera);
   if (shake) stage.camera.position.sub(shake);
 
