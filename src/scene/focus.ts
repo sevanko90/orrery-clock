@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { HOME_CAMERA, HOME_TARGET } from './stage';
 import type { Body } from './bodies';

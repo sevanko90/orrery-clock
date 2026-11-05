@@ -1,5 +1,5 @@
 import './style.css';
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { registerSW } from 'virtual:pwa-register';
 import { Stage, detectQuality } from './scene/stage';
 import { createMaterials } from './scene/materials';
@@ -52,6 +52,8 @@ const quality = detectQuality();
 // Without a GPU, drop to the light settings so it at least stays usable.
 if (gpu === 'software') Object.assign(quality, { low: true, pixelRatio: 1, shadows: false, bloom: false });
 const stage = new Stage(container, quality);
+// The GPU backend (WebGPU, or WebGL 2) comes up asynchronously.
+await stage.init();
 const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
@@ -511,6 +513,8 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   now: () => clock.resetToNow(),
   status: () => [new Date(clock.nowMs()).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), SPEED_STEPS[clock.step].label],
   quake: () => Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0),
+  toggleBloom: () => (stage.xrBloom = !stage.xrBloom),
+  backend: () => stage.backend,
 });
 {
   const vrButton = document.getElementById('c-vr') as HTMLButtonElement;

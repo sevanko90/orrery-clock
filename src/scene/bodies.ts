@@ -1,5 +1,6 @@
-import * as THREE from 'three';
-import { POINT_GLSL, POINT_UNIFORMS, pointSize } from './pointSize';
+import * as THREE from 'three/webgpu';
+import { float, fract, modelViewMatrix, smoothstep, step, uniform, uv, vec3, vec4 } from 'three/tsl';
+import { particleFloat, particleVec3, particles, pointSize } from './pointSize';
 import { PLANET_FACTS, SUN_FACTS, COMETS, type BodyFacts, type CometDef } from '../astro/bodies';
 import { cometPosition, planetPosition, sampleOrbit, PLANET_ELEMENTS, type PlanetId } from '../astro/orbits';
 import { MOONS, type MoonDef } from '../astro/moons';
@@ -7,6 +8,9 @@ import { moonLongitude } from '../astro/sky';
 import { J2000, julianDate } from '../astro/time';
 import { ARMS, PLANE_Y, PLUTO_SIZE, SUN_RADIUS, toWorld } from './layout';
 import { ProgressiveTexture, type TextureTier } from './textures';
+import { NIGHT_FILL, SUN_COLOR, SUN_LIGHTS, sunlit } from './sunlit';
+
+export { sunlit };
 import type { ArmRig } from './orrery';
 
 const DEG = Math.PI / 180;
@@ -191,48 +195,41 @@ function makePlanet(
   return { id, group, tilt, spin, rotationHours: facts.rotationHours, textures };
 }
 
-class TailMaterial extends THREE.ShaderMaterial {
-  constructor(color: THREE.Color, spread: number) {
-    super({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      uniforms: {
-        uHead: { value: new THREE.Vector3() },
-        uDir: { value: new THREE.Vector3(1, 0, 0) },
-        uLen: { value: 0 },
-        uTime: { value: 0 },
-        uColor: { value: color },
-        uSpread: { value: spread },
-        uScale: { value: 300 },
-        ...POINT_UNIFORMS,
-      },
-      vertexShader: /* glsl */ `
-        attribute float aT;
-        attribute vec3 aSeed;
-        uniform vec3 uHead; uniform vec3 uDir; uniform float uLen; uniform float uTime;
-        uniform float uSpread; uniform float uScale;
-        ${POINT_GLSL}
-        varying float vAlpha;
-        void main() {
-          float t = fract(aT + uTime * 0.05);
-          vec3 p = uHead + uDir * (t * uLen) + aSeed * (0.03 + t * uSpread) * uLen;
-          vec4 mv = modelViewMatrix * vec4(p, 1.0);
-          gl_Position = projectionMatrix * mv;
-          gl_PointSize = ${pointSize('uScale * (0.06 + 0.1 * (1.0 - t)) / -mv.z')};
-          vAlpha = (1.0 - t) * (1.0 - t) * step(0.001, uLen);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform vec3 uColor;
-        varying float vAlpha;
-        void main() {
-          float d = length(gl_PointCoord - 0.5);
-          float a = smoothstep(0.5, 0.0, d) * vAlpha * 0.35;
-          gl_FragColor = vec4(uColor * a, a);
-        }
-      `,
-    });
+/**
+ * A comet tail: particles streaming back from the head, spreading as they go.
+ * Positions are worked out on the GPU from the head, the tail's direction and
+ * its length, so only those uniforms change each frame.
+ */
+class Tail {
+  readonly uniforms = {
+    uHead: uniform(new THREE.Vector3()),
+    uDir: uniform(new THREE.Vector3(1, 0, 0)),
+    uLen: uniform(0),
+    uTime: uniform(0),
+  };
+  readonly sprite: THREE.Sprite;
+
+  constructor(color: THREE.Color, spread: number, count: number) {
+    const t = new Float32Array(count);
+    const seed = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      t[i] = Math.random();
+      const v = new THREE.Vector3().randomDirection().multiplyScalar(Math.random());
+      seed.set([v.x, v.y, v.z], i * 3);
+    }
+    const aT = particleFloat(t).node;
+    const aSeed = particleVec3(seed).node;
+    const u = this.uniforms;
+    this.sprite = particles(count, (mat) => {
+      const k = fract(aT.add(u.uTime.mul(0.05)));
+      const p = u.uHead.add(u.uDir.mul(k.mul(u.uLen))).add(aSeed.mul(k.mul(spread).add(0.03)).mul(u.uLen));
+      mat.positionNode = p;
+      const depth = modelViewMatrix.mul(vec4(p, 1)).z.negate();
+      mat.sizeNode = pointSize(float(300).mul(k.oneMinus().mul(0.1).add(0.06)).div(depth));
+      const a = smoothstep(0, 0.5, uv().sub(0.5).length()).oneMinus().mul(k.oneMinus().pow(2)).mul(step(0.001, u.uLen)).mul(0.35);
+      mat.colorNode = vec3(color.r, color.g, color.b).mul(a);
+      mat.opacityNode = a;
+    }).sprite;
   }
 }
 
@@ -240,10 +237,10 @@ interface CometVisual {
   def: CometDef;
   group: THREE.Group;
   coma: THREE.Sprite;
-  tails: TailMaterial[];
+  tails: Tail[];
 }
 
-function makeComet(def: CometDef, particles: number): { visual: CometVisual; tailPoints: THREE.Points[]; orbit: THREE.Line } {
+function makeComet(def: CometDef, count: number): { visual: CometVisual; tailPoints: THREE.Sprite[]; orbit: THREE.Line } {
   const group = new THREE.Group();
   group.name = def.id;
   const nucleus = new THREE.Mesh(
@@ -262,31 +259,16 @@ function makeComet(def: CometDef, particles: number): { visual: CometVisual; tai
   coma.scale.setScalar(0.8);
   group.add(coma);
 
-  const tails: TailMaterial[] = [];
-  const tailPoints: THREE.Points[] = [];
+  const tails: Tail[] = [];
+  const tailPoints: THREE.Sprite[] = [];
   const specs: [string, number][] = [
     ['#bcd7ff', 0.06], // ion tail: narrow, blue
     ['#fff1d6', 0.18], // dust tail: broad, warm
   ];
   for (const [color, spread] of specs) {
-    const geo = new THREE.BufferGeometry();
-    const t = new Float32Array(particles);
-    const seed = new Float32Array(particles * 3);
-    for (let i = 0; i < particles; i++) {
-      t[i] = Math.random();
-      const v = new THREE.Vector3().randomDirection().multiplyScalar(Math.random());
-      seed.set([v.x, v.y, v.z], i * 3);
-    }
-    geo.setAttribute('aT', new THREE.BufferAttribute(t, 1));
-    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
-    // Positions are computed in the shader; give three a dummy attribute + bounds.
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(particles * 3), 3));
-    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
-    const mat = new TailMaterial(new THREE.Color(color), spread);
-    const pts = new THREE.Points(geo, mat);
-    pts.frustumCulled = false;
-    tails.push(mat);
-    tailPoints.push(pts);
+    const tail = new Tail(new THREE.Color(color), spread, count);
+    tails.push(tail);
+    tailPoints.push(tail.sprite);
   }
 
   const a = def.elements.q / (1 - def.elements.e);
@@ -347,82 +329,8 @@ export interface BodiesOptions {
   lowQuality: boolean;
 }
 
-/**
- * Flat light on a body's night side (irradiance), so it stays readable.
- * Aesthetics over realism: dark worlds and small rocks get extra so they
- * never vanish against the night.
- */
-const NIGHT_FILL = 0.6;
-/** Sunlight colour; the night fill takes the same hue so a body's colour holds across the terminator. */
-const SUN_COLOR = new THREE.Color(0xfff0dd);
+/** Dark worlds and small rocks get extra night fill so they never vanish against the night. */
 const NIGHT_FILL_BOOST: Record<string, number> = { pluto: 1.2, mercury: 0.9, belt: 1.0 };
-
-/** The lighting chunk with directional lights switched off (see sunlit()). */
-const SUNLIT_LIGHTS_BEGIN = THREE.ShaderChunk.lights_fragment_begin.replace(
-  'directionalLight = directionalLights[ i ];',
-  'directionalLight = directionalLights[ i ];\n\t\tdirectionalLight.color = vec3( 0.0 );',
-);
-
-/**
- * Direct light with a soft terminator: instead of Lambert's cos, which stops
- * dead at 90° and reads as a hard line against the flat night fill, the
- * light eases out a little past the terminator (as an atmosphere scatters
- * it). Diffuse only: easing the specular term too makes it spike into
- * flashing glints at the limb, where the specular maths expects no light.
- */
-const TERMINATOR_WRAP = 0.25;
-const SUNLIT_DIRECT = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
-  'reflectedLight.directDiffuse += irradiance * diffuseBRDF * ( 1.0 - F );',
-  `float wrapNL = saturate( ( dot( geometryNormal, directLight.direction ) + ${TERMINATOR_WRAP.toFixed(2)} ) / ${(1 + TERMINATOR_WRAP).toFixed(2)} );
-	reflectedLight.directDiffuse += wrapNL * wrapNL * directLight.color * diffuseBRDF * ( 1.0 - F );`,
-);
-
-/**
- * Pluto's map is black where New Horizons never imaged it (much of the south).
- * Fill those texels from the mirrored northern hemisphere, blended softly, so
- * Pluto never shows a black hemisphere.
- */
-const MIRROR_UNMAPPED_SOUTH = THREE.ShaderChunk.map_fragment.replace(
-  'vec4 sampledDiffuseColor = texture2D( map, vMapUv );',
-  `vec4 sampledDiffuseColor = texture2D( map, vMapUv );
-	vec4 mirroredNorth = texture2D( map, vec2( vMapUv.x, 1.0 - vMapUv.y ) );
-	float mappedLum = dot( sampledDiffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
-	sampledDiffuseColor = mix( mirroredNorth, sampledDiffuseColor, smoothstep( 0.01, 0.05, mappedLum ) );`,
-);
-
-if (MIRROR_UNMAPPED_SOUTH === THREE.ShaderChunk.map_fragment || SUNLIT_DIRECT === THREE.ShaderChunk.lights_physical_pars_fragment || SUNLIT_LIGHTS_BEGIN === THREE.ShaderChunk.lights_fragment_begin) {
-  console.warn('sunlit(): three.js lighting chunks changed; planet terminators are not applied');
-}
-
-/**
- * Light a body like a world in sunlight, so it shows a day side and a
- * terminator: the Sun (a point light) at full strength, and in place of the
- * scene's fill (hemisphere light and the room environment, which light it
- * evenly from all round) a flat, dim glow on the night side. Directional
- * lights, which are there for the woodwork and the Discworld stack, are
- * ignored. (`envMapIntensity: 0` alone doesn't do it: a material without its
- * own envMap takes the scene's environmentIntensity.)
- */
-export function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirrorSouth = false) {
-  const night = SUN_COLOR.clone().multiplyScalar(fill);
-  mat.onBeforeCompile = (shader) => {
-    if (mirrorSouth) shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', MIRROR_UNMAPPED_SOUTH);
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <lights_physical_pars_fragment>', SUNLIT_DIRECT)
-      .replace('#include <lights_fragment_begin>', SUNLIT_LIGHTS_BEGIN)
-      .replace(
-        '#include <lights_fragment_end>',
-        `irradiance = vec3( ${night.r.toFixed(3)}, ${night.g.toFixed(3)}, ${night.b.toFixed(3)} );
-iblIrradiance = vec3( 0.0 );
-#if defined( RE_IndirectSpecular )
-\tradiance = vec3( 0.0 );
-#endif
-#include <lights_fragment_end>`,
-      );
-  };
-  const key = `sunlit-${night.toArray().map((v) => v.toFixed(3)).join(',')}${mirrorSouth ? '-mirror' : ''}`;
-  mat.customProgramCacheKey = () => key;
-}
 
 export class Bodies {
   readonly root = new THREE.Group();
@@ -473,6 +381,7 @@ export class Bodies {
 
     this.sunLight = new THREE.PointLight(SUN_COLOR, 2.2, 0, 0);
     this.sunLight.position.copy(this.sunMesh.position);
+    SUN_LIGHTS.setLights([this.sunLight]);
     this.sunLight.castShadow = !opts.lowQuality;
     this.sunLight.shadow.mapSize.set(1024, 1024);
     this.sunLight.shadow.camera.near = SUN_RADIUS + 0.05;
@@ -687,12 +596,13 @@ export class Bodies {
         root.add(plane);
 
         const ring: THREE.Vector3[] = [];
-        for (let k = 0; k < 128; k++) {
+        // A closed line (the WebGPU renderer has no LineLoop): the last point repeats the first.
+        for (let k = 0; k <= 128; k++) {
           const t = (k / 128) * Math.PI * 2;
           ring.push(new THREE.Vector3(Math.cos(t) * orbitRadius, 0, Math.sin(t) * orbitRadius));
         }
         plane.add(
-          new THREE.LineLoop(
+          new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(ring),
             new THREE.LineBasicMaterial({ color: 0xe0c38a, transparent: true, opacity: 0.14, depthWrite: false }),
           ),

@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 const loader = new THREE.TextureLoader();
 const base = import.meta.env.BASE_URL;

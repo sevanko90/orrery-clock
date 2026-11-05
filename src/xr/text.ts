@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 /**
  * A small engraved brass-and-ink plate of text, drawn to a canvas. Used for

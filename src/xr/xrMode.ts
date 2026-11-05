@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { XR, speedScale } from './config';
 import { XrInput } from './input';
@@ -6,6 +6,7 @@ import { buildHangar } from './hangar';
 import { Label, TextPlate } from './text';
 import type { Body } from '../scene/bodies';
 import { POINT_UNIFORMS } from '../scene/pointSize';
+import { float, length, smoothstep, uniform, uv } from 'three/tsl';
 
 /** What the pointer ray is on. */
 export interface XrHit {
@@ -27,6 +28,10 @@ export interface XrHooks {
   view?(head: THREE.Vector3 | null): void;
   /** Lines for the wrist readout: the date shown and the speed. */
   status(): string[];
+  /** Bloom on or off in VR (left stick click), for comparing look against frame rate. */
+  toggleBloom(): boolean;
+  /** Which GPU backend is drawing, for the readout. */
+  backend(): string;
   /** Camera shake the scenes want (0..1); in VR it becomes controller rumble. */
   quake(): number;
 }
@@ -66,9 +71,10 @@ export class XrMode {
   private halo: THREE.Sprite;
   private selected: Body | null = null;
 
-  private vignette: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  private vignette: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicNodeMaterial>;
+  private vignetteStrength = uniform(0);
   private wrist: THREE.Mesh;
-  private wristPlate = new TextPlate(512, 256);
+  private wristPlate = new TextPlate(512, 300);
   private wristShown = true;
   /** Seconds since the readout was last redrawn (starts due). */
   private wristAt = Infinity;
@@ -79,11 +85,12 @@ export class XrMode {
   private frames = 0;
   private fpsAt = 0;
   private cpuMs = 0;
+  private bloomOn = true;
   /** Desktop pixels per unit of tan(angle), which the particle sizes were tuned for. */
   private desktopPx = 1000;
 
   constructor(
-    private renderer: THREE.WebGLRenderer,
+    private renderer: THREE.WebGPURenderer,
     scene: THREE.Scene,
     layout: XrLayout,
     private hooks: XrHooks,
@@ -124,18 +131,12 @@ export class XrMode {
     scene.add(this.rayDot, this.halo, this.hoverLabel.sprite, this.pinLabel.sprite);
 
     // Comfort vignette: a dark ring just in front of the eyes, closing in with speed.
-    this.vignette = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.4, 1.4),
-      new THREE.ShaderMaterial({
-        transparent: true,
-        depthTest: false,
-        depthWrite: false,
-        uniforms: { uStrength: { value: 0 } },
-        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader:
-          'uniform float uStrength; varying vec2 vUv; void main() { float r = length(vUv - 0.5) * 2.0; float a = smoothstep(0.55 - 0.3 * uStrength, 0.95 - 0.25 * uStrength, r) * uStrength; gl_FragColor = vec4(0.0, 0.0, 0.0, a); }',
-      }),
-    );
+    const vigMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false });
+    const k = this.vignetteStrength;
+    const r = length(uv().sub(0.5)).mul(2);
+    vigMat.colorNode = float(0);
+    vigMat.opacityNode = smoothstep(k.mul(-0.3).add(0.55), k.mul(-0.25).add(0.95), r).mul(k);
+    this.vignette = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), vigMat);
     this.vignette.position.z = -0.25;
     this.vignette.renderOrder = 30;
     this.vignette.visible = false;
@@ -143,7 +144,7 @@ export class XrMode {
 
     // Wrist readout, worn on the left controller.
     this.wrist = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.16, 0.08),
+      new THREE.PlaneGeometry(0.16, 0.094),
       new THREE.MeshBasicMaterial({ map: this.wristPlate.texture, transparent: true, depthWrite: false }),
     );
     this.wrist.position.set(0, 0.07, 0.03);
@@ -172,7 +173,8 @@ export class XrMode {
     const xr = navigator.xr;
     if (!xr) return;
     const session = await xr.requestSession('immersive-vr', {
-      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
+      // 'layers' lets the renderer draw both eyes in one pass (multiview).
+      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'],
     });
     await this.renderer.xr.setSession(session);
   }
@@ -233,6 +235,7 @@ export class XrMode {
 
     if (a.reset) this.resetPosition();
     if (a.toggleHud) this.wristShown = !this.wristShown;
+    if (a.toggleBloom) this.bloomOn = this.hooks.toggleBloom();
     if (a.faster) this.hooks.faster();
     if (a.slower) this.hooks.slower();
     if (a.now) this.hooks.now();
@@ -309,7 +312,7 @@ export class XrMode {
     // Comfort vignette.
     const speed = v.length();
     const vig = THREE.MathUtils.clamp((speed - XR.vignetteFrom) / (XR.vignetteFull - XR.vignetteFrom), 0, 1) * XR.vignetteMax;
-    const u = this.vignette.material.uniforms.uStrength;
+    const u = this.vignetteStrength;
     u.value += (vig - u.value) * Math.min(1, dt * 6);
     this.vignette.visible = u.value > 0.01;
 
@@ -330,7 +333,7 @@ export class XrMode {
    */
   private updatePointSizes() {
     const eye = this.renderer.xr.getCamera().cameras[0];
-    const px = eye ? (eye.viewport.w * eye.projectionMatrix.elements[5]) / 2 : 900;
+    const px = eye?.viewport ? (eye.viewport.w * eye.projectionMatrix.elements[5]) / 2 : 900;
     POINT_UNIFORMS.uPointView.value = (this.metresPerUnit * px) / this.desktopPx;
     POINT_UNIFORMS.uPointMax.value = XR.maxPointPx;
   }
@@ -404,6 +407,7 @@ export class XrMode {
       speed,
       `${this.fps.toFixed(0)} fps · cpu ${this.cpuMs.toFixed(1)} ms`,
       `${this.scaleText()} · hall ${hall} m`,
+      `${this.hooks.backend()}${(this.renderer.xr as unknown as { useMultiview(): boolean }).useMultiview() ? ' multiview' : ''} · bloom ${this.bloomOn ? 'on' : 'off'}`,
     ]);
     this.cpuMs = cpuMs;
   }

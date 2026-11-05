@@ -1,10 +1,8 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { pass, instancedBufferAttribute } from 'three/tsl';
+import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { PLANE_Y } from './layout';
 import { loadOnce } from './textures';
 
@@ -37,36 +35,40 @@ export const HOME_TARGET = new THREE.Vector3(0, PLANE_Y - 4.6, 0);
 export const HOME_CAMERA = new THREE.Vector3(18, 23, 32);
 
 export class Stage {
-  readonly renderer: THREE.WebGLRenderer;
+  readonly renderer: THREE.WebGPURenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   readonly controls: OrbitControls;
-  private composer: EffectComposer | null = null;
-  private bloom: UnrealBloomPass | null = null;
+  /** Scene pass + bloom + tone mapping; null when bloom is off. */
+  private pipeline: THREE.RenderPipeline | null = null;
+  /** The bloom effect (for tuning strength, radius and threshold). */
+  bloomNode: ReturnType<typeof bloom> | null = null;
+  /** Whether VR frames go through the bloom pipeline too (toggled from the headset). */
+  xrBloom = true;
 
   constructor(
     private container: HTMLElement,
     readonly quality: Quality,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // WebGPU where the browser has it; WebGL 2 otherwise. Headsets always take
+    // WebGL 2: it's the backend three can drive VR with, drawing both eyes in
+    // one pass (multiview).
+    this.renderer = new THREE.WebGPURenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+      // (?webgl=1 forces it on the desktop, to check what the headset gets.)
+      forceWebGL: quality.headset || new URLSearchParams(location.search).get('webgl') === '1',
+      multiview: true,
+    });
     this.renderer.setPixelRatio(quality.pixelRatio);
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = quality.shadows;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(this.renderer.domElement);
-    this.renderer.domElement.addEventListener('webglcontextlost', (e) => {
-      e.preventDefault();
-      console.error('WebGL context lost');
-    });
 
     this.scene.background = new THREE.Color(0x050407);
-
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.55;
-    pmrem.dispose();
 
     this.camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 2000);
     this.camera.position.copy(HOME_CAMERA);
@@ -88,23 +90,32 @@ export class Stage {
     const fill = new THREE.HemisphereLight(0xffe2b8, 0x1a1008, 0.35);
     this.scene.add(fill);
 
-    // Bloom renders into half-float targets; some browsers (notably Safari's
-    // WebGL on certain GPUs) can't render to those, which would leave a blank
-    // canvas. Only enable post-processing when it's supported.
-    const ext = this.renderer.extensions;
-    const canFloat = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
-    if (quality.bloom && canFloat && new URLSearchParams(location.search).get('bloom') !== '0') {
-      this.composer = new EffectComposer(this.renderer);
-      this.composer.setPixelRatio(quality.pixelRatio);
-      this.composer.addPass(new RenderPass(this.scene, this.camera));
-      const res = new THREE.Vector2(container.clientWidth, container.clientHeight).multiplyScalar(quality.low ? 0.5 : 1);
-      this.bloom = new UnrealBloomPass(res, 0.32, 0.45, 3.2);
-      this.composer.addPass(this.bloom);
-      this.composer.addPass(new OutputPass());
-    }
-
     this.addStarfield();
     addEventListener('resize', () => this.resize());
+  }
+
+  /** Bring up the GPU backend, the room lighting and the bloom pipeline. Await before the first frame. */
+  async init() {
+    await this.renderer.init();
+
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.55;
+
+    if (this.quality.bloom && new URLSearchParams(location.search).get('bloom') !== '0') {
+      const scenePass = pass(this.scene, this.camera);
+      const colour = scenePass.getTextureNode('output');
+      const glow = bloom(colour, 0.32, 0.45, 3.2);
+      if (this.quality.low) glow.setResolutionScale(0.5);
+      this.bloomNode = glow;
+      this.pipeline = new THREE.RenderPipeline(this.renderer);
+      this.pipeline.outputNode = colour.add(glow);
+    }
+  }
+
+  /** Which backend is drawing: 'WebGPU' or 'WebGL 2'. */
+  get backend() {
+    return (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'WebGPU' : 'WebGL 2';
   }
 
   private addStarfield() {
@@ -124,7 +135,7 @@ export class Stage {
       })
       .catch(() => undefined);
 
-    // Sparkling foreground stars.
+    // Sparkling foreground stars: fixed-size points, drawn as one instanced sprite.
     const n = this.quality.low ? 1200 : 3500;
     const pos = new Float32Array(n * 3);
     const col = new Float32Array(n * 3);
@@ -137,13 +148,14 @@ export class Stage {
       const b = Math.pow(Math.random(), 3) * 1.2 + 0.25;
       col.set([c.r * b, c.g * b, c.b * b], i * 3);
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const stars = new THREE.Points(
-      geo,
-      new THREE.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, depthWrite: false }),
-    );
+    const mat = new THREE.PointsNodeMaterial({ sizeAttenuation: false, depthWrite: false, transparent: true });
+    mat.alphaToCoverage = false;
+    mat.positionNode = instancedBufferAttribute(new THREE.InstancedBufferAttribute(pos, 3)) as unknown as THREE.Node<'vec3'>;
+    mat.colorNode = instancedBufferAttribute(new THREE.InstancedBufferAttribute(col, 3)) as unknown as THREE.Node<'vec3'>;
+    mat.sizeNode = THREE.TSL.float(1.6);
+    const stars = new THREE.Sprite(mat);
+    stars.count = n;
+    stars.frustumCulled = false;
     this.scene.add(stars);
   }
 
@@ -153,13 +165,12 @@ export class Stage {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
-    this.composer?.setSize(w, h);
   }
 
-  /** Draw a frame; in VR, straight to the headset from `xrCamera` (no post-processing in stereo). */
+  /** Draw a frame; in VR, from `xrCamera` (bloomed if `xrBloom` is on). */
   render(xrCamera?: THREE.Camera) {
-    if (xrCamera && this.renderer.xr.isPresenting) this.renderer.render(this.scene, xrCamera);
-    else if (this.composer) this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
+    const inXr = this.renderer.xr.isPresenting;
+    if (this.pipeline && (!inXr || this.xrBloom)) this.pipeline.render();
+    else this.renderer.render(this.scene, inXr && xrCamera ? xrCamera : this.camera);
   }
 }

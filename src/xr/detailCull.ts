@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 /** Layer culled details are moved to: the cameras don't draw it (and rays don't hit it). */
 const CULLED = 7;

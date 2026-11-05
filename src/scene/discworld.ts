@@ -1,6 +1,7 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { mergeStaticMeshes } from './merge';
-import { POINT_GLSL, POINT_UNIFORMS, pointSize } from './pointSize';
+import { cos, float, fract, mod, modelViewMatrix, sin, smoothstep, uniform, uv, vec3, vec4 } from 'three/tsl';
+import { particleFloat, particleVec3, particles, pointSize } from './pointSize';
 import type { Materials } from './materials';
 import { TABLE_RADIUS } from './layout';
 import { BOTTOM_PLATE, PLATE_T } from '../mechanism/heights';
@@ -634,58 +635,30 @@ function buildRimfall(count: number, pixelScale: number) {
     seed[i] = Math.random();
     rate[i] = 0.24 + Math.random() * 0.12;
   }
-  const geo = new THREE.BufferGeometry();
-  // Positions are computed in the shader; this attribute only sets the count.
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-  geo.setAttribute('aAngle', new THREE.BufferAttribute(angle, 1));
-  geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
-  geo.setAttribute('aRate', new THREE.BufferAttribute(rate, 1));
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, -20, 0), TABLE_RADIUS + 30);
-
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uTime: { value: 0 },
-      uOpacity: { value: 0 },
-      uRadius: { value: TABLE_RADIUS + 0.05 },
-      uTop: { value: DISC_TOP + 0.04 },
-      uScale: { value: pixelScale },
-      ...POINT_UNIFORMS,
-    },
-    vertexShader: /* glsl */ `
-      ${POINT_GLSL}
-      attribute float aAngle;
-      attribute float aSeed;
-      attribute float aRate;
-      uniform float uTime, uRadius, uTop, uScale;
-      varying float vAlpha;
-      void main() {
-        float life = fract(uTime * aRate + aSeed);
-        float t = life * 3.6;
-        // Pour outward over the lip, then fall away and spread into spray.
-        float jitter = fract(aSeed * 91.7) - 0.5;
-        float r = uRadius + t * (0.55 + 0.25 * fract(aSeed * 13.1)) + t * t * 0.18;
-        float a = aAngle + jitter * 0.01 * t;
-        float y = uTop - 2.6 * t * t - 0.4 * t;
-        vec4 mv = modelViewMatrix * vec4(cos(a) * r, y, sin(a) * r, 1.0);
-        gl_Position = projectionMatrix * mv;
-        gl_PointSize = ${pointSize('uScale * (0.1 + 0.16 * life) / -mv.z')};
-        vAlpha = smoothstep(0.0, 0.04, life) * pow(1.0 - life, 1.4);
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform float uOpacity;
-      varying float vAlpha;
-      void main() {
-        float d = length(gl_PointCoord - 0.5);
-        float soft = smoothstep(0.5, 0.0, d);
-        gl_FragColor = vec4(vec3(0.62, 0.8, 1.0) * soft, soft * vAlpha * uOpacity * 0.55);
-      }`,
+  const aAngle = particleFloat(angle).node;
+  const aSeed = particleFloat(seed).node;
+  const aRate = particleFloat(rate).node;
+  const uniforms = { uTime: uniform(0), uOpacity: uniform(0) };
+  const radius = TABLE_RADIUS + 0.05;
+  const top = DISC_TOP + 0.04;
+  const { sprite } = particles(count, (mat) => {
+    const life = fract(uniforms.uTime.mul(aRate).add(aSeed));
+    const t = life.mul(3.6);
+    // Pour outward over the lip, then fall away and spread into spray.
+    const jitter = fract(aSeed.mul(91.7)).sub(0.5);
+    const r = t.mul(fract(aSeed.mul(13.1)).mul(0.25).add(0.55)).add(t.mul(t).mul(0.18)).add(radius);
+    const a = aAngle.add(jitter.mul(0.01).mul(t));
+    const y = float(top).sub(t.mul(t).mul(2.6)).sub(t.mul(0.4));
+    const p = vec3(cos(a).mul(r), y, sin(a).mul(r));
+    mat.positionNode = p;
+    const depth = modelViewMatrix.mul(vec4(p, 1)).z.negate();
+    mat.sizeNode = pointSize(float(pixelScale).mul(life.mul(0.16).add(0.1)).div(depth));
+    const fade = smoothstep(0, 0.04, life).mul(life.oneMinus().pow(1.4));
+    const soft = smoothstep(0, 0.5, uv().sub(0.5).length()).oneMinus();
+    mat.colorNode = vec3(0.62, 0.8, 1.0).mul(soft);
+    mat.opacityNode = soft.mul(fade).mul(uniforms.uOpacity).mul(0.55);
   });
-  const points = new THREE.Points(geo, mat);
-  points.frustumCulled = false;
-  return { points, mat };
+  return { points: sprite, uniforms };
 }
 
 /** Motes of space dust streaming past, so A'Tuin visibly swims. */
@@ -696,37 +669,20 @@ function buildDust(count: number, pixelScale: number) {
     pos[i * 3 + 1] = -12 + (Math.random() - 0.5) * 70;
     pos[i * 3 + 2] = (Math.random() - 0.5) * 160;
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: { uOffset: { value: 0 }, uOpacity: { value: 0 }, uScale: { value: pixelScale }, ...POINT_UNIFORMS },
-    vertexShader: /* glsl */ `
-      uniform float uOffset, uScale;
-      ${POINT_GLSL}
-      varying float vFade;
-      void main() {
-        vec3 p = position;
-        p.x = mod(p.x - uOffset + 80.0, 160.0) - 80.0;
-        vFade = 1.0 - smoothstep(55.0, 80.0, abs(p.x));
-        vec4 mv = modelViewMatrix * vec4(p, 1.0);
-        gl_Position = projectionMatrix * mv;
-        gl_PointSize = ${pointSize('uScale * 0.12 / -mv.z + 1.0')};
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform float uOpacity;
-      varying float vFade;
-      void main() {
-        float d = length(gl_PointCoord - 0.5);
-        float soft = smoothstep(0.5, 0.1, d);
-        gl_FragColor = vec4(vec3(1.0, 0.9, 0.75) * soft, soft * vFade * uOpacity * 0.5);
-      }`,
+  const aPos = particleVec3(pos).node;
+  const uniforms = { uOffset: uniform(0), uOpacity: uniform(0) };
+  const { sprite } = particles(count, (mat) => {
+    const x = mod(aPos.x.sub(uniforms.uOffset).add(80), 160).sub(80);
+    const p = vec3(x, aPos.y, aPos.z);
+    mat.positionNode = p;
+    const fadeX = smoothstep(55, 80, x.abs()).oneMinus();
+    const depth = modelViewMatrix.mul(vec4(p, 1)).z.negate();
+    mat.sizeNode = pointSize(float(pixelScale * 0.12).div(depth).add(1));
+    const soft = smoothstep(0.1, 0.5, uv().sub(0.5).length()).oneMinus();
+    mat.colorNode = vec3(1.0, 0.9, 0.75).mul(soft);
+    mat.opacityNode = soft.mul(fadeX).mul(uniforms.uOpacity).mul(0.5);
   });
-  const points = new THREE.Points(geo, mat);
-  points.frustumCulled = false;
-  return { points, mat };
+  return { points: sprite, uniforms };
 }
 
 // ---- Assembly -----------------------------------------------------------------
@@ -883,9 +839,9 @@ export class Discworld {
     // arrives (~1.2–2.9 s) and the turtle surfaces alongside (~1.6–4 s).
     this.elephantGroup.position.y = -(1 - smooth(0.3, 0.72, p)) * 45;
     this.turtle.group.position.y = SHELL_Y - (1 - easeOut(smooth(0.4, 1, p))) * 80;
-    this.rimfall.mat.uniforms.uOpacity.value = smooth(0.08, 0.45, p);
-    this.rimfall.mat.uniforms.uTime.value = this.time;
-    this.dust.mat.uniforms.uOpacity.value = smooth(0.5, 1, p);
+    this.rimfall.uniforms.uOpacity.value = smooth(0.08, 0.45, p);
+    this.rimfall.uniforms.uTime.value = this.time;
+    this.dust.uniforms.uOpacity.value = smooth(0.5, 1, p);
     for (const { light, base } of this.lights) light.intensity = base * p;
 
     // Swimming: faster time means harder paddling; reverse time, reverse strokes.
@@ -894,7 +850,7 @@ export class Discworld {
     this.rate = rate;
     this.swimPhase += dt * rate * Math.PI * 2 * 0.35;
     this.swimDistance += dt * rate * 6;
-    this.dust.mat.uniforms.uOffset.value = this.swimDistance;
+    this.dust.uniforms.uOffset.value = this.swimDistance;
     const ph = this.swimPhase;
     this.turtle.front.forEach((f, i) => {
       const s = i === 0 ? 1 : -1;

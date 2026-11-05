@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 /**
  * The hall the orrery hangs in, for VR. Placeholder architecture for the

@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { ARMS, PLANE_Y, TABLE_RADIUS, TABLE_TOP, type ArmSpec } from './layout';
 import { GLASS_Y, WINDOW_RADIUS, CENTRAL_HOLE, stage2Y, GEAR_T, BOTTOM_PLATE, PLATE_T } from '../mechanism/heights';
 

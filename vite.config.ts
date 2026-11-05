@@ -10,6 +10,9 @@ const https = process.env.HTTPS === '1';
 
 export default defineConfig({
   base,
+  // One three.js build for everything: the example modules (controls, loaders)
+  // import plain 'three', which must resolve to the same WebGPU build the app uses.
+  resolve: { alias: [{ find: /^three$/, replacement: 'three/webgpu' }] },
   server: { host: '0.0.0.0', port: Number(process.env.DEV_PORT ?? 5173) },
   build: { target: 'es2022', chunkSizeWarningLimit: 1200 },
   plugins: [

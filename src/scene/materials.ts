@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 /** Small deterministic value-noise helper for procedural textures. */
 function makeNoise(seed: number) {
