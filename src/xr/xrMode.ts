@@ -172,12 +172,19 @@ export class XrMode {
   async enter() {
     const xr = navigator.xr;
     if (!xr) return;
+    this.renderer.xr.setFramebufferScaleFactor(this.resolutionScale);
     const session = await xr.requestSession('immersive-vr', {
       // 'layers' lets the renderer draw both eyes in one pass (multiview).
       optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'],
     });
     await this.renderer.xr.setSession(session);
   }
+
+  /** Eye-buffer resolution relative to the headset's default (?xrscale=0.7 for a test); set before a session starts. */
+  private readonly resolutionScale = (() => {
+    const v = Number(new URLSearchParams(location.search).get('xrscale'));
+    return v > 0.2 && v <= 1.5 ? v : 1;
+  })();
 
   private begin() {
     // The desktop view the particle sizes were tuned against (40° field of view).
@@ -407,7 +414,7 @@ export class XrMode {
       speed,
       `${this.fps.toFixed(0)} fps · cpu ${this.cpuMs.toFixed(1)} ms`,
       `${this.scaleText()} · hall ${hall} m`,
-      this.backendText(),
+      `${this.backendText()}${this.resolutionScale !== 1 ? ` · res ×${this.resolutionScale}` : ''}`,
     ]);
     this.cpuMs = cpuMs;
   }
