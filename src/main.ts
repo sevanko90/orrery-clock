@@ -22,6 +22,7 @@ import { FictionPanel } from './ui/fictionPanel';
 import { nextOccurrence, type FictionEntry } from './fiction/catalog';
 import { XrMode, type XrHit } from './xr/xrMode';
 import { DetailCuller } from './xr/detailCull';
+import { Telemetry, type Command } from './xr/telemetry';
 import { XR } from './xr/config';
 import { TABLE_RADIUS } from './scene/layout';
 
@@ -495,6 +496,7 @@ canvas.addEventListener('pointerleave', () => (hoverTag.hidden = true));
 orrery.root.updateMatrixWorld(true);
 const orreryBox = new THREE.Box3().setFromObject(orrery.root);
 const culler = new DetailCuller();
+let cullAngle: number = XR.detailCullAngle;
 const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS }, {
   pick: xrPick,
   view: (head) => {
@@ -506,7 +508,7 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
     // From under the cabinet its opaque base hides the whole movement (115 draw calls): skip it.
     orrery.mechanism.root.visible = head.y > orreryBox.min.y;
     culler.setRoots([orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
-    culler.update(head, XR.detailCullAngle);
+    culler.update(head, cullAngle);
   },
   faster: () => clock.setStep(clock.step + 1),
   slower: () => clock.setStep(clock.step - 1),
@@ -514,6 +516,17 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   status: () => [new Date(clock.nowMs()).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), SPEED_STEPS[clock.step].label],
   quake: () => Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0),
   // Bloom can't run on a multiview frame; the toggle only works without it.
+  report: (entry) => {
+    const info = stage.renderer.info.render as unknown as { drawCalls?: number; calls?: number; triangles: number };
+    telemetry.send({
+      ...entry,
+      drawCalls: info.drawCalls ?? info.calls,
+      triangles: info.triangles,
+      sim: new Date(clock.nowMs()).toISOString(),
+      speed: SPEED_STEPS[clock.step].label,
+      modes: { fiction: !!fiction?.enabled, discworld: !!discworld?.enabled, moons: bodies.moonsVisible, markers: markersOn },
+    });
+  },
   toggleBloom: () => (stage.xrBloom = !stage.multiview && !stage.xrBloom),
   backend: () => stage.backend,
 });
@@ -528,6 +541,31 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
     xr.enter().catch((err) => console.error('Could not start VR', err));
   });
 }
+
+// Dev-server telemetry: headset samples and markers out, workstation commands in.
+const telemetry = new Telemetry((c: Command) => {
+  telemetry.send({ kind: 'command', ...c });
+  switch (c.type) {
+    case 'teleport':
+      return xr.teleport(c.x, c.y, c.z, c.yawDeg);
+    case 'scale':
+      return xr.setScale(c.metresPerUnit);
+    case 'mode':
+      if (c.mode === 'fiction') setFiction(c.on);
+      else if (c.mode === 'discworld') setDiscworld(c.on);
+      else if (c.mode === 'moons') setMoons(c.on);
+      else if (c.mode === 'markers') setMarkers(c.on);
+      else if (c.mode === 'hangar') xr.setHangar(c.on);
+      return;
+    case 'date':
+      return clock.jumpTo(Date.parse(c.iso));
+    case 'speed':
+      return clock.setStep(c.step);
+    case 'cull':
+      cullAngle = c.angle;
+      return;
+  }
+});
 
 // ---- Main loop ---------------------------------------------------------------
 const veil = document.getElementById('veil')!;
@@ -552,6 +590,7 @@ function frame(now: number) {
     return;
   }
   cpuMs = performance.now() - t0;
+  telemetry.tick(t0);
 }
 
 function step(now: number) {

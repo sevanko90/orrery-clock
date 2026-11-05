@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import basicSsl from '@vitejs/plugin-basic-ssl';
+import { telemetry } from './scripts/telemetry-plugin';
 
 // BASE_PATH is set by the GitHub Pages workflow (e.g. "/orrery-clock/").
 const base = process.env.BASE_PATH ?? '/';
@@ -17,6 +18,7 @@ export default defineConfig({
   build: { target: 'es2022', chunkSizeWarningLimit: 1200 },
   plugins: [
     ...(https ? [basicSsl()] : []),
+    telemetry(process.cwd()),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,

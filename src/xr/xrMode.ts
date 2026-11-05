@@ -30,6 +30,8 @@ export interface XrHooks {
   status(): string[];
   /** Bloom on or off in VR (left stick click), for comparing look against frame rate. */
   toggleBloom(): boolean;
+  /** Telemetry: a sample each second and markers on the left grip (with app state merged in). */
+  report?(entry: Record<string, unknown>): void;
   /** Which GPU backend is drawing, for the readout. */
   backend(): string;
   /** Camera shake the scenes want (0..1); in VR it becomes controller rumble. */
@@ -86,6 +88,9 @@ export class XrMode {
   private fpsAt = 0;
   private cpuMs = 0;
   private bloomOn = false;
+  private marks = 0;
+  private markShownUntil = 0;
+  private sampleAt = 0;
   /** Desktop pixels per unit of tan(angle), which the particle sizes were tuned for. */
   private desktopPx = 1000;
 
@@ -243,6 +248,13 @@ export class XrMode {
     if (a.reset) this.resetPosition();
     if (a.toggleHud) this.wristShown = !this.wristShown;
     if (a.toggleBloom) this.bloomOn = this.hooks.toggleBloom();
+    if (a.mark) {
+      this.marks++;
+      this.hooks.report?.({ kind: 'mark', n: this.marks, ...this.snapshot() });
+      this.input.rumble(0.6, 80);
+      this.markShownUntil = performance.now() + 2500;
+      this.wristAt = Infinity;
+    }
     if (a.faster) this.hooks.faster();
     if (a.slower) this.hooks.slower();
     if (a.now) this.hooks.now();
@@ -404,13 +416,19 @@ export class XrMode {
       this.frames = 0;
       this.fpsAt = 0;
     }
+    this.sampleAt += dt;
+    if (this.sampleAt >= 1) {
+      this.sampleAt = 0;
+      this.hooks.report?.({ kind: 'sample', ...this.snapshot() });
+    }
     this.wristAt += dt;
     if (!parent || this.wristAt < 0.25) return;
     this.wristAt = 0;
     const M = this.metresPerUnit;
     const hall = Math.round(this.half * 2 * M);
     const [date = '', speed = ''] = this.hooks.status();
-    this.wristPlate.set(date, [
+    const marked = performance.now() < this.markShownUntil ? `Marked #${this.marks}` : '';
+    this.wristPlate.set(marked || date, [
       speed,
       `${this.fps.toFixed(0)} fps · cpu ${this.cpuMs.toFixed(1)} ms`,
       `${this.scaleText()} · hall ${hall} m`,
@@ -422,6 +440,49 @@ export class XrMode {
   private backendText() {
     const multiview = (this.renderer.xr as unknown as { useMultiview(): boolean }).useMultiview();
     return `${this.hooks.backend()}${multiview ? ' multiview · no bloom' : ` · bloom ${this.bloomOn ? 'on' : 'off'}`}`;
+  }
+
+  /** Where the player is and how it's running, for telemetry. */
+  private snapshot() {
+    const head = this.head();
+    const fwd = new THREE.Vector3(0, 0, -1).transformDirection(this.camera.matrixWorld);
+    const r = (v: number) => Math.round(v * 1000) / 1000;
+    return {
+      fps: Math.round(this.fps * 10) / 10,
+      cpuMs: r(this.cpuMs),
+      head: [r(head.x), r(head.y), r(head.z)],
+      look: [r(fwd.x), r(fwd.y), r(fwd.z)],
+      yawDeg: Math.round(THREE.MathUtils.radToDeg(this.rig.rotation.y)),
+      metresPerUnit: r(this.metresPerUnit),
+      grounded: this.grounded,
+      resolutionScale: this.resolutionScale,
+      renderer: this.backendText(),
+    };
+  }
+
+  /** Put the player's head at (x, y, z) world units, facing `yawDeg` (from a telemetry command). */
+  teleport(x: number, y: number, z: number, yawDeg = 0) {
+    this.rig.rotation.set(0, THREE.MathUtils.degToRad(yawDeg), 0);
+    this.rig.position.set(x, y, z);
+    const head = this.head();
+    this.rig.position.x += x - head.x;
+    this.rig.position.z += z - head.z;
+    this.rig.position.y = Math.max(this.floorY, this.rig.position.y + (y - head.y));
+    this.grounded = this.rig.position.y <= this.floorY + 1e-6;
+    this.velocity.set(0, 0, 0);
+  }
+
+  /** Set the world scale (from a telemetry command). */
+  setScale(metresPerUnit: number) {
+    const was = this.head();
+    this.metresPerUnit = THREE.MathUtils.clamp(metresPerUnit, XR.minMetresPerUnit, XR.maxMetresPerUnit);
+    this.applyScale();
+    this.keepHead(was, !this.grounded);
+  }
+
+  /** Show or hide the hall (from a telemetry command). */
+  setHangar(on: boolean) {
+    this.hangar.visible = on && this.presenting;
   }
 
   private scaleText() {
