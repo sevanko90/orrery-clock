@@ -28,6 +28,14 @@ export class Telemetry {
     if (this.enabled) this.queue.push(entry);
   }
 
+  /** Send one entry straight away (for start-up progress and errors, before the frame loop runs). */
+  sendNow(entry: object) {
+    if (!this.enabled) return;
+    fetch('/__telemetry', { method: 'POST', body: JSON.stringify({ ...entry, ua: navigator.userAgent }), headers: { 'Content-Type': 'application/json' } }).catch(
+      () => undefined,
+    );
+  }
+
   /** Call every frame; batches out entries and polls for commands. */
   tick(now: number) {
     if (!this.enabled) return;

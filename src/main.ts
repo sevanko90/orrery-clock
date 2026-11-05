@@ -31,6 +31,11 @@ if (import.meta.env.PROD) {
   const updateSW = registerSW({ immediate: true, onNeedRefresh: () => updateSW(true) });
 }
 
+// Start-up progress to the dev server's telemetry log, so a page stuck on the
+// veil (on a headset, with no console to hand) says how far it got.
+const boot = new Telemetry(() => undefined);
+boot.sendNow({ kind: 'boot', stage: 'start', url: location.href });
+
 // Surface failures on the page rather than leaving a silent black canvas.
 function showFatal(msg: string) {
   let el = document.getElementById('fatal');
@@ -43,8 +48,19 @@ function showFatal(msg: string) {
   el.textContent = `The orrery couldn't start: ${msg}`;
   document.getElementById('veil')?.classList.add('gone');
 }
-addEventListener('error', (e) => showFatal(e.message || String(e.error)));
-addEventListener('unhandledrejection', (e) => showFatal(String(e.reason?.message ?? e.reason)));
+addEventListener('error', (e) => {
+  showFatal(e.message || String(e.error));
+  boot.sendNow({ kind: 'error', message: e.message, stack: String(e.error?.stack ?? '').slice(0, 2000) });
+});
+addEventListener('unhandledrejection', (e) => {
+  showFatal(String(e.reason?.message ?? e.reason));
+  boot.sendNow({ kind: 'error', message: String(e.reason?.message ?? e.reason), stack: String(e.reason?.stack ?? '').slice(0, 2000) });
+});
+
+const bootStall = setTimeout(() => {
+  boot.sendNow({ kind: 'boot', stage: 'stalled' });
+  showFatal('start-up stalled (the graphics device never came up). Try closing the tab and opening the page again.');
+}, 20_000);
 
 const container = document.getElementById('scene')!;
 const gpu = detectGpu();
@@ -54,7 +70,9 @@ const quality = detectQuality();
 if (gpu === 'software') Object.assign(quality, { low: true, pixelRatio: 1, shadows: false, bloom: false });
 const stage = new Stage(container, quality);
 // The GPU backend (WebGPU, or WebGL 2) comes up asynchronously.
+boot.sendNow({ kind: 'boot', stage: 'renderer' });
 await stage.init();
+boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend });
 const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
@@ -693,7 +711,11 @@ function step(now: number) {
   info.update(simMs);
   syncDate();
 
-  if (++frames === 3) veil.classList.add('gone');
+  if (++frames === 3) {
+    veil.classList.add('gone');
+    clearTimeout(bootStall);
+    boot.sendNow({ kind: 'boot', stage: 'running' });
+  }
 }
 // Restore Discworld mode last: it touches state declared throughout this file.
 {
