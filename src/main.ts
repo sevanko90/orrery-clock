@@ -221,7 +221,8 @@ addEventListener('keydown', (e) => {
 });
 
 // ---- Fiction mode --------------------------------------------------------------
-// Built on first use, like Discworld mode.
+// Built at startup even with the mode off: its dated events (the Vogons every
+// Thursday, the Martians every August) play whenever the clock reaches them.
 let fiction: Fiction | null = null;
 /** Entry whose show was just started: frame it once the jump has landed. */
 let pendingFrame: string | null = null;
@@ -284,7 +285,7 @@ function finishScene() {
 }
 
 function setFiction(on: boolean) {
-  if (on && !fiction) {
+  if (!fiction) {
     fiction = new Fiction(bodies, mats);
     hiddenPlaces.forEach((id) => fiction!.setPlaceShown(id, false));
     stage.scene.add(fiction.root);
@@ -294,9 +295,9 @@ function setFiction(on: boolean) {
   fictionPanel.setVisible(on);
   fictionButton.setAttribute('aria-pressed', String(on));
   fictionButton.title = on ? 'Leave fiction mode (F)' : 'Fiction mode (F)';
-  // Don't leave the camera or a card on something that has just vanished.
+  // Don't leave the camera or a card on something that has just vanished (a place; events stay).
   const shown = [focus.focused, info.showingBody];
-  if (!on && fiction && shown.some((b) => b && fiction!.bodies.includes(b))) unfocus();
+  if (!on && fiction && shown.some((b) => b && fiction!.bodies.includes(b) && b.available?.() === false)) unfocus();
   try {
     localStorage.setItem('fiction', on ? '1' : '0');
   } catch {
@@ -335,7 +336,7 @@ function playFiction(entry: FictionEntry) {
   } catch {
     /* ignore */
   }
-  if (saved) setFiction(true);
+  setFiction(saved);
 }
 fictionButton.addEventListener('click', () => setFiction(!fiction?.enabled));
 addEventListener('keydown', (e) => {

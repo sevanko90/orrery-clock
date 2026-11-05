@@ -2404,6 +2404,11 @@ export class Fiction {
   private wormhole: Wormhole;
   /** The always-on places: what each one shows, and how it moves. */
   private places: { id: string; object: THREE.Object3D; update: (simMs: number, elapsed: number) => void }[];
+  /**
+   * Fiction mode proper: shows the places and the catalogue. The dated events
+   * run regardless, whenever the clock is in one (a Thursday morning, the
+   * August volley), mode or no mode.
+   */
   private on = false;
   /** Places switched off from the catalogue. */
   private hiddenPlaces = new Set<string>();
@@ -2451,7 +2456,6 @@ export class Fiction {
 
   setEnabled(on: boolean) {
     this.on = on;
-    this.root.visible = on;
     this.refresh();
   }
 
@@ -2478,13 +2482,12 @@ export class Fiction {
     this.wotw.suppressed = !inScene(WAR_OF_THE_WORLDS.id);
     this.breakaway.suppressed = !inScene(SPACE_1999.id);
     this.demolition.suppressed = !inScene(VOGON_DEMOLITION.id);
-    if (!this.on || this.demolition.suppressed) this.demolition.release();
-    // Not updated while fiction is off, so give the real Moon back now.
-    if (!this.on || this.breakaway.suppressed) this.breakaway.release();
+    // Suppressed scenes stop updating, so give the real Earth and Moon back now.
+    if (this.demolition.suppressed) this.demolition.release();
+    if (this.breakaway.suppressed) this.breakaway.release();
   }
 
   update(simMs: number, dt: number, elapsed: number, jumped: boolean, camera: THREE.Camera) {
-    if (!this.on) return;
     this.wotw.update(simMs, dt, jumped);
     this.breakaway.update(simMs, dt, jumped);
     this.demolition.update(simMs, dt, jumped, camera);
@@ -2493,7 +2496,7 @@ export class Fiction {
 
   /** Camera shake from fiction (the planet exploding), 0..1. */
   get quake() {
-    return this.on ? this.demolition.quake : 0;
+    return this.demolition.quake;
   }
 
   /** A camera beat a scene wants at `simMs` (a new key means fly to frame its points), or null. */
