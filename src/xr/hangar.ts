@@ -32,13 +32,22 @@ export function buildHangar(spec: HangarSpec): THREE.Group {
   g.add(floor);
 
   // Brass compass rose inlaid in the floor beneath the instrument.
-  const brass = new THREE.MeshStandardMaterial({ color: 0xb08a4a, roughness: 0.38, metalness: 0.9, emissive: 0x2a1a06 });
+  // Pulled toward the viewer in depth so it never fights the floor beneath it.
+  const brass = new THREE.MeshStandardMaterial({
+    color: 0xb08a4a,
+    roughness: 0.38,
+    metalness: 0.9,
+    emissive: 0x2a1a06,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -4,
+  });
   const inlay = new THREE.Group();
-  inlay.position.y = floorY + 0.004;
+  inlay.position.y = floorY + 0.01;
   for (const [r, w] of [
     [tableRadius * 1.08, 0.12],
-    [tableRadius * 1.0, 0.05],
-    [tableRadius * 0.55, 0.05],
+    [tableRadius * 1.0, 0.09],
+    [tableRadius * 0.55, 0.09],
     [tableRadius * 0.12, 0.08],
   ] as const) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(r - w, r, 128), brass);
@@ -48,7 +57,7 @@ export function buildHangar(spec: HangarSpec): THREE.Group {
   for (let i = 0; i < 16; i++) {
     const long = i % 4 === 0;
     const len = tableRadius * (long ? 1.25 : i % 2 === 0 ? 0.95 : 0.75);
-    const ray = new THREE.Mesh(new THREE.PlaneGeometry(long ? 0.1 : 0.05, len), brass);
+    const ray = new THREE.Mesh(new THREE.PlaneGeometry(long ? 0.14 : 0.09, len), brass);
     ray.rotation.x = -Math.PI / 2;
     ray.position.z = -len / 2;
     const pivot = new THREE.Group();
@@ -62,11 +71,12 @@ export function buildHangar(spec: HangarSpec): THREE.Group {
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x0d0b0a, roughness: 0.85, metalness: 0.1, side: THREE.BackSide });
   const walls = new THREE.Mesh(new THREE.BoxGeometry(half * 2, height, half * 2), wallMat);
   walls.position.y = floorY + height / 2;
-  // Open-topped: drop the box's top face so the stars show through the trusses.
+  // Keep only the four sides: open to the stars on top, and no bottom face
+  // lying on the floor (the two would flicker against each other).
   const idx = walls.geometry.index!;
-  const groups = walls.geometry.groups;
-  const top = groups[2];
-  const kept = Array.from(idx.array).filter((_, i) => i < top.start || i >= top.start + top.count);
+  const [, , top, bottom] = walls.geometry.groups;
+  const inFace = (i: number, f: { start: number; count: number }) => i >= f.start && i < f.start + f.count;
+  const kept = Array.from(idx.array).filter((_, i) => !inFace(i, top) && !inFace(i, bottom));
   walls.geometry.setIndex(kept);
   walls.geometry.clearGroups();
   walls.receiveShadow = true;
@@ -95,8 +105,8 @@ export function buildHangar(spec: HangarSpec): THREE.Group {
     const strip = new THREE.Mesh(new THREE.PlaneGeometry(half * 2, 0.06), glowMat);
     strip.position.y = floorY + 0.4;
     strip.rotation.y = (side * Math.PI) / 2;
-    strip.position.x = side === 1 ? -half + 0.02 : side === 3 ? half - 0.02 : 0;
-    strip.position.z = side === 0 ? -half + 0.02 : side === 2 ? half - 0.02 : 0;
+    strip.position.x = side === 1 ? -half + 0.08 : side === 3 ? half - 0.08 : 0;
+    strip.position.z = side === 0 ? -half + 0.08 : side === 2 ? half - 0.08 : 0;
     g.add(strip);
   }
 

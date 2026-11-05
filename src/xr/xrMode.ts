@@ -43,7 +43,7 @@ const UP = new THREE.Vector3(0, 1, 0);
  */
 export class XrMode {
   readonly rig = new THREE.Group();
-  readonly camera = new THREE.PerspectiveCamera(70, 1, 0.05, 2000);
+  readonly camera = new THREE.PerspectiveCamera(70, 1, 0.1, 2000);
   private input: XrInput;
   private hangar: THREE.Group;
   private floorY: number;
@@ -67,7 +67,11 @@ export class XrMode {
   private wrist: THREE.Mesh;
   private wristPlate = new TextPlate(512, 256);
   private wristShown = true;
-  private wristAt = -Infinity;
+  /** Seconds since the readout was last redrawn (starts due). */
+  private wristAt = Infinity;
+  /** Floats in front of the eyes while the world scale is being changed. */
+  private scaleTag: THREE.Mesh;
+  private scalePlate = new TextPlate(512, 160);
   private fps = 0;
   private frames = 0;
   private fpsAt = 0;
@@ -140,6 +144,15 @@ export class XrMode {
     this.wrist.position.set(0, 0.07, 0.03);
     this.wrist.rotation.x = -Math.PI / 4;
     this.wrist.renderOrder = 25;
+
+    this.scaleTag = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.32, 0.1),
+      new THREE.MeshBasicMaterial({ map: this.scalePlate.texture, transparent: true, depthTest: false, depthWrite: false }),
+    );
+    this.scaleTag.position.set(0, -0.12, -0.8);
+    this.scaleTag.renderOrder = 31;
+    this.scaleTag.visible = false;
+    this.camera.add(this.scaleTag);
 
     renderer.xr.addEventListener('sessionstart', () => this.begin());
     renderer.xr.addEventListener('sessionend', () => this.end());
@@ -221,6 +234,8 @@ export class XrMode {
       this.applyScale();
       this.keepHead(was, !this.grounded);
     }
+    this.scaleTag.visible = a.scaling;
+    if (a.scaling) this.scalePlate.set('World scale', [`${this.scaleText()} · stick up / down`]);
 
     if (a.snapTurn) {
       const was = this.head();
@@ -363,9 +378,14 @@ export class XrMode {
     this.wristPlate.set(date, [
       speed,
       `${this.fps.toFixed(0)} fps · cpu ${this.cpuMs.toFixed(1)} ms`,
-      `1 unit = ${M < 0.1 ? (M * 100).toFixed(1) + ' cm' : M.toFixed(2) + ' m'} · hall ${hall} m`,
+      `${this.scaleText()} · hall ${hall} m`,
     ]);
     this.cpuMs = cpuMs;
+  }
+
+  private scaleText() {
+    const M = this.metresPerUnit;
+    return `1 unit = ${M < 0.1 ? (M * 100).toFixed(1) + ' cm' : M.toFixed(2) + ' m'}`;
   }
 }
 
