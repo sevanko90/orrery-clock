@@ -13,6 +13,8 @@ export interface Quality {
   pixelRatio: number;
   shadows: boolean;
   bloom: boolean;
+  /** A standalone VR headset's browser (phone-class GPU): lighter builds of the heavy scenes. */
+  headset: boolean;
 }
 
 export function detectQuality(): Quality {
@@ -27,6 +29,7 @@ export function detectQuality(): Quality {
     pixelRatio: Math.min(devicePixelRatio, low ? 1.5 : 2),
     shadows: !low && !headset,
     bloom: true,
+    headset,
   };
 }
 

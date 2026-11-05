@@ -5,6 +5,7 @@ import { XrInput } from './input';
 import { buildHangar } from './hangar';
 import { Label, TextPlate } from './text';
 import type { Body } from '../scene/bodies';
+import { POINT_UNIFORMS } from '../scene/pointSize';
 
 /** What the pointer ray is on. */
 export interface XrHit {
@@ -22,6 +23,8 @@ export interface XrHooks {
   faster(): void;
   slower(): void;
   now(): void;
+  /** Called each frame in VR with the head's world position (to skip drawing what it can't see). */
+  view?(head: THREE.Vector3): void;
   /** Lines for the wrist readout: the date shown and the speed. */
   status(): string[];
   /** Camera shake the scenes want (0..1); in VR it becomes controller rumble. */
@@ -76,6 +79,8 @@ export class XrMode {
   private frames = 0;
   private fpsAt = 0;
   private cpuMs = 0;
+  /** Desktop pixels per unit of tan(angle), which the particle sizes were tuned for. */
+  private desktopPx = 1000;
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -173,12 +178,17 @@ export class XrMode {
   }
 
   private begin() {
+    // The desktop view the particle sizes were tuned against (40° field of view).
+    this.desktopPx = this.renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(20)));
     this.renderer.xr.setFoveation(1);
     this.hangar.visible = this.rig.visible = true;
     this.resetPosition();
   }
 
   private end() {
+    this.hooks.view?.(new THREE.Vector3(0, Infinity, 0));
+    POINT_UNIFORMS.uPointView.value = 1;
+    POINT_UNIFORMS.uPointMax.value = 4096;
     this.hangar.visible = this.rig.visible = false;
     this.rayDot.visible = this.halo.visible = false;
     this.hoverLabel.sprite.visible = this.pinLabel.sprite.visible = false;
@@ -303,11 +313,26 @@ export class XrMode {
     u.value += (vig - u.value) * Math.min(1, dt * 6);
     this.vignette.visible = u.value > 0.01;
 
+    this.updatePointSizes();
+    this.hooks.view?.(this.head());
     this.updatePointer(a.select);
     this.updateWrist(dt, cpuMs);
 
     const quake = this.hooks.quake();
     if (quake > 0.05) this.input.rumble(Math.min(1, quake * quake), 60);
+  }
+
+  /**
+   * Particles are sized as world size over view distance. In VR, view space
+   * is in metres (the rig is scaled) and the eye buffers differ from the
+   * desktop canvas, so rescale to match, and cap them so a cloud the player
+   * stands inside can't swamp the GPU with screen-sized sprites.
+   */
+  private updatePointSizes() {
+    const eye = this.renderer.xr.getCamera().cameras[0];
+    const px = eye ? (eye.viewport.w * eye.projectionMatrix.elements[5]) / 2 : 900;
+    POINT_UNIFORMS.uPointView.value = (this.metresPerUnit * px) / this.desktopPx;
+    POINT_UNIFORMS.uPointMax.value = XR.maxPointPx;
   }
 
   private updatePointer(select: boolean) {

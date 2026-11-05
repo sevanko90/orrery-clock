@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { mergeStaticMeshes } from './merge';
+import { POINT_GLSL, POINT_UNIFORMS, pointSize } from './pointSize';
 import type { Materials } from './materials';
 import { TABLE_RADIUS } from './layout';
 import { BOTTOM_PLATE, PLATE_T } from '../mechanism/heights';
@@ -650,8 +652,10 @@ function buildRimfall(count: number, pixelScale: number) {
       uRadius: { value: TABLE_RADIUS + 0.05 },
       uTop: { value: DISC_TOP + 0.04 },
       uScale: { value: pixelScale },
+      ...POINT_UNIFORMS,
     },
     vertexShader: /* glsl */ `
+      ${POINT_GLSL}
       attribute float aAngle;
       attribute float aSeed;
       attribute float aRate;
@@ -667,7 +671,7 @@ function buildRimfall(count: number, pixelScale: number) {
         float y = uTop - 2.6 * t * t - 0.4 * t;
         vec4 mv = modelViewMatrix * vec4(cos(a) * r, y, sin(a) * r, 1.0);
         gl_Position = projectionMatrix * mv;
-        gl_PointSize = uScale * (0.1 + 0.16 * life) / -mv.z;
+        gl_PointSize = ${pointSize('uScale * (0.1 + 0.16 * life) / -mv.z')};
         vAlpha = smoothstep(0.0, 0.04, life) * pow(1.0 - life, 1.4);
       }`,
     fragmentShader: /* glsl */ `
@@ -698,9 +702,10 @@ function buildDust(count: number, pixelScale: number) {
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    uniforms: { uOffset: { value: 0 }, uOpacity: { value: 0 }, uScale: { value: pixelScale } },
+    uniforms: { uOffset: { value: 0 }, uOpacity: { value: 0 }, uScale: { value: pixelScale }, ...POINT_UNIFORMS },
     vertexShader: /* glsl */ `
       uniform float uOffset, uScale;
+      ${POINT_GLSL}
       varying float vFade;
       void main() {
         vec3 p = position;
@@ -708,7 +713,7 @@ function buildDust(count: number, pixelScale: number) {
         vFade = 1.0 - smoothstep(55.0, 80.0, abs(p.x));
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
-        gl_PointSize = uScale * 0.12 / -mv.z + 1.0;
+        gl_PointSize = ${pointSize('uScale * 0.12 / -mv.z + 1.0')};
       }`,
     fragmentShader: /* glsl */ `
       uniform float uOpacity;
@@ -788,6 +793,9 @@ export class Discworld {
 
     // Let the Disc shade the stack from the orrery's Sun above it.
     this.stack.traverse((o) => (o.receiveShadow = true));
+    // Hundreds of small parts: bake each rig's fixed parts together to cut draw calls
+    // (the shins stretch as the legs step, so they stay separate).
+    mergeStaticMeshes(this.stack, new Set(this.elephants.flatMap((e) => e.legs.map((l) => l.shin))));
 
     // World units to pixels at unit distance, for point sprites (40° fov).
     const pixelScale = (innerHeight * opts.pixelRatio) / (2 * Math.tan(THREE.MathUtils.degToRad(20)));

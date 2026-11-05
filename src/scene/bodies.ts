@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { POINT_GLSL, POINT_UNIFORMS, pointSize } from './pointSize';
 import { PLANET_FACTS, SUN_FACTS, COMETS, type BodyFacts, type CometDef } from '../astro/bodies';
 import { cometPosition, planetPosition, sampleOrbit, PLANET_ELEMENTS, type PlanetId } from '../astro/orbits';
 import { MOONS, type MoonDef } from '../astro/moons';
@@ -204,19 +205,21 @@ class TailMaterial extends THREE.ShaderMaterial {
         uColor: { value: color },
         uSpread: { value: spread },
         uScale: { value: 300 },
+        ...POINT_UNIFORMS,
       },
       vertexShader: /* glsl */ `
         attribute float aT;
         attribute vec3 aSeed;
         uniform vec3 uHead; uniform vec3 uDir; uniform float uLen; uniform float uTime;
         uniform float uSpread; uniform float uScale;
+        ${POINT_GLSL}
         varying float vAlpha;
         void main() {
           float t = fract(aT + uTime * 0.05);
           vec3 p = uHead + uDir * (t * uLen) + aSeed * (0.03 + t * uSpread) * uLen;
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           gl_Position = projectionMatrix * mv;
-          gl_PointSize = uScale * (0.06 + 0.1 * (1.0 - t)) / -mv.z;
+          gl_PointSize = ${pointSize('uScale * (0.06 + 0.1 * (1.0 - t)) / -mv.z')};
           vAlpha = (1.0 - t) * (1.0 - t) * step(0.001, uLen);
         }
       `,

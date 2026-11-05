@@ -163,7 +163,7 @@ const discButton = document.getElementById('c-disc') as HTMLButtonElement;
 const NORMAL_LIMITS = { maxPolar: stage.controls.maxPolarAngle, maxDistance: stage.controls.maxDistance };
 function setDiscworld(on: boolean) {
   if (on && !discworld) {
-    discworld = new Discworld(mats, { lowQuality: quality.low, pixelRatio: quality.pixelRatio });
+    discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio });
     stage.scene.add(discworld.root);
   }
   discworld?.setEnabled(on);
@@ -489,8 +489,11 @@ canvas.addEventListener('pointerleave', () => (hoverTag.hidden = true));
 // ---- VR ------------------------------------------------------------------------
 // The hall is sized from the instrument as built (cabinet and arms).
 orrery.root.updateMatrixWorld(true);
-const xr = new XrMode(stage.renderer, stage.scene, { orrery: new THREE.Box3().setFromObject(orrery.root), tableRadius: TABLE_RADIUS }, {
+const orreryBox = new THREE.Box3().setFromObject(orrery.root);
+const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS }, {
   pick: xrPick,
+  // From under the cabinet its opaque base hides the whole movement (115 draw calls): skip it.
+  view: (head) => (orrery.mechanism.root.visible = head.y > orreryBox.min.y),
   faster: () => clock.setStep(clock.step + 1),
   slower: () => clock.setStep(clock.step - 1),
   now: () => clock.resetToNow(),

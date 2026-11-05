@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { POINT_GLSL, POINT_UNIFORMS, pointSize } from './pointSize';
 import { MOON_SYSTEMS, moonSize, sunlit, type Bodies, type Body } from './bodies';
 import type { Materials } from './materials';
 import { ARMS, PLANE_Y, SUN_RADIUS, TABLE_RADIUS, toWorld } from './layout';
@@ -2000,6 +2001,7 @@ class AstrophageMaterial extends THREE.ShaderMaterial {
         uTime: { value: 0 },
         uScale: { value: 110 },
         uColor: { value: new THREE.Color(0xff3b2e) },
+        ...POINT_UNIFORMS,
       },
       vertexShader: /* glsl */ `
         attribute float aT;
@@ -2009,13 +2011,14 @@ class AstrophageMaterial extends THREE.ShaderMaterial {
         uniform vec3 uTo;
         uniform float uTime;
         uniform float uScale;
+        ${POINT_GLSL}
         varying float vA;
         void main() {
           float t = fract(aT + uTime * 0.035 * aDir);
           vec3 p = uFrom + (uTo - uFrom) * t + aSeed * (0.03 + 0.22 * t * t);
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           gl_Position = projectionMatrix * mv;
-          gl_PointSize = uScale * (0.6 + 0.4 * fract(aT * 7.31)) / -mv.z;
+          gl_PointSize = ${pointSize('uScale * (0.6 + 0.4 * fract(aT * 7.31)) / -mv.z')};
           vA = smoothstep(0.0, 0.06, t) * smoothstep(1.0, 0.9, t);
         }
       `,
