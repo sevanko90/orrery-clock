@@ -1,14 +1,19 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 
 // BASE_PATH is set by the GitHub Pages workflow (e.g. "/orrery-clock/").
 const base = process.env.BASE_PATH ?? '/';
+// HTTPS=1 serves the dev server over a self-signed certificate, so a headset on
+// the same Wi-Fi can open it (WebXR only runs in a secure context).
+const https = process.env.HTTPS === '1';
 
 export default defineConfig({
   base,
   server: { host: '0.0.0.0', port: Number(process.env.DEV_PORT ?? 5173) },
   build: { target: 'es2022', chunkSizeWarningLimit: 1200 },
   plugins: [
+    ...(https ? [basicSsl()] : []),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,

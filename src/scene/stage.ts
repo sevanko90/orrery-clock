@@ -19,10 +19,13 @@ export function detectQuality(): Quality {
   const coarse = matchMedia('(pointer: coarse)').matches;
   const small = Math.min(innerWidth, innerHeight) < 700;
   const low = coarse || small;
+  // Standalone headsets: a phone-class GPU drawing two eyes. The Sun's
+  // six-sided shadow map is the first thing to go.
+  const headset = /OculusBrowser|Quest|Pico/i.test(navigator.userAgent);
   return {
     low,
     pixelRatio: Math.min(devicePixelRatio, low ? 1.5 : 2),
-    shadows: !low,
+    shadows: !low && !headset,
     bloom: true,
   };
 }
@@ -150,8 +153,10 @@ export class Stage {
     this.composer?.setSize(w, h);
   }
 
-  render() {
-    if (this.composer) this.composer.render();
+  /** Draw a frame; in VR, straight to the headset from `xrCamera` (no post-processing in stereo). */
+  render(xrCamera?: THREE.Camera) {
+    if (xrCamera && this.renderer.xr.isPresenting) this.renderer.render(this.scene, xrCamera);
+    else if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
   }
 }

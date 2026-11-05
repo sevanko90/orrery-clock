@@ -20,6 +20,8 @@ import { detectGpu, warnIfNoGpu } from './ui/gpuCheck';
 import { Fiction } from './scene/fiction';
 import { FictionPanel } from './ui/fictionPanel';
 import { nextOccurrence, type FictionEntry } from './fiction/catalog';
+import { XrMode, type XrHit } from './xr/xrMode';
+import { TABLE_RADIUS } from './scene/layout';
 
 if (import.meta.env.PROD) {
   // Activate new builds immediately; reload once the new worker takes control.
@@ -384,9 +386,13 @@ function bodyOf(o: THREE.Object3D): Body | null {
  * planet's generous pick sphere, so a moon hit wins over its planet.
  */
 function bodyUnderPointer(): Body | null {
+  return bodyHit()?.body ?? null;
+}
+function bodyHit(): { body: Body; hit: THREE.Intersection } | null {
   const hits = raycaster.intersectObjects(activeProxies(), false);
   const hit = hits.find((h) => bodyOf(h.object)?.moon) ?? hits[0];
-  return hit ? bodyOf(hit.object) : null;
+  const body = hit ? bodyOf(hit.object) : null;
+  return body ? { body, hit } : null;
 }
 const hoverTag = document.getElementById('hover-tag')!;
 const canvas = stage.renderer.domElement;
@@ -408,9 +414,32 @@ function pick(clientX: number, clientY: number): Body | null {
 
 /** Planet id whose true-position ring is under the pointer (call after setPointer). */
 function pickMarker(): string | null {
+  return markerHit()?.id ?? null;
+}
+function markerHit(): { id: string; hit: THREE.Intersection } | null {
   if (!markersOn) return null;
   const hit = raycaster.intersectObjects([...trueMarkers.values()], false)[0];
-  return hit ? (markerOwner.get(hit.object) ?? null) : null;
+  const id = hit ? markerOwner.get(hit.object) : undefined;
+  return hit && id ? { id, hit } : null;
+}
+
+/** VR pointer: what a controller's ray is on, with where it lands. */
+function xrPick(ray: THREE.Raycaster): XrHit | null {
+  raycaster.ray.copy(ray.ray);
+  raycaster.camera = ray.camera;
+  const b = bodyHit();
+  if (b) return { point: b.hit.point, distance: b.hit.distance, label: b.body.hoverLabel ?? b.body.name, body: b.body };
+  const m = markerHit();
+  if (m) {
+    const body = bodies.bodies.find((x) => x.id === m.id);
+    return { point: m.hit.point, distance: m.hit.distance, label: `${body?.name ?? m.id}: true position`, body };
+  }
+  const lore = discworld?.pickLore(raycaster);
+  if (lore) {
+    const hit = raycaster.intersectObject(discworld!.root, true)[0];
+    if (hit) return { point: hit.point, distance: hit.distance, label: lore.name, note: lore.kind };
+  }
+  return null;
 }
 
 let downAt: { x: number; y: number; t: number } | null = null;
@@ -457,6 +486,29 @@ canvas.addEventListener('pointermove', (e) => {
 });
 canvas.addEventListener('pointerleave', () => (hoverTag.hidden = true));
 
+// ---- VR ------------------------------------------------------------------------
+// The hall is sized from the instrument as built (cabinet and arms).
+orrery.root.updateMatrixWorld(true);
+const xr = new XrMode(stage.renderer, stage.scene, { orrery: new THREE.Box3().setFromObject(orrery.root), tableRadius: TABLE_RADIUS }, {
+  pick: xrPick,
+  faster: () => clock.setStep(clock.step + 1),
+  slower: () => clock.setStep(clock.step - 1),
+  now: () => clock.resetToNow(),
+  status: () => [new Date(clock.nowMs()).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), SPEED_STEPS[clock.step].label],
+  quake: () => Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0),
+});
+{
+  const vrButton = document.getElementById('c-vr') as HTMLButtonElement;
+  navigator.xr
+    ?.isSessionSupported('immersive-vr')
+    .then((ok) => (vrButton.hidden = !ok))
+    .catch(() => undefined);
+  vrButton.addEventListener('click', () => {
+    info.hide();
+    xr.enter().catch((err) => console.error('Could not start VR', err));
+  });
+}
+
 // ---- Main loop ---------------------------------------------------------------
 const veil = document.getElementById('veil')!;
 let prev = performance.now();
@@ -464,7 +516,10 @@ let elapsed = 0;
 let frames = 0;
 
 let frameFailed = false;
+/** Simulation time of the last frame (ms), for the VR performance readout. */
+let cpuMs = 0;
 function frame(now: number) {
+  const t0 = performance.now();
   try {
     step(now);
   } catch (err) {
@@ -473,9 +528,10 @@ function frame(now: number) {
       console.error(err);
       showFatal(err instanceof Error ? err.message : String(err));
     }
+    stage.renderer.setAnimationLoop(null);
     return;
   }
-  requestAnimationFrame(frame);
+  cpuMs = performance.now() - t0;
 }
 
 function step(now: number) {
@@ -558,6 +614,7 @@ function step(now: number) {
   if (!stage.controls.autoRotate && !focus.flying && now - lastInteraction > 20_000) {
     stage.controls.autoRotate = true;
   }
+  if (xr.presenting) xr.update(dt, cpuMs);
   stage.controls.update(dt);
   // Scale the near plane with zoom: depth precision falls off with distance,
   // so a fixed 0.1 makes thin inlays flicker when zoomed out.
@@ -568,9 +625,9 @@ function step(now: number) {
   }
   // An elephant shifting its feet shakes the whole Disc (and the camera).
   const quake = Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0);
-  const shake = quake > 0 ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
+  const shake = quake > 0 && !xr.presenting ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
   if (shake) stage.camera.position.add(shake);
-  stage.render();
+  stage.render(xr.camera);
   if (shake) stage.camera.position.sub(shake);
 
   readout.update();
@@ -590,7 +647,8 @@ function step(now: number) {
   }
   if (param === '1' || (param !== '0' && saved)) setDiscworld(true);
 }
-requestAnimationFrame(frame);
+// The animation loop is the renderer's, so it carries on at the headset's own rate in VR.
+stage.renderer.setAnimationLoop(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr } });
