@@ -43,8 +43,8 @@ export class Stage {
   private pipeline: THREE.RenderPipeline | null = null;
   /** The bloom effect (for tuning strength, radius and threshold). */
   bloomNode: ReturnType<typeof bloom> | null = null;
-  /** Whether VR frames go through the bloom pipeline too (toggled from the headset). */
-  xrBloom = true;
+  /** Whether VR frames go through the bloom pipeline (only possible without multiview). */
+  xrBloom = false;
 
   constructor(
     private container: HTMLElement,
@@ -167,10 +167,38 @@ export class Stage {
     this.renderer.setSize(w, h);
   }
 
-  /** Draw a frame; in VR, from `xrCamera` (bloomed if `xrBloom` is on). */
+  /** Is VR drawing both eyes in one pass? */
+  get multiview() {
+    return this.renderer.xr.isPresenting && (this.renderer.xr as unknown as { useMultiview(): boolean }).useMultiview();
+  }
+
+  /**
+   * Draw a frame; in VR, from `xrCamera`, the player's camera inside its rig.
+   *
+   * VR goes straight to the headset unless bloom is asked for. The bloom
+   * pipeline's scene pass can't render multiview (both eyes come out as
+   * garbage), so bloom in VR needs multiview off; and the pass takes the
+   * headset camera without its parent rig, so its pose update is pointed back
+   * at the rigged camera here.
+   */
   render(xrCamera?: THREE.Camera) {
-    const inXr = this.renderer.xr.isPresenting;
-    if (this.pipeline && (!inXr || this.xrBloom)) this.pipeline.render();
-    else this.renderer.render(this.scene, inXr && xrCamera ? xrCamera : this.camera);
+    const xr = this.renderer.xr;
+    if (!xr.isPresenting || !xrCamera) {
+      if (this.pipeline) this.pipeline.render();
+      else this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    if (!this.pipeline || !this.xrBloom || this.multiview) {
+      this.renderer.render(this.scene, xrCamera);
+      return;
+    }
+    const headset = xr.getCamera();
+    const update = xr.updateCamera;
+    xr.updateCamera = (cam: THREE.PerspectiveCamera) => update.call(xr, cam === (headset as unknown) ? (xrCamera as THREE.PerspectiveCamera) : cam);
+    try {
+      this.pipeline.render();
+    } finally {
+      xr.updateCamera = update;
+    }
   }
 }

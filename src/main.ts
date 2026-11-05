@@ -513,7 +513,8 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   now: () => clock.resetToNow(),
   status: () => [new Date(clock.nowMs()).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), SPEED_STEPS[clock.step].label],
   quake: () => Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0),
-  toggleBloom: () => (stage.xrBloom = !stage.xrBloom),
+  // Bloom can't run on a multiview frame; the toggle only works without it.
+  toggleBloom: () => (stage.xrBloom = !stage.multiview && !stage.xrBloom),
   backend: () => stage.backend,
 });
 {

@@ -85,7 +85,7 @@ export class XrMode {
   private frames = 0;
   private fpsAt = 0;
   private cpuMs = 0;
-  private bloomOn = true;
+  private bloomOn = false;
   /** Desktop pixels per unit of tan(angle), which the particle sizes were tuned for. */
   private desktopPx = 1000;
 
@@ -407,9 +407,14 @@ export class XrMode {
       speed,
       `${this.fps.toFixed(0)} fps · cpu ${this.cpuMs.toFixed(1)} ms`,
       `${this.scaleText()} · hall ${hall} m`,
-      `${this.hooks.backend()}${(this.renderer.xr as unknown as { useMultiview(): boolean }).useMultiview() ? ' multiview' : ''} · bloom ${this.bloomOn ? 'on' : 'off'}`,
+      this.backendText(),
     ]);
     this.cpuMs = cpuMs;
+  }
+
+  private backendText() {
+    const multiview = (this.renderer.xr as unknown as { useMultiview(): boolean }).useMultiview();
+    return `${this.hooks.backend()}${multiview ? ' multiview · no bloom' : ` · bloom ${this.bloomOn ? 'on' : 'off'}`}`;
   }
 
   private scaleText() {
