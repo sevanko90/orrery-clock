@@ -1,9 +1,9 @@
 /**
  * "Scrunch": the cheaper-to-draw build of the scene for a standalone headset
- * (Quest 3). Gears and plates get distance LODs, the hall is merged into a
- * handful of meshes, and repeated materials are shared, so the headset draws
- * far fewer vertices and objects for (as near as the maths allows) the same
- * picture.
+ * (Quest 3). The movement's gears and plates and the planets' spheres get
+ * distance LODs and fiction mode's glow sprites are drawn as one, so the
+ * headset draws far fewer vertices and objects for (as near as the maths
+ * allows) the same picture.
  *
  * `?scrunch=1` forces it on (also on the desktop, to view and measure it),
  * `?scrunch=0` forces it off (also on the headset, for A/B tests). With no

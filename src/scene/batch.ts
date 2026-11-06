@@ -1,7 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { lodChain, type LodLevel } from './lod';
 import { LOD_HYSTERESIS } from '../xr/scrunch';
-import type { Occluders } from '../xr/occlusion';
 
 /** Layer the batched originals move to: kept for their transforms, never drawn themselves. */
 export const BATCHED_LAYER = 6;
@@ -13,8 +12,6 @@ interface Entry {
   /** Bounding sphere radius in the mesh's own space, for culling small details. */
   radius: number;
   centre: THREE.Vector3;
-  /** Bounding box in the mesh's own space (for occlusion). */
-  box: THREE.Box3;
   /** With LODs: each level's geometry id in the batch and its switch distance; and the level drawn. */
   lods?: { id: number; from: number }[];
   level: number;
@@ -43,7 +40,6 @@ export class Batcher {
   readonly batches: THREE.BatchedMesh[] = [];
   private entries: Entry[] = [];
   private tmp = new THREE.Vector3();
-  private box = new THREE.Box3();
 
   constructor(
     root: THREE.Object3D,
@@ -114,8 +110,7 @@ export class Batcher {
         batch.setMatrixAt(id, m.matrixWorld);
         if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
         const s = m.geometry.boundingSphere!;
-        if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
-        this.entries.push({ mesh: m, batch, id, radius: s.radius, centre: s.center.clone(), box: m.geometry.boundingBox!, lods: lodIds.get(m.geometry), level: 0 });
+        this.entries.push({ mesh: m, batch, id, radius: s.radius, centre: s.center.clone(), lods: lodIds.get(m.geometry), level: 0 });
         m.layers.set(BATCHED_LAYER);
       }
       this.batches.push(batch);
@@ -133,9 +128,8 @@ export class Batcher {
    * after the scene's world matrices are up to date. With an eye and an angle,
    * also skip instances smaller than that angle from the eye. With `lodEye`,
    * draw each instance that has LODs at the level its distance from there allows.
-   * With `occ`, skip instances it finds certainly hidden (under the hall floor, behind the table).
    */
-  sync(eye?: THREE.Vector3, minAngle = 0, lodEye?: THREE.Vector3, occ?: Occluders) {
+  sync(eye?: THREE.Vector3, minAngle = 0, lodEye?: THREE.Vector3) {
     const cull = !!eye && minAngle > 0;
     for (const e of this.entries) {
       let visible = true;
@@ -145,13 +139,12 @@ export class Batcher {
           break;
         }
       }
-      if (visible && (cull || occ || (lodEye && e.lods))) {
+      if (visible && (cull || (lodEye && e.lods))) {
         const m = e.mesh.matrixWorld.elements;
         const scale = Math.sqrt(Math.max(m[0] * m[0] + m[1] * m[1] + m[2] * m[2], m[4] * m[4] + m[5] * m[5] + m[6] * m[6], m[8] * m[8] + m[9] * m[9] + m[10] * m[10]));
         const at = this.tmp.copy(e.centre).applyMatrix4(e.mesh.matrixWorld);
         const r = e.radius * scale;
         if (cull) visible = r > at.distanceTo(eye!) * minAngle;
-        if (visible && occ) visible = !occ.hiddenBox(this.box.copy(e.box).applyMatrix4(e.mesh.matrixWorld));
         if (visible && lodEye && e.lods) {
           // Nearest point of the bounds, in the mesh's own units (errors are measured there).
           const d = Math.max(0, at.distanceTo(lodEye) - r) / scale;

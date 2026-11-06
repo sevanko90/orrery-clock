@@ -1,13 +1,17 @@
 // Frame diff for the VR scrunch A/B (run in the app container):
-//   node scripts/scrunch/imgdiff.mjs a.png b.png [heat.png]
+//   node scripts/scrunch/imgdiff.mjs a.png b.png [heat.png] [left,top,width,height]
 // Prints PSNR, mean |Δ|, share of pixels changed beyond 8 and 32 levels
 // (max channel), and SSIM on luma (8×8 windows, stride 4). Optional heat map
 // (|Δ| × 8). Both frames must be the same size.
 import sharp from 'sharp';
 
-const [a, b, heat] = process.argv.slice(2);
+const [a, b, heatArg, cropArg] = process.argv.slice(2);
+const heat = heatArg && heatArg !== '-' ? heatArg : null;
+const crop = cropArg ? (([left, top, width, height]) => ({ left, top, width, height }))(cropArg.split(',').map(Number)) : null;
 const load = async (p) => {
-  const { data, info } = await sharp(p).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  let img = sharp(p);
+  if (crop) img = img.extract(crop);
+  const { data, info } = await img.removeAlpha().raw().toBuffer({ resolveWithObject: true });
   return { data, w: info.width, h: info.height };
 };
 const A = await load(a);
@@ -47,7 +51,7 @@ for (let y = 0; y + 8 <= A.h; y += 4) {
   }
 }
 const out = {
-  a, b, size: [A.w, A.h],
+  a, b, crop, size: [A.w, A.h],
   psnr: mse === 0 ? Infinity : +(10 * Math.log10((255 * 255) / mse)).toFixed(2),
   meanAbs: +(ae / (n * 3)).toFixed(4),
   changedOver8: +((over8 / n) * 100).toFixed(4) + '%',
