@@ -1,4 +1,7 @@
 import * as THREE from 'three/webgpu';
+import { lodChain, type LodLevel } from './lod';
+import { LOD_HYSTERESIS } from '../xr/scrunch';
+import type { Occluders } from '../xr/occlusion';
 
 /** Layer the batched originals move to: kept for their transforms, never drawn themselves. */
 export const BATCHED_LAYER = 6;
@@ -10,6 +13,18 @@ interface Entry {
   /** Bounding sphere radius in the mesh's own space, for culling small details. */
   radius: number;
   centre: THREE.Vector3;
+  /** Bounding box in the mesh's own space (for occlusion). */
+  box: THREE.Box3;
+  /** With LODs: each level's geometry id in the batch and its switch distance; and the level drawn. */
+  lods?: { id: number; from: number }[];
+  level: number;
+}
+
+export interface BatcherOptions {
+  /** Skip these meshes (left drawn on their own). */
+  skip?: (m: THREE.Mesh) => boolean;
+  /** Use registered distance LODs (lod.ts) for geometries that have them (VR scrunch only). */
+  lod?: boolean;
 }
 
 /**
@@ -28,12 +43,14 @@ export class Batcher {
   readonly batches: THREE.BatchedMesh[] = [];
   private entries: Entry[] = [];
   private tmp = new THREE.Vector3();
+  private box = new THREE.Box3();
 
   constructor(
     root: THREE.Object3D,
     private parent: THREE.Object3D,
-    skip: (m: THREE.Mesh) => boolean = () => false,
+    options: BatcherOptions = {},
   ) {
+    const skip = options.skip ?? (() => false);
     root.updateMatrixWorld(true);
     const groups = new Map<string, THREE.Mesh[]>();
     root.traverse((o) => {
@@ -60,8 +77,19 @@ export class Batcher {
       // Each distinct geometry is stored once; meshes sharing it become instances.
       // A batch is all indexed or all not: give unindexed shapes a plain index when they're mixed.
       const distinct = [...new Set(list.map((m) => m.geometry))];
-      const anyIndexed = distinct.some((g) => g.index);
-      const asStored = new Map(distinct.map((g) => [g, anyIndexed && !g.index ? withIndex(g) : g]));
+      const chains = new Map<THREE.BufferGeometry, LodLevel[]>();
+      if (options.lod) {
+        for (const g of distinct) {
+          const c = lodChain(g);
+          if (c) chains.set(g, c);
+        }
+      }
+      // With LODs, level 0 is the chain's indexed copy of the original.
+      const level0 = (g: THREE.BufferGeometry) => chains.get(g)?.[0].geometry ?? g;
+      const extra = [...chains.values()].flatMap((c) => c.slice(1).map((l) => l.geometry));
+      const all = [...distinct.map(level0), ...extra];
+      const anyIndexed = all.some((g) => g.index);
+      const asStored = new Map(all.map((g) => [g, anyIndexed && !g.index ? withIndex(g) : g]));
       const geos = [...asStored.values()];
       const vertices = geos.reduce((n, g) => n + g.attributes.position.count, 0);
       const indices = geos.reduce((n, g) => n + (g.index?.count ?? 0), 0);
@@ -76,13 +104,18 @@ export class Batcher {
       batch.perObjectFrustumCulled = true;
       // Never hit by rays: picking goes to the originals (see raycastLayers()).
       batch.raycast = () => undefined;
-      const geoId = new Map(distinct.map((g) => [g, batch.addGeometry(asStored.get(g)!)]));
+      const stored = new Map<THREE.BufferGeometry, number>();
+      for (const [g, s] of asStored) stored.set(g, batch.addGeometry(s));
+      const lodIds = new Map(
+        [...chains].map(([g, c]) => [g, c.map((l) => ({ id: stored.get(l.geometry)!, from: l.from }))]),
+      );
       for (const m of list) {
-        const id = batch.addInstance(geoId.get(m.geometry)!);
+        const id = batch.addInstance(stored.get(level0(m.geometry))!);
         batch.setMatrixAt(id, m.matrixWorld);
         if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
         const s = m.geometry.boundingSphere!;
-        this.entries.push({ mesh: m, batch, id, radius: s.radius, centre: s.center.clone() });
+        if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+        this.entries.push({ mesh: m, batch, id, radius: s.radius, centre: s.center.clone(), box: m.geometry.boundingBox!, lods: lodIds.get(m.geometry), level: 0 });
         m.layers.set(BATCHED_LAYER);
       }
       this.batches.push(batch);
@@ -98,9 +131,12 @@ export class Batcher {
   /**
    * Copy the originals' world matrices and visibility into the batches. Call
    * after the scene's world matrices are up to date. With an eye and an angle,
-   * also skip instances smaller than that angle from the eye.
+   * also skip instances smaller than that angle from the eye. With `lodEye`,
+   * draw each instance that has LODs at the level its distance from there allows.
+   * With `occ`, skip instances it finds certainly hidden (under the hall floor, behind the table).
    */
-  sync(eye?: THREE.Vector3, minAngle = 0) {
+  sync(eye?: THREE.Vector3, minAngle = 0, lodEye?: THREE.Vector3, occ?: Occluders) {
+    const cull = !!eye && minAngle > 0;
     for (const e of this.entries) {
       let visible = true;
       for (let o: THREE.Object3D | null = e.mesh; o && o !== this.parent; o = o.parent) {
@@ -109,15 +145,41 @@ export class Batcher {
           break;
         }
       }
-      if (visible && eye && minAngle > 0) {
+      if (visible && (cull || occ || (lodEye && e.lods))) {
         const m = e.mesh.matrixWorld.elements;
         const scale = Math.sqrt(Math.max(m[0] * m[0] + m[1] * m[1] + m[2] * m[2], m[4] * m[4] + m[5] * m[5] + m[6] * m[6], m[8] * m[8] + m[9] * m[9] + m[10] * m[10]));
         const at = this.tmp.copy(e.centre).applyMatrix4(e.mesh.matrixWorld);
-        visible = e.radius * scale > at.distanceTo(eye) * minAngle;
+        const r = e.radius * scale;
+        if (cull) visible = r > at.distanceTo(eye!) * minAngle;
+        if (visible && occ) visible = !occ.hiddenBox(this.box.copy(e.box).applyMatrix4(e.mesh.matrixWorld));
+        if (visible && lodEye && e.lods) {
+          // Nearest point of the bounds, in the mesh's own units (errors are measured there).
+          const d = Math.max(0, at.distanceTo(lodEye) - r) / scale;
+          const lods = e.lods;
+          let l = e.level;
+          while (l + 1 < lods.length && d >= lods[l + 1].from * (1 + LOD_HYSTERESIS)) l++;
+          while (l > 0 && d < lods[l].from * (1 - LOD_HYSTERESIS)) l--;
+          if (l !== e.level) {
+            e.level = l;
+            e.batch.setGeometryIdAt(e.id, lods[l].id);
+          }
+        }
       }
       e.batch.setVisibleAt(e.id, visible);
       if (visible) e.batch.setMatrixAt(e.id, e.mesh.matrixWorld);
     }
+  }
+
+  /** How many instances are drawn at each LOD level (for the readout and telemetry). */
+  lodCounts() {
+    const counts: number[] = [];
+    for (const e of this.entries) if (e.lods) counts[e.level] = (counts[e.level] ?? 0) + 1;
+    return Array.from(counts, (c) => c ?? 0);
+  }
+
+  /** Every batched original, its batch and instance id, and the LOD level drawn. */
+  instances(): readonly { mesh: THREE.Mesh; batch: THREE.BatchedMesh; id: number; level: number }[] {
+    return this.entries;
   }
 
   /** Is this mesh drawn through a batch? */

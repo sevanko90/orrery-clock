@@ -1,3 +1,5 @@
+// First: a seeded Math.random (?seed=N) must be in place before anything draws one.
+import './xr/seed';
 import './style.css';
 import * as THREE from 'three/webgpu';
 import { registerSW } from 'virtual:pwa-register';
@@ -26,6 +28,12 @@ import { Batcher, raycastLayers } from './scene/batch';
 import { Telemetry, type Command } from './xr/telemetry';
 import { XR } from './xr/config';
 import { TABLE_RADIUS } from './scene/layout';
+import { scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
+import { ScrunchDebug } from './xr/scrunchDebug';
+import { Occluders } from './xr/occlusion';
+import { MeshLods, beltRock } from './scene/meshLod';
+import { SpriteBatch } from './scene/spriteBatch';
+import { TABLE_SURFACE } from './scene/orrery';
 
 if (import.meta.env.PROD) {
   // Activate new builds immediately; reload once the new worker takes control.
@@ -70,6 +78,8 @@ const quality = detectQuality();
 // Without a GPU, drop to the light settings so it at least stays usable.
 if (gpu === 'software') Object.assign(quality, { low: true, pixelRatio: 1, shadows: false, bloom: false });
 const stage = new Stage(container, quality);
+/** The headset's cheaper scene (LODs, merged hall): see xr/scrunch.ts. */
+const scrunch = scrunchOn(quality.headset);
 // The GPU backend (WebGPU, or WebGL 2) comes up asynchronously.
 boot.sendNow({ kind: 'boot', stage: 'renderer' });
 await stage.init();
@@ -78,11 +88,18 @@ const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
 // Draw the instrument's hundreds of parts as a few batches (one per material).
-const orreryBatch = new Batcher(orrery.root, stage.scene);
+const orreryBatch = new Batcher(orrery.root, stage.scene, { lod: scrunch });
 // World matrices are brought up to date once a frame, just before the batches copy them.
 stage.scene.matrixWorldAutoUpdate = false;
 const bodies = new Bodies(orrery.arms, { lowQuality: quality.low });
 stage.scene.add(bodies.root);
+/** Scrunched: spheres (planets, Sun, moons) step down in segments with distance. */
+const meshLods = scrunch ? new MeshLods() : null;
+if (scrunch) {
+  // The belt's 1800 rocks: 20-face indexed rocks instead of 36-face unindexed ones.
+  const belt = bodies.root.getObjectByName('belt') as THREE.InstancedMesh | undefined;
+  if (belt) belt.geometry = beltRock();
+}
 
 const clock = new SimClock();
 const kinematics = new Kinematics(design);
@@ -193,7 +210,7 @@ const NORMAL_LIMITS = { maxPolar: stage.controls.maxPolarAngle, maxDistance: sta
 function setDiscworld(on: boolean) {
   if (on && !discworld) {
     discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio });
-    discBatch = new Batcher(discworld.root, stage.scene);
+    discBatch = new Batcher(discworld.root, stage.scene, { lod: scrunch });
     stage.scene.add(discworld.root);
   }
   discworld?.setEnabled(on);
@@ -256,6 +273,8 @@ addEventListener('keydown', (e) => {
 // Built at startup even with the mode off: its dated events (the Vogons every
 // Thursday, the Martians every August) play whenever the clock reaches them.
 let fiction: Fiction | null = null;
+/** Scrunched: fiction's ~130 additive glow sprites drawn as one. */
+let fictionSprites: SpriteBatch | null = null;
 /** Entry whose show was just started: frame it once the jump has landed. */
 let pendingFrame: string | null = null;
 /**
@@ -321,6 +340,7 @@ function setFiction(on: boolean) {
     fiction = new Fiction(bodies, mats);
     hiddenPlaces.forEach((id) => fiction!.setPlaceShown(id, false));
     stage.scene.add(fiction.root);
+    if (scrunch) fictionSprites = new SpriteBatch([fiction.root], stage.scene);
   }
   if (!on && playing) finishScene();
   fiction?.setEnabled(on);
@@ -522,24 +542,29 @@ canvas.addEventListener('pointerleave', () => (hoverTag.hidden = true));
 orrery.root.updateMatrixWorld(true);
 const orreryBox = new THREE.Box3().setFromObject(orrery.root);
 const culler = new DetailCuller();
+/** Scrunched: skip parts the hall floor or the table top certainly hide (see xr/occlusion.ts). */
+const occluders = scrunch ? new Occluders() : null;
+if (occluders) occluders.table = { y: TABLE_SURFACE, r: TABLE_RADIUS - 0.01 };
 let cullAngle: number = XR.detailCullAngle;
 /** The VR player's head (world units), for culling small batched parts; null outside VR. */
 let xrHead: THREE.Vector3 | null = null;
-const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS }, {
+/** What VR skips drawing from where the head is (or, with ?vrview=1, the desktop camera). */
+function viewFrom(head: THREE.Vector3 | null) {
+  if (!head) {
+    culler.restore();
+    xrHead = null;
+    orrery.mechanism.root.visible = true;
+    return;
+  }
+  // From under the cabinet its opaque base hides the whole movement (115 draw calls): skip it.
+  orrery.mechanism.root.visible = head.y > orreryBox.min.y;
+  culler.setRoots([orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
+  culler.update(head, cullAngle, occluders ?? undefined);
+  xrHead = head;
+}
+const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS, scrunch }, {
   pick: xrPick,
-  view: (head) => {
-    if (!head) {
-      culler.restore();
-      xrHead = null;
-      orrery.mechanism.root.visible = true;
-      return;
-    }
-    // From under the cabinet its opaque base hides the whole movement (115 draw calls): skip it.
-    orrery.mechanism.root.visible = head.y > orreryBox.min.y;
-    culler.setRoots([orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
-    culler.update(head, cullAngle);
-    xrHead = head;
-  },
+  view: viewFrom,
   faster: () => clock.setStep(clock.step + 1),
   slower: () => clock.setStep(clock.step - 1),
   now: () => clock.resetToNow(),
@@ -547,11 +572,14 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   quake: () => Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0),
   // Bloom can't run on a multiview frame; the toggle only works without it.
   report: (entry) => {
-    const info = stage.renderer.info.render as unknown as { drawCalls?: number; calls?: number; triangles: number };
     telemetry.send({
       ...entry,
-      drawCalls: info.drawCalls ?? info.calls,
-      triangles: info.triangles,
+      ...lastRender,
+      scrunch,
+      lod: orreryBatch.lodCounts(),
+      discLod: discBatch?.lodCounts(),
+      sphereLod: meshLods?.counts(),
+      occluded: occluders?.hiddenCount,
       sim: new Date(clock.nowMs()).toISOString(),
       speed: SPEED_STEPS[clock.step].label,
       modes: { fiction: !!fiction?.enabled, discworld: !!discworld?.enabled, moons: bodies.moonsVisible, markers: markersOn },
@@ -585,7 +613,7 @@ const telemetry = new Telemetry((c: Command) => {
       else if (c.mode === 'discworld') setDiscworld(c.on);
       else if (c.mode === 'moons') setMoons(c.on);
       else if (c.mode === 'markers') setMarkers(c.on);
-      else if (c.mode === 'hangar') xr.setHangar(c.on);
+      else if (c.mode === 'hangar') xr.setHangar(c.on, VRVIEW_FLAG);
       return;
     case 'date':
       return clock.jumpTo(Date.parse(c.iso));
@@ -597,6 +625,23 @@ const telemetry = new Telemetry((c: Command) => {
   }
 });
 
+// ---- Scrunch measuring tools (console / automation only) ------------------------
+const debug = new ScrunchDebug({
+  stage,
+  clock,
+  scrunch,
+  batches: () => [orreryBatch, ...(discBatch ? [discBatch] : [])],
+  roots: () => ({ movement: orrery.mechanism.root, orrery: orrery.root, bodies: bodies.root, discworld: discworld?.root, fiction: fiction?.root, hangar: xr.hall }),
+  setMode: (mode, on) => {
+    if (mode === 'fiction') setFiction(on);
+    else if (mode === 'discworld') setDiscworld(on);
+    else if (mode === 'moons') setMoons(on);
+    else if (mode === 'markers') setMarkers(on);
+    else xr.setHangar(on, VRVIEW_FLAG);
+  },
+});
+if (VRVIEW_FLAG) xr.setHangar(true, true);
+
 // ---- Main loop ---------------------------------------------------------------
 const veil = document.getElementById('veil')!;
 let prev = performance.now();
@@ -606,6 +651,8 @@ let frames = 0;
 let frameFailed = false;
 /** Simulation time of the last frame (ms), for the VR performance readout. */
 let cpuMs = 0;
+/** What the last frame drew (read straight after it, for telemetry). */
+const lastRender = { drawCalls: 0, triangles: 0 };
 function frame(now: number) {
   const t0 = performance.now();
   try {
@@ -624,7 +671,8 @@ function frame(now: number) {
 }
 
 function step(now: number) {
-  const dt = Math.min(0.1, (now - prev) / 1000);
+  // (Frozen by the scrunch debug tools: every animation holds still for frame diffs.)
+  const dt = debug.dt(Math.min(0.1, (now - prev) / 1000));
   prev = now;
   elapsed += dt;
 
@@ -716,11 +764,26 @@ function step(now: number) {
   const quake = Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0);
   const shake = quake > 0 && !xr.presenting ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
   if (shake) stage.camera.position.add(shake);
+  // ?vrview=1: the desktop camera stands in for the head (hall shown, VR culling run).
+  if (occluders) {
+    occluders.hall = xr.hall.visible ? xr.hallBounds : null;
+    occluders.begin(xr.presenting ? xrHead : stage.camera.position);
+  }
+  if (VRVIEW_FLAG && !xr.presenting) viewFrom(stage.camera.position);
   stage.scene.updateMatrixWorld();
-  const eye = xr.presenting ? (xrHead ?? undefined) : undefined;
-  orreryBatch.sync(eye, cullAngle);
-  discBatch?.sync(eye, cullAngle);
+  const eye = xr.presenting || VRVIEW_FLAG ? (xrHead ?? undefined) : undefined;
+  // Scrunched: pick LOD levels by distance from the head (or the desktop camera).
+  const lodEye = scrunch ? (xr.presenting ? (xrHead ?? undefined) : stage.camera.position) : undefined;
+  fictionSprites?.sync();
+  if (meshLods && lodEye) meshLods.update(lodEye, [bodies.root, ...(fiction ? [fiction.root] : [])]);
+  orreryBatch.sync(eye, cullAngle, lodEye, occluders ?? undefined);
+  discBatch?.sync(eye, cullAngle, lodEye, occluders ?? undefined);
   stage.render(xr.camera);
+  {
+    const r = stage.renderer.info.render as unknown as { drawCalls: number; triangles: number };
+    lastRender.drawCalls = r.drawCalls;
+    lastRender.triangles = r.triangles;
+  }
   if (shake) stage.camera.position.sub(shake);
 
   readout.update();
@@ -748,4 +811,4 @@ function step(now: number) {
 stage.renderer.setAnimationLoop(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { occluders, meshLods, culler, fictionSprites: () => fictionSprites } } });

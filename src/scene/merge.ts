@@ -69,3 +69,73 @@ function flipWinding(g: THREE.BufferGeometry) {
     }
   }
 }
+
+/**
+ * Bake a whole static subtree into one mesh per material (VR scrunch: the
+ * hall). Every mesh's transform relative to `root` goes into its vertices;
+ * same geometry, same materials, same picture, a handful of draws instead of
+ * dozens. Meshes are grouped by material and render settings; groups with
+ * mismatched attributes are left as they were. Returns the meshes saved.
+ */
+export function flattenStatic(root: THREE.Object3D): number {
+  root.updateMatrixWorld(true);
+  const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map<string, THREE.Mesh[]>();
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || (m as THREE.InstancedMesh).isInstancedMesh || Array.isArray(m.material)) return;
+    const g = m.geometry;
+    const key = [m.material.uuid, m.castShadow, m.receiveShadow, m.renderOrder, m.frustumCulled, m.visible, Object.keys(g.attributes).sort().join(',')].join('|');
+    const list = buckets.get(key);
+    if (list) list.push(m);
+    else buckets.set(key, [m]);
+  });
+  let saved = 0;
+  const mat = new THREE.Matrix4();
+  for (const list of buckets.values()) {
+    if (list.length < 2) continue;
+    const geos = list.map((m) => {
+      mat.multiplyMatrices(toRoot, m.matrixWorld);
+      const g = m.geometry.index ? m.geometry.clone() : m.geometry.toNonIndexed();
+      if (!g.index) g.setIndex(Array.from({ length: g.attributes.position.count }, (_, i) => i));
+      g.applyMatrix4(mat);
+      if (mat.determinant() < 0) {
+        const idx = g.index!;
+        for (let i = 0; i < idx.count; i += 3) {
+          const t = idx.getX(i + 1);
+          idx.setX(i + 1, idx.getX(i + 2));
+          idx.setX(i + 2, t);
+        }
+      }
+      g.clearGroups();
+      return g;
+    });
+    const merged = mergeGeometries(geos, false);
+    geos.forEach((g) => g.dispose());
+    if (!merged) continue;
+    const first = list[0];
+    const mesh = new THREE.Mesh(merged, first.material);
+    mesh.castShadow = first.castShadow;
+    mesh.receiveShadow = first.receiveShadow;
+    mesh.renderOrder = first.renderOrder;
+    mesh.frustumCulled = first.frustumCulled;
+    mesh.visible = first.visible;
+    mesh.name = `${root.name || 'flat'}-${(first.material as THREE.Material).name || 'merged'}`;
+    for (const m of list) m.removeFromParent();
+    root.add(mesh);
+    saved += list.length - 1;
+  }
+  // Drop groups left empty.
+  const empty: THREE.Object3D[] = [];
+  root.traverse((o) => {
+    if (o !== root && !(o as THREE.Mesh).isMesh && o.children.length === 0 && o.type === 'Group') empty.push(o);
+  });
+  for (let o of empty) {
+    while (o !== root && o.children.length === 0 && o.parent) {
+      const p: THREE.Object3D = o.parent;
+      o.removeFromParent();
+      o = p;
+    }
+  }
+  return saved;
+}

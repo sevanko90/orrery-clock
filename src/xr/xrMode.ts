@@ -3,6 +3,7 @@ import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerM
 import { XR, speedScale } from './config';
 import { XrInput } from './input';
 import { buildHangar } from './hangar';
+import { flattenStatic } from '../scene/merge';
 import { Label, TextPlate } from './text';
 import type { Body } from '../scene/bodies';
 import { POINT_UNIFORMS } from '../scene/pointSize';
@@ -42,6 +43,8 @@ export interface XrLayout {
   /** World box of the instrument (cabinet and arms). */
   orrery: THREE.Box3;
   tableRadius: number;
+  /** Scrunched scene (see scrunch.ts): build the hall as a few merged meshes. */
+  scrunch?: boolean;
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -108,6 +111,8 @@ export class XrMode {
     this.half = layout.tableRadius + XR.hangarMargin;
     this.roofY = layout.orrery.max.y + XR.roofClearance;
     this.hangar = buildHangar({ floorY: this.floorY, half: this.half, roofY: this.roofY, tableRadius: layout.tableRadius });
+    // ~70 static pieces in five materials: five draws.
+    if (layout.scrunch) flattenStatic(this.hangar);
     scene.add(this.hangar);
     // Start just beyond the table's edge, facing the instrument.
     this.start = new THREE.Vector3(0, this.floorY, layout.tableRadius + 4);
@@ -480,9 +485,19 @@ export class XrMode {
     this.keepHead(was, !this.grounded);
   }
 
-  /** Show or hide the hall (from a telemetry command). */
-  setHangar(on: boolean) {
-    this.hangar.visible = on && this.presenting;
+  /** Show or hide the hall (from a telemetry command). `preview` shows it outside VR too (?vrview=1). */
+  setHangar(on: boolean, preview = false) {
+    this.hangar.visible = on && (this.presenting || preview);
+  }
+
+  /** The hall, for measuring. */
+  get hall() {
+    return this.hangar;
+  }
+
+  /** The hall's interior (world units): floor height and half-width. */
+  get hallBounds() {
+    return { floorY: this.floorY, half: this.half };
   }
 
   private scaleText() {

@@ -13,6 +13,7 @@ import {
   TOP_PLATE,
 } from '../mechanism/heights';
 import { gearGeometry } from './gear';
+import { arcError, arcPoints, arcSegments, chamferError, pathFrom, registerLod, sharpPrism } from './lod';
 import type { Materials } from './materials';
 
 export const design = designJson as MechanismDesign;
@@ -135,8 +136,8 @@ function plateGeometry(avoid: { x: number; y: number; r: number }[], solid: bool
   const centre = new THREE.Path();
   centre.absarc(0, 0, CENTRAL_HOLE, 0, Math.PI * 2, true);
   shape.holes.push(centre);
+  const holes: { x: number; y: number; r: number }[] = [];
   if (!solid) {
-    const holes: { x: number; y: number; r: number }[] = [];
     for (const r of [0.95, 0.75, 0.55, 0.4]) {
       for (let ring = CENTRAL_HOLE + r + 0.25; ring < PLATE_RADIUS - r - 0.3; ring += 0.35) {
         const n = Math.max(6, Math.floor((Math.PI * 2 * ring) / (r * 2.4)));
@@ -166,7 +167,31 @@ function plateGeometry(avoid: { x: number; y: number; r: number }[], solid: bool
   });
   geo.translate(0, 0, -PLATE_T / 2);
   geo.rotateX(-Math.PI / 2);
+  registerLod(geo, () => plateLods(holes));
   return geo;
+}
+
+/**
+ * Headset builds of a plate (see lod.ts): sharp-edged, with every circle cut
+ * only as finely as the level's error allows: chord error half the lost
+ * chamfer at level 1, then the chamfer, then twice it.
+ */
+export function plateLods(holes: { x: number; y: number; r: number }[]) {
+  const chamfer = chamferError(0.012, 0.012);
+  return [0.5, 1, 2].map((k) => {
+    const budget = chamfer * k;
+    let outline = 0;
+    const circle = (x: number, y: number, r: number, cw: boolean) => {
+      const n = arcSegments(r, Math.PI * 2, budget, 8);
+      outline = Math.max(outline, arcError(r, Math.PI * 2, n));
+      return arcPoints(x, y, r, 0, cw ? -Math.PI * 2 : Math.PI * 2, n, cw).slice(0, -1);
+    };
+    const shape = pathFrom(circle(0, 0, PLATE_RADIUS, false), new THREE.Shape()) as THREE.Shape;
+    shape.holes.push(pathFrom(circle(0, 0, CENTRAL_HOLE, true)));
+    for (const h of holes) shape.holes.push(pathFrom(circle(h.x, h.y, h.r, true)));
+    // Chord error and lost chamfer can meet on one edge: the bound is their sum.
+    return { geometry: sharpPrism(shape, PLATE_T, 0.012, 0.012), error: chamfer + outline };
+  });
 }
 
 function pillarGeometry(height: number) {

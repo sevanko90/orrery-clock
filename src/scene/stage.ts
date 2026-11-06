@@ -21,7 +21,8 @@ export function detectQuality(): Quality {
   const low = coarse || small;
   // Standalone headsets: a phone-class GPU drawing two eyes. The Sun's
   // six-sided shadow map is the first thing to go.
-  const headset = /OculusBrowser|Quest|Pico/i.test(navigator.userAgent);
+  // (?headset=1 gives a desktop browser the same profile, for A/B checks.)
+  const headset = /OculusBrowser|Quest|Pico/i.test(navigator.userAgent) || new URLSearchParams(location.search).get('headset') === '1';
   return {
     low,
     pixelRatio: Math.min(devicePixelRatio, low ? 1.5 : 2),

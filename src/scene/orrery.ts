@@ -3,7 +3,7 @@ import { ARMS, PLANE_Y, TABLE_RADIUS, TABLE_TOP, type ArmSpec } from './layout';
 import { GLASS_Y, WINDOW_RADIUS, CENTRAL_HOLE, stage2Y, GEAR_T, BOTTOM_PLATE, PLATE_T } from '../mechanism/heights';
 
 /** Walnut table surface: the movement's bottom plate rests on it. */
-const TABLE_SURFACE = BOTTOM_PLATE - PLATE_T / 2;
+export const TABLE_SURFACE = BOTTOM_PLATE - PLATE_T / 2;
 import { buildMechanism, design, type Mechanism3D } from './mechanism3d';
 import type { Materials } from './materials';
 

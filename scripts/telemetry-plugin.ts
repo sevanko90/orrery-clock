@@ -20,6 +20,21 @@ export function telemetry(root: string): Plugin {
       mkdirSync(dir, { recursive: true });
       if (!existsSync(commands)) writeFileSync(commands, '');
       server.middlewares.use('/__telemetry', (req, res) => {
+        // Frame captures from the scrunch debug tools (a PNG data URL) → .telemetry/captures/<name>.png
+        if (req.method === 'POST' && req.url?.startsWith('/capture')) {
+          const name = (new URL(req.url, 'http://x').searchParams.get('name') ?? 'frame').replace(/[^\w.-]/g, '_');
+          const chunks: Buffer[] = [];
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => {
+            const url = Buffer.concat(chunks).toString('utf8');
+            const b64 = url.slice(url.indexOf(',') + 1);
+            mkdirSync(join(dir, 'captures'), { recursive: true });
+            writeFileSync(join(dir, 'captures', `${name}.png`), Buffer.from(b64, 'base64'));
+            res.statusCode = 204;
+            res.end();
+          });
+          return;
+        }
         if (req.method === 'POST') {
           let body = '';
           req.on('data', (c) => {
