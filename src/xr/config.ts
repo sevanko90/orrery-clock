@@ -12,7 +12,10 @@ export const XR = {
   metresPerUnit: 1.5,
   /** Range the in-headset scale control can reach. */
   minMetresPerUnit: 0.02,
-  maxMetresPerUnit: 6,
+  /** Insect end: at 80 m per unit a 1.7 m player is ~0.02 units tall, beside gear teeth. */
+  maxMetresPerUnit: 80,
+  /** Scale stick rate (natural log per second at full deflection): a doubling every ~0.46 s, the same anywhere in the range. */
+  scaleRate: 1.5,
 
   /** The cabinet's underside hovers this high above the hangar floor (orrery units). */
   hoverGap: 3,
@@ -52,5 +55,8 @@ export const XR = {
 
 /** Jetpack speeds scale partly with the world, so big hangars stay crossable. */
 export function speedScale(metresPerUnit: number) {
-  return Math.sqrt(metresPerUnit / XR.metresPerUnit);
+  // Smaller than the default (an insect in a huge world) the jetpack grows
+  // faster than √scale, so the orrery stays crossable (~1.7 units/s at 80 m/unit).
+  const k = metresPerUnit / XR.metresPerUnit;
+  return k <= 1 ? Math.sqrt(k) : Math.pow(k, 0.75);
 }

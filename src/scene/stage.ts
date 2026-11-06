@@ -44,6 +44,8 @@ export class Stage {
   private pipeline: THREE.RenderPipeline | null = null;
   /** The bloom effect (for tuning strength, radius and threshold). */
   bloomNode: ReturnType<typeof bloom> | null = null;
+  /** The star sphere and the sparkling stars (VR keeps them inside its far plane). */
+  readonly sky: THREE.Object3D[] = [];
   /** Whether VR frames go through the bloom pipeline (only possible without multiview). */
   xrBloom = false;
 
@@ -128,6 +130,7 @@ export class Stage {
     sky.rotation.x = (-23.44 * Math.PI) / 180;
     sky.material.visible = false;
     this.scene.add(sky);
+    this.sky.push(sky);
     loadOnce('stars', this.quality.low ? '256' : '2k')
       .then((t) => {
         sky.material.map = t;
@@ -158,6 +161,7 @@ export class Stage {
     stars.count = n;
     stars.frustumCulled = false;
     this.scene.add(stars);
+    this.sky.push(stars);
   }
 
   resize() {

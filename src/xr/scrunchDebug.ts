@@ -57,6 +57,8 @@ export class ScrunchDebug {
   readonly seeded = Number(new URLSearchParams(location.search).get('seed')) > 0;
   /** When set, every frame advances the scene by exactly this (s), so two page loads land on the same frame. */
   fixedDt: number | null = null;
+  /** Desktop near plane override (world units), for previewing VR world scales. */
+  near: number | null = null;
   /** Frames stepped (counted by the main loop). */
   ticks = 0;
 
@@ -88,6 +90,20 @@ export class ScrunchDebug {
     controls.minDistance = 0;
     camera.position.set(...p.head);
     controls.target.set(...p.head).addScaledVector(new THREE.Vector3(...p.look).normalize(), 10);
+    camera.fov = vfov;
+    camera.updateProjectionMatrix();
+    controls.update();
+  }
+
+  /** Stand the desktop camera at a head position looking along `look`, with a Quest eye's field. */
+  poseAt(head: THREE.Vector3, look: THREE.Vector3, vfov = QUEST_VFOV) {
+    const { camera, controls } = this.ctx.stage;
+    controls.autoRotate = false;
+    controls.enableDamping = false;
+    controls.enabled = false;
+    controls.minDistance = 0;
+    camera.position.copy(head);
+    controls.target.copy(head).addScaledVector(look.clone().normalize(), 10);
     camera.fov = vfov;
     camera.updateProjectionMatrix();
     controls.update();

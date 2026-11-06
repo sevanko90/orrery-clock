@@ -11,7 +11,10 @@ export type Command =
   | { type: 'date'; iso: string }
   | { type: 'speed'; step: number }
   | { type: 'cull'; angle: number }
-  | { type: 'note'; text: string };
+  | { type: 'note'; text: string }
+  | { type: 'view'; name: string }
+  | { type: 'fiction'; id: string }
+  | { type: 'return' };
 
 export class Telemetry {
   readonly enabled = import.meta.env.DEV;

@@ -32,6 +32,10 @@ import { scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
 import { ScrunchDebug } from './xr/scrunchDebug';
 import { MeshLods, beltRock } from './scene/meshLod';
 import { SpriteBatch } from './scene/spriteBatch';
+import { viewpoints, yawFacing } from './xr/vrScene';
+import { POINT_UNIFORMS } from './scene/pointSize';
+import type { PanelRow } from './xr/controlPanel';
+import { FICTION } from './fiction/catalog';
 
 if (import.meta.env.PROD) {
   // Activate new builds immediately; reload once the new worker takes control.
@@ -206,12 +210,14 @@ let discworld: Discworld | null = null;
 let discBatch: Batcher | null = null;
 const discButton = document.getElementById('c-disc') as HTMLButtonElement;
 const NORMAL_LIMITS = { maxPolar: stage.controls.maxPolarAngle, maxDistance: stage.controls.maxDistance };
-function setDiscworld(on: boolean) {
+function setDiscworld(on: boolean, persist = true) {
   if (on && !discworld) {
     reseed('discworld');
     discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio });
     discBatch = new Batcher(discworld.root, stage.scene);
     stage.scene.add(discworld.root);
+    // The VR scene (and its desktop preview) has A'Tuin's head raised beside the rim.
+    if (VRVIEW_FLAG || xr?.presenting) discworld.setVrPose(true);
   }
   discworld?.setEnabled(on);
   discButton.setAttribute('aria-pressed', String(on));
@@ -228,6 +234,7 @@ function setDiscworld(on: boolean) {
   info.hide();
   focus.goHome(2.4);
   lastInteraction = performance.now();
+  if (!persist) return;
   try {
     localStorage.setItem('discworld', on ? '1' : '0');
   } catch {
@@ -334,7 +341,76 @@ function finishScene() {
   if (fictionInView(id)) info.hide();
   focus.goHome();
   lastInteraction = performance.now();
+  // In VR: swoop back to where the player was before choosing the scene.
+  vrReturnHome();
 }
+
+// ---- VR: fiction from the control box ---------------------------------------------
+/** Where the VR player was before a fiction scene carried them off (pose and scale). */
+let vrReturn: import('./xr/xrMode').XrPose | null = null;
+/** A fiction entry chosen in VR, waiting for the desktop focus logic to give its viewpoint. */
+let vrFlyPending: string | null = null;
+/** The entry the VR player was last carried to. */
+let vrFictionAt: string | null = null;
+
+/**
+ * Chosen on the control box: play or show the entry exactly as the desktop
+ * catalogue does, then carry the player to the viewpoint the desktop camera
+ * flies to (approached from the player's own direction of view).
+ */
+function vrFiction(entry: FictionEntry) {
+  if (!vrReturn) vrReturn = xr.pose();
+  if (!fiction?.enabled) setFiction(true);
+  const p = xr.pose();
+  const fwd = new THREE.Vector3(-Math.sin(THREE.MathUtils.degToRad(p.yawDeg)), 0, -Math.cos(THREE.MathUtils.degToRad(p.yawDeg)));
+  stage.camera.position.copy(p.head);
+  stage.controls.target.copy(p.head).addScaledVector(fwd, 4);
+  playFiction(entry);
+  vrFlyPending = entry.id;
+  vrFictionAt = entry.id;
+}
+
+/** Back to where the player was before the fiction scene (if they were carried off). */
+function vrReturnHome() {
+  vrFictionAt = null;
+  if (!vrReturn || !xr.presenting) return;
+  const r = vrReturn;
+  vrReturn = null;
+  xr.moveTo(r.head, r.yawDeg, r.metresPerUnit);
+}
+
+/** After the desktop logic has chosen its view: carry the VR player there. */
+function vrFlyToFocus() {
+  if (!vrFlyPending || pendingFrame) return;
+  vrFlyPending = null;
+  const d = focus.destination();
+  if (!d || !xr.presenting) return;
+  xr.moveTo(d.camera, yawFacing(d.target.clone().sub(d.camera).setY(0)));
+}
+
+/** The control box's rows. */
+function panelRows(): PanelRow[] {
+  return [
+    { label: 'Show', heading: true },
+    { label: 'Moons', on: bodies.moonsVisible },
+    { label: 'Fiction', heading: true },
+    ...FICTION.map((e) => ({ label: e.title, active: vrFictionAt === e.id })),
+    { label: vrReturn ? 'Return' : 'Return to the Disc' },
+  ];
+}
+function panelPress(i: number) {
+  if (i === 1) return setMoons(!bodies.moonsVisible);
+  const entry = FICTION[i - 3];
+  if (entry) return vrFiction(entry);
+  if (i === FICTION.length + 3) {
+    if (playing) dropScene();
+    if (vrReturn) vrReturnHome();
+    else xr.goTo(viewpoints().spawn);
+  }
+}
+
+/** Discworld's state before VR turned it on, to put back after. */
+let discBeforeVr = false;
 
 function setFiction(on: boolean) {
   if (!fiction) {
@@ -561,7 +637,7 @@ function viewFrom(head: THREE.Vector3 | null) {
   culler.update(head, cullAngle);
   xrHead = head;
 }
-const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS }, {
+const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS, sky: stage.sky }, {
   pick: xrPick,
   view: viewFrom,
   faster: () => clock.setStep(clock.step + 1),
@@ -580,10 +656,28 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
       sim: new Date(clock.nowMs()).toISOString(),
       speed: SPEED_STEPS[clock.step].label,
       modes: { fiction: !!fiction?.enabled, discworld: !!discworld?.enabled, moons: bodies.moonsVisible, markers: markersOn },
+      playing: playing?.id ?? null,
+      carried: xr.moving,
     });
   },
   toggleBloom: () => (stage.xrBloom = !stage.multiview && !stage.xrBloom),
   backend: () => stage.backend,
+  discOn: () => !!discworld?.enabled,
+  // The VR scene: Discworld on (assembled, A'Tuin's head raised), without touching the saved setting.
+  sessionStart: () => {
+    discBeforeVr = !!discworld?.enabled;
+    setDiscworld(true, false);
+    discworld!.setVrPose(true);
+    discworld!.finish();
+  },
+  sessionEnd: () => {
+    discworld?.setVrPose(VRVIEW_FLAG);
+    if (!discBeforeVr) setDiscworld(false, false);
+    vrReturn = null;
+    vrFlyPending = null;
+  },
+  panelRows,
+  panelPress,
 });
 {
   const vrButton = document.getElementById('c-vr') as HTMLButtonElement;
@@ -619,6 +713,19 @@ const telemetry = new Telemetry((c: Command) => {
     case 'cull':
       cullAngle = c.angle;
       return;
+    case 'view': {
+      const v = viewpoints()[c.name];
+      if (v) xr.goTo(v);
+      return;
+    }
+    case 'fiction': {
+      const e = FICTION.find((f) => f.id === c.id);
+      if (e) vrFiction(e);
+      return;
+    }
+    case 'return':
+      if (playing) dropScene();
+      return vrReturnHome();
   }
 });
 
@@ -735,6 +842,7 @@ function step(now: number) {
       pendingFrame = null;
     }
   }
+  vrFlyToFocus();
   fictionPanel.update(simMs);
   focus.update(dt);
   if (discworld) {
@@ -752,7 +860,7 @@ function step(now: number) {
   stage.controls.update(dt);
   // Scale the near plane with zoom: depth precision falls off with distance,
   // so a fixed 0.1 makes thin inlays flicker when zoomed out.
-  const near = THREE.MathUtils.clamp(stage.camera.position.distanceTo(stage.controls.target) * 0.006, 0.1, 0.5);
+  const near = debug.near ?? THREE.MathUtils.clamp(stage.camera.position.distanceTo(stage.controls.target) * 0.006, 0.1, 0.5);
   if (Math.abs(near - stage.camera.near) > 0.01) {
     stage.camera.near = near;
     stage.camera.updateProjectionMatrix();
@@ -762,7 +870,12 @@ function step(now: number) {
   const shake = quake > 0 && !xr.presenting ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
   if (shake) stage.camera.position.add(shake);
   // ?vrview=1: the desktop camera stands in for the head (hall shown, VR culling run).
-  if (VRVIEW_FLAG && !xr.presenting) viewFrom(stage.camera.position);
+  if (VRVIEW_FLAG && !xr.presenting) {
+    viewFrom(stage.camera.position);
+    // The headset's particle cap, in this canvas's pixels (it's 64 px on a ~720 px/rad Quest eye).
+    const f = stage.renderer.domElement.height / 2 / Math.tan(THREE.MathUtils.degToRad(stage.camera.fov / 2));
+    POINT_UNIFORMS.uPointMax.value = (XR.maxPointPx * f) / 720;
+  }
   stage.scene.updateMatrixWorld();
   const eye = xr.presenting || VRVIEW_FLAG ? (xrHead ?? undefined) : undefined;
   // Scrunched: pick LOD levels by distance from the head (or the desktop camera).
@@ -800,8 +913,36 @@ function step(now: number) {
   }
   if (param === '1' || (param !== '0' && saved)) setDiscworld(true);
 }
+/**
+ * Desktop preview of the VR scene (?headset=1&vrview=1): stand the camera at a
+ * VR viewpoint at the default world scale (eye 1.6 m over the Disc), and show
+ * the arrival tunnel and the control box in front of it.
+ */
+const vrPreview = {
+  /** `metresPerUnit` previews another world scale (eye height and near plane as VR would have them). */
+  view(name: string, pitchDeg = -8, metresPerUnit: number = XR.metresPerUnit) {
+    const v = viewpoints()[name];
+    if (!v) throw new Error(`no viewpoint ${name}`);
+    const head = v.head.clone();
+    if (v.onGround) head.y += 1.6 / metresPerUnit;
+    debug.near = 0.1 / metresPerUnit;
+    const yaw = THREE.MathUtils.degToRad(v.yawDeg),
+      pitch = THREE.MathUtils.degToRad(pitchDeg);
+    const look = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+    debug.poseAt(head, look);
+    return { head: head.toArray(), yawDeg: v.yawDeg, note: v.note };
+  },
+  arrival(t = 1.2) {
+    const cam = stage.camera;
+    xr.previewArrival(stage.scene, cam.position, cam.rotation.y, t);
+  },
+  panel(on = true) {
+    xr.previewPanel(on ? stage.camera : null, panelRows().length);
+  },
+};
+
 // The animation loop is the renderer's, so it carries on at the headset's own rate in VR.
 stage.renderer.setAnimationLoop(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, culler, fictionSprites: () => fictionSprites } } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, culler, fictionSprites: () => fictionSprites }, vr: vrPreview } });

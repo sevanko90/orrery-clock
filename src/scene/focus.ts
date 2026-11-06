@@ -93,6 +93,15 @@ export class FocusController {
     this.focused = null;
   }
 
+  /** Where the current flight ends: camera position and look-at point (null if not flying). */
+  destination(): { camera: THREE.Vector3; target: THREE.Vector3 } | null {
+    const f = this.flight;
+    if (!f) return null;
+    const goal = (f.goal ?? (f.home ? this.homeTarget : this.focused?.group.getWorldPosition(new THREE.Vector3()))) ?? null;
+    if (!goal) return null;
+    return { camera: goal.clone().add(f.offset), target: goal.clone() };
+  }
+
   update(dt: number) {
     const body = this.focused;
     const bodyPos = body ? body.group.getWorldPosition(new THREE.Vector3()) : null;
