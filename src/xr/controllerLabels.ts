@@ -124,7 +124,7 @@ export class ControllerLabels {
    * into it and its handedness (null until known). `eyes`: the camera (the
    * plates turn to face it); `metresPerUnit`: the world scale.
    */
-  update(dt: number, controllers: { grip: THREE.Object3D; model: ModelLike; hand: Hand | null }[], eyes: THREE.Object3D, metresPerUnit: number) {
+  update(dt: number, controllers: { grip: THREE.Object3D; ray: THREE.Object3D; model: ModelLike; hand: Hand | null }[], eyes: THREE.Object3D, metresPerUnit: number) {
     // From the camera's matrix as the renderer left it (the XR camera's position and
     // quaternion fields aren't kept in step, so getWorldQuaternion() rebuilds a wrong one).
     eyes.matrixWorld.decompose(this.head, this.eyeQ, this.tmp);
@@ -159,7 +159,8 @@ export class ControllerLabels {
       // the lap, or aiming the controller don't count.
       const gaze = this.fwd.set(0, 0, -1).applyQuaternion(this.eyeQ);
       const inView = gaze.dot(toEye.clone().negate()) > 0.77;
-      const pointing = this.fwd.set(0, 0, -1).transformDirection(c.grip.matrixWorld);
+      // (The pointing direction is the target ray's −Z; the grip's −Z runs along the handle.)
+      const pointing = this.fwd.set(0, 0, -1).transformDirection(c.ray.matrixWorld);
       const upright = pointing.y > 0.5;
       const want = this.showing > 0 || (dist < 0.45 && inView && upright && facing > 0) ? 1 : 0;
       Object.assign(this.state[b.hand] as object, { dist: +dist.toFixed(2), facing: +facing.toFixed(2), inView, upright, opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2) });
@@ -187,9 +188,8 @@ export class ControllerLabels {
     const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
     // Outward is −x for the left hand, +x for the right.
     const outward = hand === 'left' ? -1 : 1;
-    // The controller's outline (model space): leader lines stop where they reach it.
-    const outline = new THREE.Box3().setFromObject(model).applyMatrix4(inv);
-    const ray = new THREE.Ray();
+    // Leader lines to controls under or beside the face stop where they first touch the controller's mesh.
+    const caster = new THREE.Raycaster();
     let any = false;
     for (const [id, lines] of Object.entries(TEXT[hand])) {
       const node = anchorOf(model, comps[id]);
@@ -206,14 +206,16 @@ export class ControllerLabels {
       plate.renderOrder = 24;
       plates.push(plate);
       const lineMat = new THREE.LineBasicMaterial({ color: 0xd9b46a, transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
-      // The line ends at the control, or for one underneath (the trigger) on the
-      // top face right above it; the grip's, where it reaches the controller's side.
+      // The line ends at the control; for the trigger and grip (under and beside the
+      // face) where it first touches the controller, so it doesn't run through it.
       let end = p;
-      if (id === 'xr-standard-trigger') end = p.clone().setY(outline.max.y);
-      else if (id === 'xr-standard-squeeze') {
-        ray.set(at, p.clone().sub(at).normalize());
-        const hitAt = ray.intersectBox(outline, new THREE.Vector3());
-        if (hitAt && hitAt.distanceTo(at) < p.distanceTo(at)) end = hitAt;
+      if (id === 'xr-standard-trigger' || id === 'xr-standard-squeeze') {
+        const from = at.clone().applyMatrix4(model.matrixWorld);
+        const to = p.clone().applyMatrix4(model.matrixWorld);
+        caster.set(from, to.clone().sub(from).normalize());
+        caster.far = from.distanceTo(to);
+        const hit = caster.intersectObject(model, true).find((h) => (h.object as THREE.Mesh).isMesh && !group.children.includes(h.object));
+        if (hit) end = hit.point.applyMatrix4(inv);
       }
       const leader = new THREE.Line(new THREE.BufferGeometry().setFromPoints([end, at]), lineMat);
       // Drawn before the plates, so a plate always covers the end of its line.

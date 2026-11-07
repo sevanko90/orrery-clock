@@ -162,7 +162,7 @@ export class XrMode {
   /** Frame rate, renderer and scale, beside the wrist panel. */
   private debugPanel: ControlPanel;
   /** Each controller's model (loaded from its input profile), for the labels. */
-  private controllerModels: { slot: { grip: THREE.XRGripSpace; source: XRInputSource | null }; model: THREE.Object3D }[];
+  private controllerModels: { slot: { grip: THREE.XRGripSpace; ray: THREE.XRTargetRaySpace; source: XRInputSource | null }; model: THREE.Object3D }[];
   /** Engraved control labels that show when a controller is raised to be read. */
   private controllerLabels = new ControllerLabels();
   /** The info card, opened with the trigger on a body or a Discworld figure. */
@@ -799,7 +799,7 @@ export class XrMode {
     this.updateWrist(dt, cpuMs);
     this.controllerLabels.update(
       dt,
-      this.controllerModels.map(({ slot, model }) => ({ grip: slot.grip, model, hand: (slot.source?.handedness as 'left' | 'right' | undefined) ?? null })),
+      this.controllerModels.map(({ slot, model }) => ({ grip: slot.grip, ray: slot.ray, model, hand: (slot.source?.handedness as 'left' | 'right' | undefined) ?? null })),
       this.renderer.xr.getCamera(),
       this.metresPerUnit,
     );
