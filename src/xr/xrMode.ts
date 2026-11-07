@@ -129,6 +129,12 @@ export class XrMode {
 
   private vignette: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicNodeMaterial>;
   private vignetteStrength = uniform(0);
+  private eyeQ = new THREE.Quaternion();
+  /** A wrist panel's rotation (in the wrist's space) that faces the eyes. */
+  private faceQ = new THREE.Quaternion();
+  private panelRight = new THREE.Vector3(1, 0, 0);
+  private eyeAt = new THREE.Vector3();
+  private tmpS = new THREE.Vector3();
   /** When a panel popped up by A/B goes away again (performance.now() ms), or 0. */
   private popUntil = 0;
   private lastDt = 0;
@@ -852,6 +858,13 @@ export class XrMode {
       this.popUntil = 0;
     }
     const wrist = this.input.hand('left')?.grip ?? null;
+    // The panels face the eyes whatever way the wrist is turned (like the control labels).
+    if (wrist) {
+      this.renderer.xr.getCamera().matrixWorld.decompose(this.eyeAt, this.eyeQ, this.tmpS);
+      wrist.getWorldQuaternion(this.faceQ).invert().multiply(this.eyeQ);
+      // The view's right, in the wrist's space: the debug panel stands beside the scene panel along it.
+      this.panelRight.set(1, 0, 0).applyQuaternion(this.faceQ);
+    }
     this.wear(this.timePanel, wrist, 0, this.open === 'time');
     this.wear(this.scenePanel, wrist, 0, this.open === 'scene');
     this.wear(this.debugPanel, wrist, this.scenePanel.width + 0.012, this.open === 'scene' && this.debugShown);
@@ -936,12 +949,12 @@ export class XrMode {
     this.cpuMs = cpuMs;
   }
 
-  /** Wear a panel on `wrist`, `x` metres to the side, fading in or out as `on` says. */
+  /** Wear a panel on `wrist`, `x` metres to the right (as seen), facing the eyes, fading in or out as `on` says. */
   private wear(panel: ControlPanel, wrist: THREE.Object3D | null, x: number, on: boolean) {
     panel.shown = on && !!wrist;
     const m = panel.mesh;
-    m.position.set(x, 0.07, 0.03);
-    m.rotation.set(-0.75, 0, 0);
+    m.position.set(0, 0.07, 0.03).addScaledVector(this.panelRight, x);
+    m.quaternion.copy(this.faceQ);
     if (m.parent === wrist) return;
     m.removeFromParent();
     wrist?.add(m);
