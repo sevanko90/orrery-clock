@@ -19,6 +19,8 @@ scene.
 | three.js per-object work (culling, sorting, state, uniforms) | the real cost behind "draw calls" | scene render 4–5.5 ms for ~60 draws but ~1035 visible objects walked |
 | GPU | limits hub (glass drum + movement behind it) | Quest has no GPU timer; priced by hiding parts live (sweep S1) |
 
+Note: the `spawn` viewpoint moved from the shell's crown to near its front edge (facing A'Tuin's head) after caf60f3; earlier spawn numbers are from the crown.
+
 Run-to-run noise is about ±4 fps. Over a long session the headset warms
 up and slows down: the same render call crept from 4.1 to 5.5 ms over an
 hour. Compare A/B runs back to back in the same session, using URL flags

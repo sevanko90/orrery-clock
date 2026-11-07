@@ -56,8 +56,18 @@ function onDisc(r: number, fromHeading: number) {
  * it swims. The Disc is a ceiling ~10 m up, held by the elephants all round;
  * the head reaches out past the front of the shell.
  */
+/**
+ * How far forward of the crown the arrival lands (world units, along the
+ * heading): near the front of the shell, peering over its rim at A'Tuin's
+ * head. (From the crown the view ran between the front elephants'
+ * hindquarters: they face outward.)
+ */
+const SPAWN_AHEAD = 14.5;
+
 export function spawnPoint(): Viewpoint {
-  return { head: new THREE.Vector3(0, SHELL_CROWN_Y, 0), yawDeg: yawFacing(headingDir()), onGround: true, note: "spawn: on A'Tuin's shell under the Disc, facing its head" };
+  const at = headingDir().multiplyScalar(SPAWN_AHEAD);
+  at.y = shellTopAt(at.x, at.z) ?? SHELL_CROWN_Y;
+  return { head: at, yawDeg: yawFacing(headingDir()), onGround: true, note: "spawn: near the front of A'Tuin's shell, looking over its rim at the head" };
 }
 
 /**
