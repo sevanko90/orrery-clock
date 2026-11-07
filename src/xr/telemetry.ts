@@ -20,7 +20,9 @@ export type Command =
   /** Log the scene's named groups (two levels), to know what can be hidden. */
   | { type: 'list' }
   /** Heavier probes (GPU timer, three's render split) on or off. */
-  | { type: 'probe'; on: boolean };
+  | { type: 'probe'; on: boolean }
+  /** A screenshot of the headset's view (left eye) to .telemetry/captures/<name>.png. */
+  | { type: 'capture'; name?: string };
 
 export class Telemetry {
   readonly enabled = import.meta.env.DEV;

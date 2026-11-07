@@ -2,6 +2,7 @@
 import { reseed } from './xr/seed';
 import { frameBegin, frameEnd, mark, probeRenderer, probes, startFrame, takeCpuParts, takeFrameStats } from './perfMarks';
 import { VrGlass } from './xr/vrGlass';
+import { captureEye } from './xr/vrCapture';
 import './style.css';
 import * as THREE from 'three/webgpu';
 import { registerSW } from 'virtual:pwa-register';
@@ -888,6 +889,9 @@ const telemetry = new Telemetry((c: Command) => {
     case 'probe':
       probes.on = c.on;
       return;
+    case 'capture':
+      captureDue = c.name ?? `vr-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`;
+      return;
     case 'list': {
       const groups: Record<string, string[]> = {};
       for (const o of stage.scene.children) groups[o.name || o.type] = o.children.filter((k) => k.name).map((k) => k.name);
@@ -927,6 +931,8 @@ let cpuMs = 0;
 const lastRender = { drawCalls: 0, triangles: 0 };
 if (telemetry.enabled) probeRenderer(stage.renderer);
 /** Objects the workstation has forced hidden (telemetry `hide`), re-applied every frame before drawing. */
+/** A VR screenshot asked for by telemetry (its name), taken after the next frame's render. */
+let captureDue: string | null = null;
 const forcedHidden = new Map<string, THREE.Object3D[]>();
 const hiddenWas = new Map<THREE.Object3D, boolean>();
 /** Objects for a `hide` name: every object with that name, or every top-level object of that type ("type:Sprite"). */
@@ -1118,6 +1124,14 @@ function step(now: number) {
   mark('sync');
   stage.render(xr.camera);
   mark('render');
+  if (captureDue && xr.presenting) {
+    const name = captureDue;
+    captureDue = null;
+    captureEye(stage.renderer, stage.scene, name).then(
+      () => telemetry.send({ kind: 'captured', name }),
+      (e) => telemetry.send({ kind: 'capture-failed', name, error: String(e) }),
+    );
+  }
   {
     const r = stage.renderer.info.render as unknown as { drawCalls: number; triangles: number };
     lastRender.drawCalls = r.drawCalls;
