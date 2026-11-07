@@ -90,7 +90,8 @@ const scrunch = scrunchOn(quality.headset);
 // The GPU backend (WebGPU, or WebGL 2) comes up asynchronously.
 boot.sendNow({ kind: 'boot', stage: 'renderer' });
 await stage.init();
-boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend });
+const multiDraw = (stage.renderer.backend as { extensions?: { has(name: string): boolean } }).extensions?.has('WEBGL_multi_draw') ?? null;
+boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend, multiDraw });
 const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
@@ -735,6 +736,8 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
       // Objects with a non-finite world matrix (NaN state hides them and makes picking crawl).
       nonFinite: countNonFinite(),
       scrunch,
+      // Batches draw as one multi-draw call each; without the extension three falls back to a GL draw per part.
+      multiDraw,
       lod: orreryBatch.lodCounts(),
       sphereLod: meshLods?.counts(),
       sim: new Date(clock.nowMs()).toISOString(),
