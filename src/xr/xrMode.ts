@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { XR, speedScale } from './config';
 import { mark } from '../perfMarks';
+import { SPRITE_SCALE } from '../scene/spriteScale';
 import { XrInput } from './input';
 import { buildHangar } from './hangar';
 import { groundAt, spawnPoint, walkRadius, drumRadius, liftPoint, WALK_RADIUS, GROUND_Y, UNDERSIDE_Y, type Surface, type Viewpoint } from './vrScene';
@@ -304,6 +305,7 @@ export class XrMode {
   }
 
   private end() {
+    SPRITE_SCALE.value = 1;
     this.hooks.view?.(null);
     POINT_UNIFORMS.uPointView.value = 1;
     POINT_UNIFORMS.uPointMax.value = 4096;
@@ -535,6 +537,8 @@ export class XrMode {
 
   private applyScale() {
     this.rig.scale.setScalar(1 / this.metresPerUnit);
+    // Sprites don't feel the rig's scale by themselves: keep them in proportion (1 at the default scale).
+    SPRITE_SCALE.value = this.metresPerUnit / XR.metresPerUnit;
     // Far enough to reach the star sphere (900 units) whatever the scale.
     // The far plane (metres) must hold the whole scene (~160 units across) but
     // no more than it needs, for depth precision: 1200 units up to the default

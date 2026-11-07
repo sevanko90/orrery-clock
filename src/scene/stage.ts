@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { installSpriteScale } from './spriteScale';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { pass, instancedBufferAttribute } from 'three/tsl';
@@ -61,6 +62,7 @@ export class Stage {
       forceWebGL: quality.headset || new URLSearchParams(location.search).get('webgl') === '1',
       multiview: true,
     });
+    installSpriteScale(this.renderer);
     this.renderer.setPixelRatio(quality.pixelRatio);
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;

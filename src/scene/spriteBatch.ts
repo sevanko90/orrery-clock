@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { SPRITE_SCALE } from './spriteScale';
 import { instancedBufferAttribute, texture, uv } from 'three/tsl';
 
 /** Layer the batched sprites move to: kept as handles for their animation, never drawn themselves. */
@@ -96,7 +97,7 @@ class Bucket {
     const tint = instancedBufferAttribute(this.tint) as unknown as THREE.Node<'vec4'>;
     const tex = texture(map as THREE.Texture, uv());
     mat.positionNode = instancedBufferAttribute(this.offset) as unknown as THREE.Node<'vec3'>;
-    mat.scaleNode = instancedBufferAttribute(this.scale) as unknown as THREE.Node<'vec2'>;
+    mat.scaleNode = (instancedBufferAttribute(this.scale) as unknown as THREE.Node<'vec2'>).mul(SPRITE_SCALE);
     // As SpriteMaterial: colour × map, opacity × map alpha.
     mat.colorNode = tex.rgb.mul(tint.xyz);
     mat.opacityNode = tex.a.mul(tint.w);
