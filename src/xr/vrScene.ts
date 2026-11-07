@@ -52,7 +52,7 @@ function onDisc(r: number, fromHeading: number) {
 }
 
 /**
- * The arrival point: standing on the crown of A'Tuin's shell, facing the way
+ * The arrival point: standing on the brass boss on the crown of A'Tuin's shell, facing the way
  * it swims. The Disc is a ceiling ~10 m up, held by the elephants all round;
  * the head reaches out past the front of the shell.
  */

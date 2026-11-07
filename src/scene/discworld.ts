@@ -34,8 +34,10 @@ const FOOT_ON_SHELL = RY * Math.sqrt(1 - (ELEPHANT_R / Math.SQRT2 / RX) ** 2 - (
 const SHELL_Y = -ELEPHANT_H * ELEPHANT_SCALE - FOOT_ON_SHELL + 0.25;
 /** Overall heading of the stack, so A'Tuin swims across the default view. */
 export const HEADING = THREE.MathUtils.degToRad(-30);
-/** Height of the shell's crown (world units): where the VR player arrives. */
-export const SHELL_CROWN_Y = SHELL_Y + RY;
+/** The brass boss on the shell's apex: half-axes (x, height, z) in the turtle's frame. */
+const BOSS = { x: 2.2, h: 0.5, z: 2.0 };
+/** Height of the top of the boss on the shell's crown (world units): where the VR player arrives. */
+export const SHELL_CROWN_Y = SHELL_Y + RY + BOSS.h;
 
 export const DISC_HOME_TARGET = new THREE.Vector3(0, -7, 0);
 export const DISC_HOME_CAMERA = new THREE.Vector3(56, 6, 62);
@@ -490,7 +492,8 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
 
 /**
  * The walkable top of A'Tuin's shell under world point (x, z), or null off
- * it (the stack is centred on the origin, turned to HEADING). Only the
+ * it (the stack is centred on the origin, turned to HEADING), the brass
+ * boss on its apex included. Only the
  * gentler part of the dome counts: past ~90% of the way out it is too steep
  * to stand on.
  */
@@ -500,7 +503,10 @@ export function shellTopAt(x: number, z: number): number | null {
   const lx = x * c - z * s,
     lz = x * s + z * c;
   if ((lx / RX) ** 2 + (lz / RZ) ** 2 > 0.81) return null;
-  return SHELL_Y + shellHeight(lx, lz);
+  // The brass boss on the apex stands up from the dome: stand on it too.
+  const b = 1 - (lx / BOSS.x) ** 2 - (lz / BOSS.z) ** 2;
+  const shell = SHELL_Y + shellHeight(lx, lz);
+  return b > 0 ? Math.max(shell, SHELL_Y + RY + BOSS.h * Math.sqrt(b)) : shell;
 }
 
 /** Height of the shell dome above its rim at (x, z) in the turtle's frame. */
@@ -586,7 +592,7 @@ function buildTurtle(m: DiscMaterials, sphere: THREE.SphereGeometry, lowQuality:
     for (let j = 0; j < 40; j++) rivetSpots.push(shellPoint(t, (j / 40) * Math.PI * 2, 1.012));
   }
   // Boss on the apex.
-  group.add(mesh(sphere, m.brass, [0, RY, 0], [2.2, 0.5, 2.0]));
+  group.add(mesh(sphere, m.brass, [0, RY, 0], [BOSS.x, BOSS.h, BOSS.z]));
   const rivets = new THREE.InstancedMesh(new THREE.SphereGeometry(0.24, 8, 6), m.brass, rivetSpots.length);
   const mtx = new THREE.Matrix4();
   rivetSpots.forEach((p, i) => rivets.setMatrixAt(i, mtx.makeTranslation(p.x, p.y, p.z)));
