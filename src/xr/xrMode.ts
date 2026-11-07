@@ -51,9 +51,12 @@ export interface XrHooks {
   /** Session start / end (Discworld goes on for VR, and back after). */
   sessionStart?(): void;
   sessionEnd?(): void;
-  /** The control box's rows, and a press on one. */
+  /** The panel's time controls (rows) and a press on one (`part`: which button or slider stop). */
+  timeRows?(): PanelRow[];
+  timePress?(index: number, part: number): void;
+  /** The panel's scene controls, and a press on one. */
   panelRows?(): PanelRow[];
-  panelPress?(index: number): void;
+  panelPress?(index: number, part: number): void;
   /** The info card for a pointed-at object (its content, called again for live figures), or null if it has none. */
   card?(hit: XrHit): (() => CardContent) | null;
 }
@@ -123,11 +126,12 @@ export class XrMode {
 
   private vignette: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicNodeMaterial>;
   private vignetteStrength = uniform(0);
-  private wrist: THREE.Mesh;
-  private wristPlate = new TextPlate(512, 300);
-  private wristShown = true;
-  /** Seconds since the readout was last redrawn (starts due). */
-  private wristAt = Infinity;
+  /** The wrist panel shown (X toggles it). */
+  private panelShown = true;
+  /** The debug panel shown beside it (its Debug row toggles it). */
+  private debugShown = false;
+  /** The debug panel's readout lines. */
+  private debugLines: string[] = ['DEBUG'];
   /** Floats in front of the eyes while the world scale is being changed. */
   private scaleTag: THREE.Mesh;
   private scalePlate = new TextPlate(512, 160);
@@ -145,7 +149,10 @@ export class XrMode {
   private lift: Lift;
   private sky: THREE.Object3D[];
   private fader: THREE.Mesh;
+  /** The wrist panel: the date and time controls, then the scene's. */
   readonly panel: ControlPanel;
+  /** Frame rate, renderer and scale, beside the wrist panel. */
+  private debugPanel: ControlPanel;
   /** The info card, opened with the trigger on a body or a Discworld figure. */
   readonly info = new InfoPanel();
   private panelAt = 0;
@@ -230,15 +237,6 @@ export class XrMode {
     this.vignette.visible = false;
     this.camera.add(this.vignette);
 
-    // Wrist readout, worn on the left controller.
-    this.wrist = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.16, 0.094),
-      // (No depth test, like the control box: it overlaps the controller model.)
-      new THREE.MeshBasicMaterial({ map: this.wristPlate.texture, transparent: true, depthTest: false, depthWrite: false }),
-    );
-    this.wrist.position.set(0, 0.07, 0.03);
-    this.wrist.rotation.x = -Math.PI / 4;
-    this.wrist.renderOrder = 25;
 
     this.scaleTag = new THREE.Mesh(
       new THREE.PlaneGeometry(0.32, 0.1),
@@ -257,10 +255,26 @@ export class XrMode {
     this.fader.visible = false;
     this.camera.add(this.fader);
 
-    // The control box, worn above the left wrist.
+    // The wrist panel, worn above the left wrist: the time controls, the
+    // scene's, then a row opening the debug panel.
     this.panel = new ControlPanel(
-      () => this.hooks.panelRows?.() ?? [],
-      (i) => this.hooks.panelPress?.(i),
+      () => [...(this.hooks.timeRows?.() ?? []), ...(this.hooks.panelRows?.() ?? []), { label: 'Debug', on: this.debugShown }],
+      (i, part) => {
+        const time = this.hooks.timeRows?.().length ?? 0,
+          scene = this.hooks.panelRows?.().length ?? 0;
+        if (i < time) this.hooks.timePress?.(i, part);
+        else if (i < time + scene) this.hooks.panelPress?.(i - time, part);
+        else this.debugShown = !this.debugShown;
+      },
+      () => {
+        const [date = '', speed = ''] = this.hooks.status();
+        return [date, speed, LEGACY_HALL ? `hall ${Math.round(this.half * 2 * this.metresPerUnit)} m` : this.scaleCompare()];
+      },
+    );
+    this.debugPanel = new ControlPanel(
+      () => [],
+      () => undefined,
+      () => this.debugLines,
     );
 
     renderer.xr.addEventListener('sessionstart', () => this.begin());
@@ -572,13 +586,12 @@ export class XrMode {
     const s = speedScale(M);
 
     if (a.reset) this.resetPosition();
-    if (a.toggleHud) this.wristShown = !this.wristShown;
+    if (a.toggleHud) this.panelShown = !this.panelShown;
     if (a.mark) {
       this.marks++;
       this.hooks.report?.({ kind: 'mark', n: this.marks, ...this.snapshot() });
       this.input.rumble(0.6, 80);
       this.markShownUntil = performance.now() + 2500;
-      this.wristAt = Infinity;
     }
     if (a.faster) this.hooks.faster();
     if (a.slower) this.hooks.slower();
@@ -792,26 +805,23 @@ export class XrMode {
     }
     const eye = this.head();
     let hit: XrHit | null = null;
-    // The control box sits above the left wrist.
+    // The wrist panel sits above the left wrist (rising from it), the debug panel beside it.
     const left = this.input.hand('left');
-    const panelParent = this.hooks.panelRows ? (left?.grip ?? null) : null;
-    if (this.panel.mesh.parent !== panelParent) {
-      const m = this.panel.mesh;
-      m.removeFromParent();
-      m.position.set(0, 0.2, 0.02);
-      m.rotation.set(-0.75, 0, 0);
-      m.scale.setScalar(1);
-      panelParent?.add(m);
-    }
+    const panelParent = this.panelShown && this.hooks.panelRows ? (left?.grip ?? null) : null;
+    this.wear(this.panel, panelParent, 0);
+    this.wear(this.debugPanel, panelParent && this.debugShown ? panelParent : null, this.panel.width + 0.012);
     if (hand) {
       this.raycaster.setFromXRController(hand.ray);
       this.raycaster.camera = this.camera;
-      const onPanel = this.panel.hit(this.raycaster);
+      const onPanel = this.panel.hit(this.raycaster) ?? this.debugPanel.hit(this.raycaster);
       const onCard = onPanel ? null : this.info.hit(this.raycaster);
       if (onPanel) {
         // A press on the panel, not on the world.
         hit = { point: onPanel.point, distance: onPanel.distance, label: '' };
-        if (select) this.panel.press();
+        if (select) {
+          this.panel.press();
+          this.debugPanel.press();
+        }
         select = false;
       } else if (onCard) {
         // On the info card: only its close mark does anything.
@@ -820,7 +830,10 @@ export class XrMode {
         select = false;
       } else hit = this.hooks.pick(this.raycaster);
     }
-    if ((this.panelAt += 1) % 30 === 0) this.panel.refresh();
+    if ((this.panelAt += 1) % 15 === 0) {
+      this.panel.refresh();
+      if (this.debugShown) this.debugPanel.refresh();
+    }
     this.rayHit = hit && hit.label ? hit.point.clone() : null;
     // Otherwise the point aimed at on the Disc's top (the orrery's table), for the scale pivot.
     if (!this.rayHit && hand && !LEGACY_HALL) {
@@ -853,13 +866,8 @@ export class XrMode {
     }
   }
 
+  /** Frame rate (for the debug panel) and the telemetry sample each second. */
   private updateWrist(dt: number, cpuMs: number) {
-    const left = this.input.hand('left');
-    const parent = this.wristShown ? (left?.grip ?? null) : null;
-    if (this.wrist.parent !== parent) {
-      this.wrist.removeFromParent();
-      parent?.add(this.wrist);
-    }
     this.frames++;
     this.fpsAt += dt;
     this.cpuMs = Math.max(this.cpuMs * 0.95, cpuMs);
@@ -873,20 +881,25 @@ export class XrMode {
       this.sampleAt = 0;
       this.hooks.report?.({ kind: 'sample', ...this.snapshot() });
     }
-    this.wristAt += dt;
-    if (!parent || this.wristAt < 0.25) return;
-    this.wristAt = 0;
-    const M = this.metresPerUnit;
-    const hall = LEGACY_HALL ? `hall ${Math.round(this.half * 2 * M)} m` : this.scaleCompare();
-    const [date = '', speed = ''] = this.hooks.status();
     const marked = performance.now() < this.markShownUntil ? `Marked #${this.marks}` : '';
-    this.wristPlate.set(marked || date, [
-      speed,
+    this.debugLines = [
+      'DEBUG',
       `${this.fps.toFixed(0)} fps · cpu ${this.cpuMs.toFixed(1)} ms`,
-      `${hall}`,
       this.backendText(),
-    ]);
+      `${this.metresPerUnit.toFixed(2)} m per unit`,
+      ...(marked ? [marked] : []),
+    ];
     this.cpuMs = cpuMs;
+  }
+
+  /** Wear a panel on `parent` (null: take it off), `x` metres to the side. */
+  private wear(panel: ControlPanel, parent: THREE.Object3D | null, x: number) {
+    const m = panel.mesh;
+    if (m.parent === parent) return;
+    m.removeFromParent();
+    m.position.set(x, 0.07, 0.03);
+    m.rotation.set(-0.75, 0, 0);
+    parent?.add(m);
   }
 
   private backendText() {

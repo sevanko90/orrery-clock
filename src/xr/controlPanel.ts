@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 
-/** One line of the panel: a heading (not pressable) or a control. */
+/** One line of a panel. */
 export interface PanelRow {
   label: string;
   /** Section heading: drawn as a title, not pressable. */
@@ -9,42 +9,55 @@ export interface PanelRow {
   on?: boolean;
   /** Highlighted (e.g. the fiction scene playing). */
   active?: boolean;
+  /** Several buttons side by side in place of one; a press reports which (`part`). */
+  buttons?: { label: string; active?: boolean }[];
+  /** A notched slider: `stops` positions, the knob at `at`, `caption` above it; a press reports the stop under the ray (`part`). */
+  slider?: { stops: number; at: number; caption: string };
 }
 
+const W = 512;
+/** Tallest the canvas can be (px); a panel is cut to its content. */
+const MAX_H = 1800;
+const ROW = 64;
+const SLIDER_ROW = 96;
+const SIDE = 34;
+
 /**
- * The VR control box: a small engraved brass plate with enamel inlays, worn
- * above the left wrist and worked with the right controller's ray. Rows come
- * from the app (moons toggle, the fiction catalogue, return); pointing at a
- * row lights it, the trigger presses it.
+ * A VR panel: an engraved brass plate with enamel inlays, worked with the
+ * right controller's ray. It has a header of text lines (the first large)
+ * and rows: headings, buttons and toggles, rows of side-by-side buttons, and
+ * notched sliders. Pointing at a control lights it; the trigger presses it.
+ * The plate is as tall as its content and grows upward from its pivot (its
+ * bottom edge), so it can sit on a wrist.
  */
 export class ControlPanel {
   readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   private canvas = document.createElement('canvas');
   private ctx: CanvasRenderingContext2D;
   private texture: THREE.CanvasTexture;
-  private hover = -1;
+  private hover: { row: number; part: number } | null = null;
   private last = '';
   private rows: PanelRow[] = [];
-  private static W = 512;
-  private static H = 1000;
-  private static TOP = 70;
-  private static ROW = 64;
+  /** Top of each row and the header's height (canvas px), from the last layout. */
+  private tops: number[] = [];
+  private used = MAX_H;
 
   constructor(
     private getRows: () => PanelRow[],
-    private onPress: (index: number) => void,
-    /** Physical height (metres). */
-    height = 0.2,
+    private onPress: (index: number, part: number) => void,
+    private getHeader: () => string[] = () => ['ORRERY'],
+    /** Size of a canvas pixel on the plate (metres). */
+    px = 0.0002,
   ) {
-    this.canvas.width = ControlPanel.W;
-    this.canvas.height = ControlPanel.H;
+    this.canvas.width = W;
+    this.canvas.height = MAX_H;
     this.ctx = this.canvas.getContext('2d')!;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = 4;
-    const w = (height * ControlPanel.W) / ControlPanel.H;
     this.mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, height),
+      // (Pivot at the bottom edge: cut to its content, the plate grows upward.)
+      new THREE.PlaneGeometry(W * px, MAX_H * px).translate(0, (MAX_H * px) / 2, 0),
       // Drawn over everything (no depth test), in renderOrder: it sits on the
       // controller and z-fought the controller model.
       new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, depthTest: false, depthWrite: false }),
@@ -54,107 +67,207 @@ export class ControlPanel {
     this.redraw();
   }
 
-  /** Row under a ray hit's uv, or -1. */
-  private rowAt(uv: THREE.Vector2) {
-    const y = (1 - uv.y) * ControlPanel.H - ControlPanel.TOP;
-    const i = Math.floor(y / ControlPanel.ROW);
-    return i >= 0 && i < this.rows.length && !this.rows[i].heading ? i : -1;
+  /** Physical width (metres). */
+  get width() {
+    return this.mesh.geometry.parameters.width;
+  }
+
+  /** The control under a ray hit's uv, or null. */
+  private controlAt(uv: THREE.Vector2): { row: number; part: number } | null {
+    const y = (1 - uv.y) * this.used;
+    const x = uv.x * W;
+    for (let i = 0; i < this.rows.length; i++) {
+      const r = this.rows[i];
+      const top = this.tops[i],
+        h = rowHeight(r);
+      if (y < top || y >= top + h || r.heading) continue;
+      if (r.buttons) {
+        const part = Math.floor(((x - SIDE) / (W - SIDE * 2)) * r.buttons.length);
+        return part >= 0 && part < r.buttons.length ? { row: i, part } : null;
+      }
+      if (r.slider) {
+        const t = (x - SIDE - 20) / (W - (SIDE + 20) * 2);
+        return { row: i, part: Math.round(THREE.MathUtils.clamp(t, 0, 1) * (r.slider.stops - 1)) };
+      }
+      return { row: i, part: 0 };
+    }
+    return null;
   }
 
   /** Test a ray: the hit (with distance) if it lands on the panel. Updates the hover light. */
   hit(raycaster: THREE.Raycaster): THREE.Intersection | null {
     if (!this.mesh.parent || !this.mesh.visible) {
-      this.setHover(-1);
+      this.setHover(null);
       return null;
     }
     const h = raycaster.intersectObject(this.mesh, false)[0] ?? null;
-    this.setHover(h?.uv ? this.rowAt(h.uv) : -1);
+    this.setHover(h?.uv ? this.controlAt(h.uv) : null);
     return h;
   }
 
-  /** Press whatever row is lit. */
+  /** Press whatever control is lit. */
   press() {
-    if (this.hover >= 0) this.onPress(this.hover);
+    if (this.hover) this.onPress(this.hover.row, this.hover.part);
   }
 
-  private setHover(i: number) {
-    if (i !== this.hover) {
-      this.hover = i;
+  private setHover(h: { row: number; part: number } | null) {
+    if (h?.row !== this.hover?.row || h?.part !== this.hover?.part) {
+      this.hover = h;
       this.redraw();
     }
   }
 
-  /** Redraw if the rows changed (call now and then). */
+  /** Redraw if the rows or header changed (call now and then). */
   refresh() {
     this.redraw();
   }
 
   private redraw() {
     this.rows = this.getRows();
-    const key = JSON.stringify([this.rows, this.hover]);
+    const header = this.getHeader();
+    const key = JSON.stringify([header, this.rows, this.hover]);
     if (key === this.last) return;
     this.last = key;
     const { ctx } = this;
-    const W = ControlPanel.W,
-      H = ControlPanel.H,
-      ROW = ControlPanel.ROW,
-      TOP = ControlPanel.TOP;
-    ctx.clearRect(0, 0, W, H);
-    // Brass plate with a darker engraved border.
-    const g = ctx.createLinearGradient(0, 0, W, H);
-    g.addColorStop(0, '#6e5224');
-    g.addColorStop(0.5, '#a8803c');
-    g.addColorStop(1, '#5e4420');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.roundRect(4, 4, W - 8, H - 8, 28);
-    ctx.fill();
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = '#3a2810';
-    ctx.stroke();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(255, 228, 160, 0.6)';
-    ctx.beginPath();
-    ctx.roundRect(18, 18, W - 36, H - 36, 20);
-    ctx.stroke();
+    ctx.clearRect(0, 0, W, MAX_H);
+
+    // Header: the first line large, the rest small.
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#2a1a08';
-    ctx.font = '600 34px Cinzel, Georgia, serif';
-    ctx.fillText('ORRERY', W / 2, TOP / 2 + 8);
+    let y = 52;
+    header.forEach((line, i) => {
+      ctx.fillStyle = '#2a1a08';
+      ctx.font = i === 0 ? '600 34px Cinzel, Georgia, serif' : '500 23px "IBM Plex Mono", monospace';
+      ctx.fillText(line, W / 2, y, W - 80);
+      y += i === 0 ? 40 : 30;
+    });
+    y += 8;
+
+    this.tops = [];
     this.rows.forEach((r, i) => {
-      const y = TOP + i * ROW;
+      this.tops.push(y);
+      const h = rowHeight(r);
+      const lit = this.hover?.row === i ? this.hover.part : -1;
       if (r.heading) {
         ctx.fillStyle = '#2a1a08';
         ctx.font = '600 26px Cinzel, Georgia, serif';
         ctx.textAlign = 'center';
-        ctx.fillText(r.label.toUpperCase(), W / 2, y + ROW / 2 + 4);
-        ctx.fillRect(60, y + ROW - 8, W - 120, 2);
-        return;
-      }
-      // Enamel inlay: deep blue, lit gold when pointed at, green when active.
-      const lit = i === this.hover;
-      ctx.fillStyle = lit ? '#e8c06a' : r.active ? '#1f4a34' : '#14243e';
-      ctx.beginPath();
-      ctx.roundRect(34, y + 6, W - 68, ROW - 12, 14);
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#d9b46a';
-      ctx.stroke();
-      ctx.fillStyle = lit ? '#1e1306' : '#f1dcaa';
-      ctx.font = '500 25px Georgia, serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(r.label, 54, y + ROW / 2, W - 150);
-      if (r.on !== undefined) {
-        // A lamp: lit amber when on.
+        ctx.fillText(r.label.toUpperCase(), W / 2, y + h / 2 + 4);
+        ctx.fillRect(60, y + h - 8, W - 120, 2);
+      } else if (r.buttons) {
+        const n = r.buttons.length,
+          gap = 8,
+          bw = (W - SIDE * 2 - gap * (n - 1)) / n;
+        r.buttons.forEach((b, j) => {
+          const x = SIDE + j * (bw + gap);
+          inlay(ctx, x, y + 6, bw, h - 12, j === lit, !!b.active);
+          ctx.fillStyle = j === lit ? '#1e1306' : '#f1dcaa';
+          ctx.font = '500 24px Georgia, serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(b.label, x + bw / 2, y + h / 2, bw - 10);
+        });
+      } else if (r.slider) {
+        const s = r.slider;
+        ctx.fillStyle = '#2a1a08';
+        ctx.font = '500 24px Georgia, serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(s.caption, W / 2, y + 22);
+        const x0 = SIDE + 20,
+          x1 = W - SIDE - 20,
+          ty = y + 62;
+        // Engraved track with a notch at each stop.
+        ctx.fillStyle = '#14243e';
         ctx.beginPath();
-        ctx.arc(W - 70, y + ROW / 2, 12, 0, Math.PI * 2);
-        ctx.fillStyle = r.on ? '#ffb347' : '#3a2a18';
+        ctx.roundRect(x0 - 12, ty - 9, x1 - x0 + 24, 18, 9);
         ctx.fill();
         ctx.strokeStyle = '#d9b46a';
+        ctx.lineWidth = 2;
         ctx.stroke();
+        for (let k = 0; k < s.stops; k++) {
+          const x = x0 + ((x1 - x0) * k) / (s.stops - 1);
+          ctx.fillStyle = k === lit ? '#e8c06a' : 'rgba(241, 220, 170, 0.55)';
+          ctx.fillRect(x - 1.5, ty - 6, 3, 12);
+        }
+        // The knob.
+        const kx = x0 + ((x1 - x0) * s.at) / (s.stops - 1);
+        ctx.beginPath();
+        ctx.arc(kx, ty, 15, 0, Math.PI * 2);
+        ctx.fillStyle = '#e8c06a';
+        ctx.fill();
+        ctx.strokeStyle = '#3a2810';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        if (lit >= 0 && lit !== s.at) {
+          // Where a press would put it.
+          const lx = x0 + ((x1 - x0) * lit) / (s.stops - 1);
+          ctx.beginPath();
+          ctx.arc(lx, ty, 11, 0, Math.PI * 2);
+          ctx.strokeStyle = '#e8c06a';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+      } else {
+        inlay(ctx, SIDE, y + 6, W - SIDE * 2, h - 12, lit === 0, !!r.active);
+        ctx.fillStyle = lit === 0 ? '#1e1306' : '#f1dcaa';
+        ctx.font = '500 25px Georgia, serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(r.label, 54, y + h / 2, W - 150);
+        if (r.on !== undefined) {
+          // A lamp: lit amber when on.
+          ctx.beginPath();
+          ctx.arc(W - 70, y + h / 2, 12, 0, Math.PI * 2);
+          ctx.fillStyle = r.on ? '#ffb347' : '#3a2a18';
+          ctx.fill();
+          ctx.strokeStyle = '#d9b46a';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
       }
+      y += h;
     });
+
+    // The plate, behind everything drawn, cut to the content.
+    const used = Math.min(MAX_H, Math.ceil(y + 30));
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255, 228, 160, 0.6)';
+    ctx.beginPath();
+    ctx.roundRect(18, 18, W - 36, used - 36, 20);
+    ctx.stroke();
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#3a2810';
+    ctx.beginPath();
+    ctx.roundRect(4, 4, W - 8, used - 8, 28);
+    ctx.stroke();
+    const g = ctx.createLinearGradient(0, 0, W, used);
+    g.addColorStop(0, '#6e5224');
+    g.addColorStop(0.5, '#a8803c');
+    g.addColorStop(1, '#5e4420');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+
+    this.used = used;
+    const f = used / MAX_H;
+    this.texture.repeat.set(1, f);
+    this.texture.offset.set(0, 1 - f);
+    this.mesh.scale.y = f;
     this.texture.needsUpdate = true;
   }
+}
+
+function rowHeight(r: PanelRow) {
+  return r.slider ? SLIDER_ROW : ROW;
+}
+
+/** An enamel inlay: deep blue, lit gold when pointed at, green when active. */
+function inlay(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, lit: boolean, active: boolean) {
+  ctx.fillStyle = lit ? '#e8c06a' : active ? '#1f4a34' : '#14243e';
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 14);
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#d9b46a';
+  ctx.stroke();
 }

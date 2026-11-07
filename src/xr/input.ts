@@ -12,7 +12,7 @@ import { XR } from './config';
  *                along the left aim   Right trigger  select (pointer ray)
  *  Y             back to the start    Right grip + stick Y  world scale
  *                                     Left grip  telemetry marker
- *  X             wrist readout on/off A / B          faster / slower time
+ *  X             wrist panel on/off   A / B          faster / slower time
  *                                     Right stick click  back to now
  */
 export interface Actions {

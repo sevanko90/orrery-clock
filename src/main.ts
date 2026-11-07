@@ -458,6 +458,44 @@ function vrFlyToFocus() {
 }
 
 /** The control box's rows. */
+/** The VR panel's time controls: the desktop's speed slider, play/pause and now, and date steps standing in for its calendar. */
+function timeRows(): PanelRow[] {
+  const paused = clock.speed === 0;
+  return [
+    { label: 'Time', heading: true },
+    { label: 'Speed', slider: { stops: SPEED_STEPS.length, at: clock.step, caption: SPEED_STEPS[clock.step].label } },
+    { label: 'Play', buttons: [{ label: 'Slower' }, { label: paused ? 'Play' : 'Pause', active: paused }, { label: 'Faster' }, { label: 'Now', active: clock.isLive() }] },
+    { label: 'Date', buttons: DATE_STEPS.map((d) => ({ label: d.label })) },
+  ];
+}
+/** Date steps (calendar months and years, so the day of the month holds). */
+const DATE_STEPS: { label: string; years?: number; months?: number; days?: number }[] = [
+  { label: '−yr', years: -1 },
+  { label: '−mo', months: -1 },
+  { label: '−day', days: -1 },
+  { label: '+day', days: 1 },
+  { label: '+mo', months: 1 },
+  { label: '+yr', years: 1 },
+];
+function timePress(i: number, part: number) {
+  if (i === 1) return clock.setStep(part);
+  if (i === 2) {
+    if (part === 0) clock.setStep(clock.step - 1);
+    else if (part === 1) clock.togglePause();
+    else if (part === 2) clock.setStep(clock.step + 1);
+    else clock.resetToNow();
+    return;
+  }
+  const d = DATE_STEPS[part];
+  if (i === 3 && d) {
+    const t = new Date(clock.nowMs());
+    if (d.years) t.setFullYear(t.getFullYear() + d.years);
+    if (d.months) t.setMonth(t.getMonth() + d.months);
+    if (d.days) t.setDate(t.getDate() + d.days);
+    clock.jumpTo(t.getTime());
+  }
+}
+
 function panelRows(): PanelRow[] {
   return [
     { label: 'Show', heading: true },
@@ -778,6 +816,8 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
     vrReturn = null;
     vrFlyPending = null;
   },
+  timeRows,
+  timePress,
   panelRows,
   panelPress,
 });
