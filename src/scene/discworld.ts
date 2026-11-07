@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { mergeStaticMeshes } from './merge';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { cos, float, fract, mod, modelViewMatrix, sin, smoothstep, uniform, uv, vec3, vec4 } from 'three/tsl';
 import { particleFloat, particleVec3, particles, pointSize } from './pointSize';
 import type { Materials } from './materials';
@@ -431,18 +432,13 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
   head.add(mesh(sphere, m.bronze, [0.6, 0.3, 0], [1.6, 1.75, 1.5]));
   head.add(mesh(sphere, m.bronze, [0.2, 1.3, 0], [1.2, 0.9, 1.2]));
   for (const s of [1, -1]) {
-    const tusk = new THREE.TubeGeometry(
-      new THREE.CatmullRomCurve3([
-        new THREE.Vector3(1.4, -0.7, s * 0.6),
-        new THREE.Vector3(2.0, -1.3, s * 0.72),
-        new THREE.Vector3(2.6, -1.55, s * 0.8),
-        new THREE.Vector3(3.0, -1.4, s * 0.82),
-      ]),
-      16,
-      0.16,
-      8,
-    );
-    head.add(new THREE.Mesh(tusk, m.steel));
+    const tuskCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(1.4, -0.7, s * 0.6),
+      new THREE.Vector3(2.0, -1.3, s * 0.72),
+      new THREE.Vector3(2.6, -1.55, s * 0.8),
+      new THREE.Vector3(3.0, -1.4, s * 0.82),
+    ]);
+    head.add(new THREE.Mesh(tuskGeometry(tuskCurve, 0.16), m.steel));
     head.add(mesh(sphere, m.eye, [1.45, 0.8, s * 1.18], [0.17, 0.17, 0.17]));
     head.add(mesh(new THREE.TorusGeometry(0.22, 0.05, 6, 16), m.brass, [1.45, 0.8, s * 1.2]));
   }
@@ -961,4 +957,36 @@ function pickRaycast(this: THREE.Mesh, raycaster: THREE.Raycaster, hits: THREE.I
   pickSphere.copy(g.boundingSphere!).applyMatrix4(this.matrixWorld);
   if (!raycaster.ray.intersectsSphere(pickSphere)) return;
   acceleratedRaycast.call(this, raycaster, hits);
+}
+
+/**
+ * A tusk along `curve`: a tube of radius `r` for most of its length, then
+ * tapering to a closed, blunt point (a plain tube would end in an open
+ * ring). Seam vertices are welded so the shading runs smooth round it.
+ */
+function tuskGeometry(curve: THREE.Curve<THREE.Vector3>, r: number) {
+  const segs = 24,
+    radial = 10;
+  const tube = new THREE.TubeGeometry(curve, segs, r, radial);
+  const pos = tube.attributes.position;
+  const centre = new THREE.Vector3(),
+    v = new THREE.Vector3();
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    // Full width to 55% of the length, then easing to nothing at the tip.
+    const k = t <= 0.55 ? 1 : Math.pow(Math.cos(((t - 0.55) / 0.45) * (Math.PI / 2)), 0.55);
+    curve.getPointAt(t, centre);
+    for (let j = 0; j <= radial; j++) {
+      const n = i * (radial + 1) + j;
+      v.fromBufferAttribute(pos, n).sub(centre).multiplyScalar(k).add(centre);
+      pos.setXYZ(n, v.x, v.y, v.z);
+    }
+  }
+  tube.deleteAttribute('normal');
+  tube.deleteAttribute('uv');
+  const welded = mergeVertices(tube, 1e-5);
+  welded.computeVertexNormals();
+  // (Steel is untextured, but merged and batched neighbours carry uvs: keep the attribute set the same.)
+  welded.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(welded.attributes.position.count * 2), 2));
+  return welded;
 }
