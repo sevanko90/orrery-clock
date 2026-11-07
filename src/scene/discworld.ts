@@ -34,11 +34,8 @@ const FOOT_ON_SHELL = RY * Math.sqrt(1 - (ELEPHANT_R / Math.SQRT2 / RX) ** 2 - (
 const SHELL_Y = -ELEPHANT_H * ELEPHANT_SCALE - FOOT_ON_SHELL + 0.25;
 /** Overall heading of the stack, so A'Tuin swims across the default view. */
 export const HEADING = THREE.MathUtils.degToRad(-30);
-/** VR pose: how far the neck pitches up (radians) and grows (units). */
-const VR_HEAD_LIFT = 0.86;
-const VR_NECK = 8;
-/** VR pose: the head turned (radians) toward the turtle's −z side, where the VR spawn is. */
-const VR_HEAD_TURN = 0.9;
+/** Height of the shell's crown (world units): where the VR player arrives. */
+export const SHELL_CROWN_Y = SHELL_Y + RY;
 
 export const DISC_HOME_TARGET = new THREE.Vector3(0, -7, 0);
 export const DISC_HOME_CAMERA = new THREE.Vector3(56, 6, 62);
@@ -491,6 +488,21 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
   return { group, legs, ears, head, trunk, phase: Math.random() * Math.PI * 2 };
 }
 
+/**
+ * The walkable top of A'Tuin's shell under world point (x, z), or null off
+ * it (the stack is centred on the origin, turned to HEADING). Only the
+ * gentler part of the dome counts: past ~90% of the way out it is too steep
+ * to stand on.
+ */
+export function shellTopAt(x: number, z: number): number | null {
+  const c = Math.cos(HEADING),
+    s = Math.sin(HEADING);
+  const lx = x * c - z * s,
+    lz = x * s + z * c;
+  if ((lx / RX) ** 2 + (lz / RZ) ** 2 > 0.81) return null;
+  return SHELL_Y + shellHeight(lx, lz);
+}
+
 /** Height of the shell dome above its rim at (x, z) in the turtle's frame. */
 function shellHeight(x: number, z: number) {
   return RY * Math.sqrt(Math.max(0, 1 - (x / RX) ** 2 - (z / RZ) ** 2));
@@ -703,9 +715,6 @@ export class Discworld {
   private elephants: ElephantRig[] = [];
   private elephantGroup = new THREE.Group();
   private turtle: TurtleRig;
-  private mats: DiscMaterials;
-  /** VR pose (see setVrPose): A'Tuin's head raised on a longer neck, up beside the rim. */
-  private vr: { neck: THREE.Group; skull: THREE.Object3D; skullX: number; on: boolean } | null = null;
   private rimfall: ReturnType<typeof buildRimfall>;
   private dust: ReturnType<typeof buildDust>;
   private lights: { light: THREE.DirectionalLight; base: number }[] = [];
@@ -737,7 +746,6 @@ export class Discworld {
     this.root.name = 'discworld';
     this.root.visible = false;
     const m = makeMaterials(mats);
-    this.mats = m;
     const sphere = new THREE.SphereGeometry(1, opts.lowQuality ? 20 : 32, opts.lowQuality ? 14 : 20);
 
     this.stack.rotation.y = HEADING;
@@ -837,38 +845,6 @@ export class Discworld {
     this.progress = this.target;
   }
 
-  /**
-   * VR only. The turtle swims ~15 units under the Disc, so from the rim its
-   * head is straight down. In VR A'Tuin raises its head instead: the neck
-   * pitches up and grows by VR_NECK (extra armoured segments), bringing the
-   * head up beside the Disc's edge, just beyond the rim, where a player
-   * standing at the rim sees it a little below eye level.
-   */
-  setVrPose(on: boolean) {
-    if (on && !this.vr) {
-      const head = this.turtle.head;
-      const skull = head.children.find((c) => c.userData.lore === 'atuin')!;
-      const neck = new THREE.Group();
-      const n = Math.ceil(VR_NECK / 1.25);
-      for (let i = 0; i < n; i++) {
-        const r = 2.3 - i * 0.04;
-        const seg = mesh(new THREE.CylinderGeometry(r, r + 0.12, 1.3, 24), i % 2 ? this.mats.bronze : this.mats.brassDark, [5.4 + i * 1.25, 0, 0]);
-        seg.rotation.z = Math.PI / 2;
-        neck.add(seg);
-      }
-      neck.visible = false;
-      head.add(neck);
-      this.vr = { neck, skull, skullX: skull.position.x, on: false };
-    }
-    if (!this.vr) return;
-    this.vr.on = on;
-    this.vr.neck.visible = on;
-    this.vr.skull.position.x = this.vr.skullX + (on ? VR_NECK : 0);
-    // Level the face again (the neck's lift would point it at the sky), and turn
-    // it back over its shoulder toward the rim where the player arrives.
-    this.vr.skull.rotation.set(0, on ? VR_HEAD_TURN : 0, on ? -0.55 : 0);
-  }
-
   setEnabled(on: boolean) {
     this.target = on ? 1 : 0;
   }
@@ -913,7 +889,7 @@ export class Discworld {
     });
     const t = this.time;
     this.turtle.head.rotation.y = Math.sin(t * 0.13) * 0.18 + Math.sin(t * 0.31) * 0.05;
-    this.turtle.head.rotation.z = Math.sin(t * 0.09) * 0.06 + 0.04 + (this.vr?.on ? VR_HEAD_LIFT : 0);
+    this.turtle.head.rotation.z = Math.sin(t * 0.09) * 0.06 + 0.04;
 
     // Elephants: ears and trunks sway, and each shifts its weight a little.
     for (const e of this.elephants) {

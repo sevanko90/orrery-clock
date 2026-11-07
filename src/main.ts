@@ -216,8 +216,6 @@ function setDiscworld(on: boolean, persist = true) {
     discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio });
     discBatch = new Batcher(discworld.root, stage.scene);
     stage.scene.add(discworld.root);
-    // The VR scene (and its desktop preview) has A'Tuin's head raised beside the rim.
-    if (VRVIEW_FLAG || xr?.presenting) discworld.setVrPose(true);
   }
   discworld?.setEnabled(on);
   discButton.setAttribute('aria-pressed', String(on));
@@ -673,15 +671,13 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   toggleBloom: () => (stage.xrBloom = !stage.multiview && !stage.xrBloom),
   backend: () => stage.backend,
   discOn: () => !!discworld?.enabled,
-  // The VR scene: Discworld on (assembled, A'Tuin's head raised), without touching the saved setting.
+  // The VR scene: Discworld on (assembled), without touching the saved setting.
   sessionStart: () => {
     discBeforeVr = !!discworld?.enabled;
     setDiscworld(true, false);
-    discworld!.setVrPose(true);
     discworld!.finish();
   },
   sessionEnd: () => {
-    discworld?.setVrPose(VRVIEW_FLAG);
     if (!discBeforeVr) setDiscworld(false, false);
     vrReturn = null;
     vrFlyPending = null;
@@ -953,6 +949,10 @@ const vrPreview = {
   },
   panel(on = true) {
     xr.previewPanel(on ? stage.camera : null, panelRows().length);
+  },
+  /** The lift, hatches open by `open` (0..1), or hidden with null. */
+  lift(open: number | null = 1) {
+    xr.previewLift(open);
   },
 };
 

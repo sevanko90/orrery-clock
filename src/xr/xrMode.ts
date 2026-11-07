@@ -3,7 +3,9 @@ import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerM
 import { XR, speedScale } from './config';
 import { XrInput } from './input';
 import { buildHangar } from './hangar';
-import { groundAt, spawnPoint, walkRadius, drumRadius, WALK_RADIUS, GROUND_Y, type Viewpoint } from './vrScene';
+import { groundAt, spawnPoint, walkRadius, drumRadius, liftPoint, WALK_RADIUS, GROUND_Y, UNDERSIDE_Y, type Surface, type Viewpoint } from './vrScene';
+import { Lift } from './lift';
+import { shellTopAt } from '../scene/discworld';
 import { TABLE_RADIUS } from '../scene/layout';
 import { Wormhole } from './wormhole';
 import { ControlPanel, type PanelRow } from './controlPanel';
@@ -134,13 +136,15 @@ export class XrMode {
   /** Desktop pixels per unit of tan(angle), which the particle sizes were tuned for. */
   private desktopPx = 1000;
   private wormhole = new Wormhole();
+  /** The beam between A'Tuin's shell and the deck (Discworld on only). */
+  private lift: Lift;
   private sky: THREE.Object3D[];
   private fader: THREE.Mesh;
   readonly panel: ControlPanel;
   private panelAt = 0;
   /** A move in progress (swoop or fade), driven by update(). */
   private move: {
-    kind: 'swoop' | 'fade';
+    kind: 'swoop' | 'fade' | 'lift';
     t: number;
     duration: number;
     from: THREE.Vector3;
@@ -176,6 +180,11 @@ export class XrMode {
     this.rig.add(this.camera);
     this.rig.visible = false;
     scene.add(this.rig);
+    {
+      const at = liftPoint();
+      this.lift = new Lift(at, shellTopAt(at.x, at.y) ?? GROUND_Y - 8, UNDERSIDE_Y, GROUND_Y);
+      scene.add(this.lift.group);
+    }
     this.input = new XrInput(renderer, this.rig);
 
     const models = new XRControllerModelFactory();
@@ -303,6 +312,7 @@ export class XrMode {
     POINT_UNIFORMS.uPointView.value = 1;
     POINT_UNIFORMS.uPointMax.value = 4096;
     this.hangar.visible = this.rig.visible = false;
+    this.lift.group.visible = false;
     for (const o of this.sky) {
       o.position.set(0, 0, 0);
       o.scale.setScalar(1);
@@ -352,9 +362,9 @@ export class XrMode {
   private tmpV = new THREE.Vector3();
 
   /** Ground height under (x, z), or null (no ground: float). */
-  private ground(x: number, z: number): number | null {
-    if (LEGACY_HALL) return this.floorY;
-    return groundAt(x, z, this.hooks.discOn?.() ?? false);
+  private ground(x: number, z: number, feetY = this.rig.position.y): { y: number; on: Surface } | null {
+    if (LEGACY_HALL) return { y: this.floorY, on: 'disc' };
+    return groundAt(x, z, feetY, this.hooks.discOn?.() ?? false);
   }
 
   /** Where the player is now, to come back to. */
@@ -394,6 +404,32 @@ export class XrMode {
     this.velocity.set(0, 0, 0);
   }
 
+  /** Ride the lift from `surface`: straight up to the deck or down to the shell, at a steady walking-lift pace. */
+  private startLift(surface: Surface) {
+    const from = this.head();
+    const dy = this.lift.destination(surface) - this.rig.position.y;
+    const metres = Math.abs(dy) * this.metresPerUnit;
+    this.move = {
+      kind: 'lift',
+      t: 0,
+      duration: THREE.MathUtils.clamp(metres / 3, 2.5, 6),
+      from,
+      to: from.clone().setY(from.y + dy),
+      yawFrom: this.rig.rotation.y,
+      yawTo: null,
+      scaleTo: this.metresPerUnit,
+      turned: true,
+    };
+    this.grounded = false;
+    this.velocity.set(0, 0, 0);
+  }
+
+  /** Desktop preview: show the lift with its hatches open by `open` (0..1). */
+  previewLift(open: number | null) {
+    this.lift.group.visible = open !== null;
+    if (open !== null) this.lift.preview(open);
+  }
+
   /** Advance a move; returns the vignette strength it wants. */
   private stepMove(dt: number): number {
     const m = this.move!;
@@ -406,7 +442,12 @@ export class XrMode {
       m.turned = true;
     };
     let vignette = 0;
-    if (m.kind === 'swoop') {
+    if (m.kind === 'lift') {
+      // Eased at both ends, steady between: no lurch.
+      const k = m.t * m.t * (3 - 2 * m.t);
+      this.setHead(this.tmpV.lerpVectors(m.from, m.to, k));
+      vignette = 0.45;
+    } else if (m.kind === 'swoop') {
       const k = m.t < 0.5 ? 4 * m.t ** 3 : 1 - (-2 * m.t + 2) ** 3 / 2;
       this.setHead(this.tmpV.lerpVectors(m.from, m.to, k));
       if (m.t >= 0.5) turn();
@@ -428,9 +469,9 @@ export class XrMode {
       this.setHead(m.to);
       turn();
       this.fader.visible = false;
-      const g = this.ground(m.to.x, m.to.z);
       const feet = this.rig.position.y;
-      // Land on the Disc if the move ends standing on it.
+      const g = this.ground(m.to.x, m.to.z, feet)?.y ?? null;
+      // Land on the Disc (or the shell) if the move ends standing on it.
       this.grounded = g !== null && Math.abs(feet - g) < 0.6 / this.metresPerUnit;
       if (this.grounded) this.rig.position.y = g!;
       const done = m.done;
@@ -597,14 +638,17 @@ export class XrMode {
       if (Math.abs(head.x) > lim) this.rig.position.x -= head.x - Math.sign(head.x) * lim;
       if (Math.abs(head.z) > lim) this.rig.position.z -= head.z - Math.sign(head.z) * lim;
     } else if (!carried) {
-      // The Disc: walk on its top, held back from the rim and the glass drum;
-      // land on it from above. Off it, or with Discworld off, float.
+      // Walk on the Disc's top (held back from the rim and the glass drum) or
+      // on A'Tuin's shell; land on either from above. Off them, or with
+      // Discworld off, float.
       const head = this.head();
-      const g = this.ground(head.x, head.z);
+      const ground = this.ground(head.x, head.z, this.grounded ? feetBefore : this.rig.position.y);
+      const g = ground?.y ?? null;
       if (this.grounded) {
-        if (g === null) this.grounded = false;
+        if (ground === null) this.grounded = false;
+        else if (ground.on === 'shell') this.rig.position.y = ground.y;
         else {
-          this.rig.position.y = g;
+          this.rig.position.y = ground.y;
           const r = Math.hypot(head.x, head.z);
           const outer = walkRadius(M),
             inner = drumRadius(M);
@@ -618,6 +662,18 @@ export class XrMode {
         this.rig.position.y = g;
         v.y = 0;
         this.grounded = true;
+      }
+    }
+
+    // The lift: walk into its light (on the shell or the deck) to ride it.
+    if (!LEGACY_HALL) {
+      const discOn = this.hooks.discOn?.() ?? false;
+      this.lift.group.visible = discOn;
+      if (discOn) {
+        const head = this.head();
+        const sane = this.metresPerUnit >= 0.5 && this.metresPerUnit <= 4;
+        const surface = this.grounded && !carried && sane ? (this.ground(head.x, head.z)?.on ?? null) : null;
+        if (this.lift.update(dt, head, surface, this.move?.kind === 'lift') && surface) this.startLift(surface);
       }
     }
 
@@ -807,8 +863,8 @@ export class XrMode {
       this.rig.position.y = Math.max(this.floorY, this.rig.position.y);
       this.grounded = this.rig.position.y <= this.floorY + 1e-6;
     } else {
-      // At (or below) standing height over the Disc: stand on it.
-      const g = this.ground(x, z);
+      // At (or below) standing height over the Disc or the shell: stand on it.
+      const g = this.ground(x, z, this.rig.position.y)?.y ?? null;
       this.grounded = g !== null && this.rig.position.y <= g + 0.5 / this.metresPerUnit;
       if (this.grounded) this.rig.position.y = g!;
     }

@@ -1,15 +1,15 @@
 import * as THREE from 'three/webgpu';
-import { DISC_TOP, HEADING } from '../scene/discworld';
+import { DISC_TOP, HEADING, SHELL_CROWN_Y, shellTopAt } from '../scene/discworld';
 import { TABLE_RADIUS } from '../scene/layout';
 import { WINDOW_RADIUS } from '../mechanism/heights';
 
 /**
- * The VR scene's layout (no hall): the player arrives standing on the Disc
- * (the orrery's walnut table, Discworld on), at the rim, facing the way
- * A'Tuin swims, with its raised head just beyond the edge (Discworld's VR
- * pose). Walkable ground is the Disc's top; the rim and the glass drum at
- * the hub are soft walls. With Discworld off there is no ground: the player
- * floats and flies.
+ * The VR scene's layout (no hall): the player arrives on the crown of
+ * A'Tuin's shell, under the Disc, between the four elephants, facing the
+ * way the turtle swims (its head ahead, as on the desktop). Walkable ground
+ * is the shell's gentler top and the Disc's top (the orrery's walnut
+ * table); on the Disc the rim and the glass drum at the hub are soft walls.
+ * With Discworld off there is no ground: the player floats and flies.
  */
 
 /** Height of the Disc's top (world units): the ground. */
@@ -52,22 +52,25 @@ function onDisc(r: number, fromHeading: number) {
 }
 
 /**
- * The arrival point: on the Disc a step in from the rim, a little round from
- * the heading (SPAWN_ANGLE), facing A'Tuin's raised head (Discworld's VR
- * pose puts it just beyond the rim, near the Disc's level, turned toward
- * this side). Straight over the head it would show only the back of the
- * skull; from here it's a three-quarter view, a few degrees below eye level.
+ * The arrival point: standing on the crown of A'Tuin's shell, facing the way
+ * it swims. The Disc is a ceiling ~10 m up, held by the elephants all round;
+ * the head reaches out past the front of the shell.
  */
-export const SPAWN_ANGLE = THREE.MathUtils.degToRad(22);
-/** Roughly where the raised head sits (world units, from Discworld's VR pose). */
-export function headPoint() {
-  return onDisc(26, 0).setY(GROUND_Y - 1);
-}
 export function spawnPoint(): Viewpoint {
-  const head = onDisc(WALK_RADIUS - 0.6, SPAWN_ANGLE);
-  const to = headPoint().sub(head).setY(0);
-  return { head, yawDeg: yawFacing(to), onGround: true, note: "spawn: A'Tuin's raised head beyond the rim, ahead" };
+  return { head: new THREE.Vector3(0, SHELL_CROWN_Y, 0), yawDeg: yawFacing(headingDir()), onGround: true, note: "spawn: on A'Tuin's shell under the Disc, facing its head" };
 }
+
+/**
+ * Where the lift stands (world x, z): on the heading line just outside the
+ * glass drum, so the deck end is beside the movement and the shell end lies
+ * between the crown (the arrival) and A'Tuin's head.
+ */
+export function liftPoint() {
+  const p = onDisc(DRUM_RADIUS + 1.6, 0);
+  return new THREE.Vector2(p.x, p.z);
+}
+/** The Disc's underside (world y): the bottom of its plinth. */
+export const UNDERSIDE_Y = 0;
 
 /** Walkthrough viewpoints (also usable as telemetry teleports). */
 export function viewpoints(): Record<string, Viewpoint> {
@@ -88,8 +91,19 @@ export function viewpoints(): Record<string, Viewpoint> {
   };
 }
 
-/** Ground height under (x, z), or null for none (off the Disc, or Discworld off). */
-export function groundAt(x: number, z: number, discOn: boolean): number | null {
+/** What the player stands on: the Disc's top or A'Tuin's shell. */
+export type Surface = 'disc' | 'shell';
+
+/**
+ * The ground under (x, z) for feet at height `feetY`: the highest walkable
+ * surface at or a little below them (the Disc when above it, the shell when
+ * under the Disc), or null for none (off both, or Discworld off).
+ */
+export function groundAt(x: number, z: number, feetY: number, discOn: boolean): { y: number; on: Surface } | null {
   if (!discOn) return null;
-  return x * x + z * z <= TABLE_RADIUS * TABLE_RADIUS ? GROUND_Y : null;
+  const step = 0.5;
+  if (feetY >= GROUND_Y - step && x * x + z * z <= TABLE_RADIUS * TABLE_RADIUS) return { y: GROUND_Y, on: 'disc' };
+  const shell = shellTopAt(x, z);
+  if (shell !== null && feetY >= shell - step) return { y: shell, on: 'shell' };
+  return null;
 }
