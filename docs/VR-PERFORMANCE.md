@@ -6,6 +6,57 @@ step bought in which part of the frame budget. Numbers are headset
 measurements unless marked "desktop". Keep this updated: it is the record
 that stops us re-running the same experiments.
 
+## Summary: what worked and what didn't
+
+Where it ended (2026-11-07): roughly 60–69 fps at the heavy viewpoints,
+72 at the lighter ones, judged smooth enough. Perf work stopped there in
+favour of polish; the renderer stays WebGPURenderer.
+
+**Worked (measured on the headset):**
+
+| change | what it bought |
+|---|---|
+| Fixing the NaN frame step on leaving VR | 10 fps → normal after re-entering VR; picks 60–120 ms → under 3 ms |
+| Asking for 72 Hz instead of the default 90 | a 13.9 ms frame instead of 11.1 ms; spawn locks 72 |
+| BVH index for Discworld lore picking (three-mesh-bvh) | VR pointer 3 ms → 0.3 ms per frame (it brute-forced ~92k triangles every frame) |
+| Dropping the glass drum in VR | hub 52 → ~61 fps (a cheaper unlit glass first gave +4); the glass was the costliest pixel work in the scene |
+| Shader warm-up before the Demolition blast | desktop worst frame 83 → 34 ms (VR warm-up fixed later to finish in a session) |
+| Disc occlusion and the movement-hide fix | fewer triangles drawn; no fps change on its own, but removed a visible pop |
+
+**Didn't work (no measurable fps change, kept or dropped as noted):**
+
+| change | result |
+|---|---|
+| Batching the orrery and Discworld (720 → 284 draws) | fps unchanged (~48 at the marker 1 view) |
+| Scrunch round 1: distance LODs for gears, plates, spheres; triangles halved | fps unchanged |
+| Scrunch round 2: one batch per shading model, merged lines and sprites, globe texture array (draws halved again, 150 → 65) | fps unchanged; kept, but costs a ~0.5 s rebuild hitch and ~22 MB GPU memory |
+| Lower eye-buffer resolution (`xrscale` 0.6, 0.8) | no change, and it looked worse |
+| MSAA off | no change; full MSAA kept |
+| 90 vs 72 Hz at the heavy views | same fps either way |
+| Fewer lights / no environment map at hub | lamp off +1 fps (noise level); env map ~+4 in one run; Sun, fill and Discworld lights nothing |
+
+**What we learned, so we don't repeat it:**
+
+- **Measure where the frame goes before optimising.** Two rounds of draw-call
+  work were built on a "~45 µs per draw" model that was wrong; a one-session
+  sweep (`scripts/headset-sweep.mjs`: per-part timings, hiding parts live)
+  found the real costs in one go: the pointer's picking and the glass.
+- **The frame is our JS plus ~7 ms outside it** (three's XR setup, the
+  browser, GPU waits). Even a trivial page has ~3 ms outside; ours ~6.6–7.3.
+  So our JS budget at 72 Hz is about 7 ms, not 11.
+- **Raw WebGL draws are almost free** (6000 per frame cost 1.15 ms in the
+  bench); three's draw loop costs ~80 µs per draw. Draws matter only once
+  everything else is under budget, and only for CPU-bound views.
+- **Triangles and pixels weren't the limit** on Quest 3 at these counts;
+  overdraw from big transparent surfaces was (the glass).
+- **Test a hypothesis with a same-build A/B (URL flag or live toggle)
+  before building on it.** Across sessions, run noise is ±4 fps and the
+  headset slows as it warms (render time crept 4.1 → 5.5 ms in an hour).
+- **Quest Browser quirks:** `window.requestAnimationFrame` doesn't run
+  during an XR session, so anything polling with it (three's GPU readback
+  and async shader compile) never finishes unless a timer stands in. The
+  Quest exposes no GPU timer extension.
+
 ## The budget
 
 At 72 Hz a frame has 13.9 ms. The Quest Browser itself is not the limit:
