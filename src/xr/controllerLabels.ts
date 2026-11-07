@@ -124,8 +124,10 @@ export class ControllerLabels {
    * plates turn to face it); `metresPerUnit`: the world scale.
    */
   update(dt: number, controllers: { grip: THREE.Object3D; model: ModelLike; hand: Hand | null }[], eyes: THREE.Object3D, metresPerUnit: number) {
-    const head = eyes.getWorldPosition(this.head);
-    eyes.getWorldQuaternion(this.eyeQ);
+    // From the camera's matrix as the renderer left it (the XR camera's position and
+    // quaternion fields aren't kept in step, so getWorldQuaternion() rebuilds a wrong one).
+    eyes.matrixWorld.decompose(this.head, this.eyeQ, this.tmp);
+    const head = this.head;
     this.showing = Math.max(0, this.showing - dt);
     for (const c of controllers) {
       let b = this.built.find((x) => x.model === c.model);
