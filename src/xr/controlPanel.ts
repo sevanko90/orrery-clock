@@ -45,7 +45,9 @@ export class ControlPanel {
     const w = (height * ControlPanel.W) / ControlPanel.H;
     this.mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(w, height),
-      new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, depthWrite: false }),
+      // Drawn over everything (no depth test), in renderOrder: it sits on the
+      // controller and z-fought the controller model.
+      new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, depthTest: false, depthWrite: false }),
     );
     this.mesh.renderOrder = 26;
     this.mesh.name = 'control-panel';

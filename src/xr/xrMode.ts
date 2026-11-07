@@ -214,7 +214,8 @@ export class XrMode {
     // Wrist readout, worn on the left controller.
     this.wrist = new THREE.Mesh(
       new THREE.PlaneGeometry(0.16, 0.094),
-      new THREE.MeshBasicMaterial({ map: this.wristPlate.texture, transparent: true, depthWrite: false }),
+      // (No depth test, like the control box: it overlaps the controller model.)
+      new THREE.MeshBasicMaterial({ map: this.wristPlate.texture, transparent: true, depthTest: false, depthWrite: false }),
     );
     this.wrist.position.set(0, 0.07, 0.03);
     this.wrist.rotation.x = -Math.PI / 4;

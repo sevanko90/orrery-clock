@@ -638,6 +638,13 @@ function viewFrom(head: THREE.Vector3 | null) {
   culler.update(head, cullAngle);
   xrHead = head;
 }
+function countNonFinite() {
+  let n = 0;
+  stage.scene.traverse((o) => {
+    if (!o.matrixWorld.elements.every(Number.isFinite)) n++;
+  });
+  return n;
+}
 const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS, sky: stage.sky }, {
   pick: xrPick,
   view: viewFrom,
@@ -651,6 +658,8 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
     telemetry.send({
       ...entry,
       ...lastRender,
+      // Objects with a non-finite world matrix (NaN state hides them and makes picking crawl).
+      nonFinite: countNonFinite(),
       scrunch,
       lod: orreryBatch.lodCounts(),
       sphereLod: meshLods?.counts(),
