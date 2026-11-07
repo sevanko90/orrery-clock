@@ -154,11 +154,15 @@ export class ControllerLabels {
       const dist = toEye.length() * metresPerUnit;
       this.up.set(0, 1, 0).transformDirection(c.grip.matrixWorld);
       const facing = toEye.normalize().dot(this.up);
-      // Raised in front of the face: near, within ~40° of the gaze, top toward the eyes (arms out or in the lap don't count).
+      // Raised in front of the face: near, within ~40° of the gaze, pointing upward
+      // (at least ~30° above level) with its top toward the eyes. Arms out, hands in
+      // the lap, or aiming the controller don't count.
       const gaze = this.fwd.set(0, 0, -1).applyQuaternion(this.eyeQ);
       const inView = gaze.dot(toEye.clone().negate()) > 0.77;
-      const want = this.showing > 0 || (dist < 0.45 && inView && facing > 0.2) ? 1 : 0;
-      Object.assign(this.state[b.hand] as object, { dist: +dist.toFixed(2), facing: +facing.toFixed(2), opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2) });
+      const pointing = this.fwd.set(0, 0, -1).transformDirection(c.grip.matrixWorld);
+      const upright = pointing.y > 0.5;
+      const want = this.showing > 0 || (dist < 0.45 && inView && upright && facing > 0) ? 1 : 0;
+      Object.assign(this.state[b.hand] as object, { dist: +dist.toFixed(2), facing: +facing.toFixed(2), inView, upright, opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2) });
       const o0 = this.opacity.get(b.group) ?? 0;
       // A gentle fade (~0.8 s), not a pop.
       const o = o0 + THREE.MathUtils.clamp(want - o0, -dt * 1.25, dt * 1.25);
