@@ -1,6 +1,7 @@
 // First: a seeded Math.random (?seed=N) must be in place before anything draws one.
 import { reseed } from './xr/seed';
 import { mark, startFrame, takeCpuParts } from './perfMarks';
+import { GpuTimer } from './xr/gpuTimer';
 import './style.css';
 import * as THREE from 'three/webgpu';
 import { registerSW } from 'virtual:pwa-register';
@@ -92,7 +93,7 @@ const scrunch = scrunchOn(quality.headset);
 boot.sendNow({ kind: 'boot', stage: 'renderer' });
 await stage.init();
 const multiDraw = (stage.renderer.backend as { extensions?: { has(name: string): boolean } }).extensions?.has('WEBGL_multi_draw') ?? null;
-boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend, multiDraw });
+boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend, multiDraw, gpuTimer: !!(stage.renderer.backend as { gl?: WebGL2RenderingContext }).gl?.getExtension('EXT_disjoint_timer_query_webgl2') });
 const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
@@ -744,6 +745,7 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
       // Objects with a non-finite world matrix (NaN state hides them and makes picking crawl).
       nonFinite: countNonFinite(),
       cpuParts: takeCpuParts(),
+      gpuMs: gpuTimer.take(),
       // Scene graph size: every object, and those the renderer walks (visible chain).
       objects: sceneCounts(),
       scrunch,
@@ -853,6 +855,8 @@ let frameFailed = false;
 let cpuMs = 0;
 /** What the last frame drew (read straight after it, for telemetry). */
 const lastRender = { drawCalls: 0, triangles: 0 };
+/** GPU time of the render (WebGL backend with the timer extension only). */
+const gpuTimer = new GpuTimer((stage.renderer.backend as { gl?: WebGL2RenderingContext }).gl ?? null);
 function frame(now: number) {
   const t0 = performance.now();
   startFrame(t0);
@@ -1028,7 +1032,9 @@ function step(now: number) {
   orreryBatch.sync(eye, cullAngle, lodEye, scrunch && eye && SCRUNCH_SKIP.has('occlude') === false ? (c, r) => discHides(eye, c, r) : undefined);
   discBatch?.sync(eye, cullAngle);
   mark('sync');
+  gpuTimer.begin();
   stage.render(xr.camera);
+  gpuTimer.end();
   mark('render');
   {
     const r = stage.renderer.info.render as unknown as { drawCalls: number; triangles: number };
