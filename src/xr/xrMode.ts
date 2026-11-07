@@ -36,6 +36,8 @@ export interface XrHooks {
   pick(ray: THREE.Raycaster): XrHit | null;
   faster(): void;
   slower(): void;
+  /** A screenshot of the view (dev builds: left stick click). */
+  capture?(): void;
   now(): void;
   /** Called each frame in VR with the head's world position (to skip drawing what it can't see); null on leaving VR. */
   view?(head: THREE.Vector3 | null): void;
@@ -607,6 +609,10 @@ export class XrMode {
     // A choice made with X or Y stands: no popped panel to take away.
     if (a.timePanel || a.scenePanel) this.popUntil = 0;
     // A / B step the clock, and pop the time panel up to show it (unless a panel is already out by choice).
+    if (a.capture && this.hooks.capture) {
+      this.hooks.capture();
+      this.input.rumble(0.4, 60);
+    }
     if (a.faster || a.slower) {
       if (a.faster) this.hooks.faster();
       else this.hooks.slower();

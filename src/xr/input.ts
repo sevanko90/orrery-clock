@@ -11,7 +11,7 @@ import { XR } from './config';
  *  Left trigger  jetpack thrust,      Right stick Y  rise / sink
  *                along the left aim   Right trigger  select (pointer ray)
  *  Y             scene panel on/off   Right grip + stick Y  world scale
- *                                     Left grip  telemetry marker
+ *  Left stick click  screenshot (dev)   Left grip  telemetry marker
  *  X             time panel on/off    A / B          faster / slower time
  *                                     Right stick click  back to now
  */
@@ -36,6 +36,8 @@ export interface Actions {
   scenePanel: boolean;
   /** Left grip: drop a telemetry marker here. */
   mark: boolean;
+  /** Left stick click: a screenshot of the view to the dev server (dev builds). */
+  capture: boolean;
   /** A / B: clock faster / slower (the time panel pops up to show it). */
   faster: boolean;
   slower: boolean;
@@ -68,6 +70,7 @@ export class XrInput {
     faster: false,
     slower: false,
     mark: false,
+    capture: false,
     now: false,
   };
   private slots: Slot[];
@@ -108,7 +111,7 @@ export class XrInput {
     const a = this.actions;
     a.move.set(0, 0);
     a.thrust = a.lift = a.snapTurn = a.scale = 0;
-    a.scaling = a.select = a.timePanel = a.scenePanel = a.mark = a.faster = a.slower = a.now = false;
+    a.scaling = a.select = a.timePanel = a.scenePanel = a.mark = a.capture = a.faster = a.slower = a.now = false;
 
     for (const s of this.slots) {
       const pad = s.source?.gamepad;
@@ -126,6 +129,7 @@ export class XrInput {
         a.scenePanel = edge(5);
         a.timePanel = edge(4);
         a.mark = edge(1);
+        a.capture = edge(3);
       } else if (hand === 'right') {
         a.scaling = down(1);
         if (a.scaling) a.scale = sy;

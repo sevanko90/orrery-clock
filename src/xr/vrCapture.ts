@@ -8,8 +8,9 @@ import * as THREE from 'three/webgpu';
  * screen, and uploads it as a PNG to .telemetry/captures/. It costs a hitch
  * of a frame or two (the first one also compiles shaders for the extra view).
  */
-export async function captureEye(renderer: THREE.WebGPURenderer, scene: THREE.Scene, name: string, width = 1280) {
+export async function captureEye(renderer: THREE.WebGPURenderer, scene: THREE.Scene, name: string, log: (stage: string) => void = () => undefined, width = 1280) {
   const eye = (renderer.xr.getCamera() as THREE.ArrayCamera).cameras[0];
+  log(`start (eye ${!!eye})`);
   if (!eye) return;
   const cam = new THREE.PerspectiveCamera();
   cam.matrixAutoUpdate = false;
@@ -36,7 +37,19 @@ export async function captureEye(renderer: THREE.WebGPURenderer, scene: THREE.Sc
     renderer.setRenderTarget(before);
     xr.enabled = wasXr;
   }
-  const raw = (await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height)) as Uint16Array;
+  log(`rendered ${width}×${height}`);
+  // three's WebGL backend polls for the GPU with window.requestAnimationFrame,
+  // which the Quest Browser doesn't run during a VR session (only the
+  // session's own loop): stand a timer in for it while reading back.
+  const raf = window.requestAnimationFrame;
+  window.requestAnimationFrame = (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 4);
+  let raw: Uint16Array;
+  try {
+    raw = (await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height)) as Uint16Array;
+  } finally {
+    window.requestAnimationFrame = raf;
+  }
+  log(`read ${raw?.length}`);
   target.dispose();
 
   // Half floats, linear: ACES-ish tone map and sRGB encode, like the screen.

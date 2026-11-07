@@ -19,7 +19,7 @@ type Hand = 'left' | 'right';
 /** What each control does, by WebXR input-profile component id. */
 const TEXT: Record<Hand, Record<string, string[]>> = {
   left: {
-    'xr-standard-thumbstick': ['Walk / fly'],
+    'xr-standard-thumbstick': import.meta.env.DEV ? ['Walk / fly', 'click: screenshot'] : ['Walk / fly'],
     'xr-standard-trigger': ['Jetpack'],
     'x-button': ['Time panel'],
     'y-button': ['Scene panel'],

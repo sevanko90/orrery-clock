@@ -767,6 +767,7 @@ function sceneCounts() {
 }
 const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS, sky: stage.sky }, {
   pick: xrPick,
+  ...(import.meta.env.DEV ? { capture: () => (captureDue = `vr-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`) } : {}),
   faster: () => clock.setStep(clock.step + 1),
   slower: () => clock.setStep(clock.step - 1),
   card: (hit) => {
@@ -1127,7 +1128,7 @@ function step(now: number) {
   if (captureDue && xr.presenting) {
     const name = captureDue;
     captureDue = null;
-    captureEye(stage.renderer, stage.scene, name).then(
+    captureEye(stage.renderer, stage.scene, name, (stage) => telemetry.sendNow({ kind: 'capture-stage', name, stage })).then(
       () => telemetry.send({ kind: 'captured', name }),
       (e) => telemetry.send({ kind: 'capture-failed', name, error: String(e) }),
     );
