@@ -25,7 +25,10 @@ export const VRVIEW_FLAG = params.get('vrview') === '1';
  * `?scrunchskip=uber,layers,lines,sprites,single,occlude` leaves those parts of the scrunch
  * out (to measure what each buys, or to rule one out).
  */
-export const SCRUNCH_SKIP = new Set((params.get('scrunchskip') ?? '').split(',').filter(Boolean));
+const SKIPPABLE = ['uber', 'layers', 'lines', 'sprites', 'single', 'occlude'];
+/** (`?sskip=` is short for it, and `all` skips every part: round 1's scrunch only, handy to type on a headset.) */
+const skipList = (params.get('scrunchskip') ?? params.get('sskip') ?? '').split(',').filter(Boolean);
+export const SCRUNCH_SKIP = new Set(skipList.includes('all') ? SKIPPABLE : skipList);
 
 /** Is the scrunched scene in use, for this device? */
 export function scrunchOn(headset: boolean): boolean {
