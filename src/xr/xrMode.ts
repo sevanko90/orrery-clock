@@ -95,6 +95,10 @@ const DISC_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), -GROUND_Y);
  * centre. The player's rig is scaled by 1 / metresPerUnit (see config.ts),
  * so the world itself is untouched.
  */
+/** Controller models: the Quest 3's bundled (public/controllers, from @webxr-input-profiles/assets 1.0.20, MIT), the rest from the CDN. */
+const BUNDLED_PROFILES = `${import.meta.env.BASE_URL}controllers/profiles`;
+const CDN_PROFILES = 'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles';
+
 /** Display refresh rate asked for in VR (Hz). */
 const TARGET_HZ = 72;
 
@@ -228,6 +232,13 @@ export class XrMode {
 
     const models = new XRControllerModelFactory();
     this.controllerModels = this.input.all.map((slot) => {
+      // The Quest 3's controller model ships with the app (works offline, no
+      // third-party request); others come from the WebXR input-profiles CDN.
+      // (Registered before the factory's own listener, so the path is set first.)
+      slot.grip.addEventListener('connected', (e) => {
+        const profiles = (e as unknown as { data?: XRInputSource }).data?.profiles ?? [];
+        models.setPath(profiles.includes('meta-quest-touch-plus') ? BUNDLED_PROFILES : CDN_PROFILES);
+      });
       const model = models.createControllerModel(slot.grip);
       slot.grip.add(model);
       return { slot, model };

@@ -52,6 +52,12 @@ export default defineConfig({
             },
           },
           {
+            // The bundled VR controller model (Quest 3): cached when first loaded, so VR works offline after.
+            urlPattern: ({ url }) => url.pathname.includes('/controllers/'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'controllers-v1', cacheableResponse: { statuses: [0, 200] } },
+          },
+          {
             urlPattern: ({ url }) =>
               url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',
             handler: 'StaleWhileRevalidate',

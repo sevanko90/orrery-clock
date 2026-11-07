@@ -142,6 +142,7 @@ export class ControllerLabels {
         const comps = c.model.motionController?.components;
         this.state[c.hand] = {
           controller: !!c.model.motionController,
+          asset: (c.model.motionController as { assetUrl?: string } | null | undefined)?.assetUrl ?? null,
           components: comps ? Object.keys(comps) : null,
           anchors: comps ? Object.entries(comps).filter(([, v]) => anchorOf(c.model, v)).map(([k]) => k) : null,
           built: !!b,
