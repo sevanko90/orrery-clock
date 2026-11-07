@@ -1996,6 +1996,11 @@ export class Fiction {
   }
 
   /** Scene parts whose shaders should be compiled now (once, ahead of first use), or null. */
+  /** The parts whose shaders are worth building ahead of time (the Demolition: its first frame otherwise stalls). */
+  get warmupRoot(): THREE.Object3D {
+    return this.demolition.group;
+  }
+
   takeWarmup(): THREE.Object3D | null {
     if (!this.demolition.warmupDue) return null;
     this.demolition.warmupDue = false;

@@ -984,6 +984,8 @@ function standInFrameTimer() {
  * up to date). For scene parts that turn to face the viewer: the Demolition's
  * hologram faced the desktop camera in VR, edge-on or from behind.
  */
+/** Displays the fiction's shaders have been built for ('desktop', 'xr'). */
+const fictionWarmed = new Set<string>();
 const eyes = new THREE.PerspectiveCamera();
 const eyesScale = new THREE.Vector3();
 function viewer(): THREE.Camera {
@@ -1061,8 +1063,17 @@ function step(now: number) {
   }
   if (fiction) {
     fiction.update(simMs, dt, elapsed, jumped, viewer(), clock.speed);
-    const warm = fiction.takeWarmup();
-    if (warm) warmShaders(warm);
+    // Build the Demolition's shaders once per display (desktop, or the headset's
+    // two-eye variants) as soon as fiction exists: in VR that's the arrival
+    // tunnel, in the tabletop its placement, not mid-scene (where a 1.6 s
+    // compile showed as stutter). The fleet's arrival is the fallback.
+    const warmKey = xr.presenting ? 'xr' : 'desktop';
+    // (In VR, once the headset camera has its two eyes: before that it would build the wrong variants.)
+    const eyesReady = !xr.presenting || (stage.renderer.xr.getCamera() as THREE.ArrayCamera).cameras.length > 0;
+    if (eyesReady && (!fictionWarmed.has(warmKey) || fiction.takeWarmup())) {
+      if (!fictionWarmed.has(warmKey)) warmShaders(fiction.warmupRoot);
+      fictionWarmed.add(warmKey);
+    }
     if (pendingFrame) {
       const points = fiction.framePoints(pendingFrame);
       if (points.length) focus.frame(points, 2.4);
