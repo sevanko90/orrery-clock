@@ -265,9 +265,10 @@ function setDiscworld(on: boolean, persist = true) {
   if (on && !discworld) {
     reseed('discworld');
     discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio });
-    stage.scene.add(discworld.root);
+    // (Desktop: batch first, then add, as before, so the scene's order and its render stay the same.)
     if (scrunch) rebatch();
     else discBatch = new Batcher(discworld.root, stage.scene);
+    stage.scene.add(discworld.root);
   }
   discworld?.setEnabled(on);
   discButton.setAttribute('aria-pressed', String(on));
