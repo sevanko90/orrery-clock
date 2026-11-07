@@ -371,7 +371,13 @@ export class XrMode {
   /** Ground height under (x, z), or null (no ground: float). */
   private ground(x: number, z: number, feetY = this.rig.position.y): { y: number; on: Surface } | null {
     if (LEGACY_HALL) return { y: this.floorY, on: 'disc' };
-    return groundAt(x, z, feetY, this.hooks.discOn?.() ?? false);
+    const g = groundAt(x, z, feetY, this.hooks.discOn?.() ?? false);
+    // The lift's plinth stands on the shell: its top is a step up.
+    if (g?.on === 'shell') {
+      const pad = this.lift.padTop(x, z);
+      if (pad !== null && pad > g.y) g.y = pad;
+    }
+    return g;
   }
 
   /** Where the player is now, to come back to. */

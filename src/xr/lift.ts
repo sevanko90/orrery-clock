@@ -26,6 +26,10 @@ export const CAPTURE_RADIUS = LIFT_RADIUS * 1.6;
 const OPEN_NEAR = 3.2;
 
 const IRIS_RADIUS = LIFT_RADIUS * 1.25;
+/** The base on the shell: a brass plinth this high (world units, along the shell's normal), the iris on top. */
+const PAD_H = 0.12;
+/** How far the plinth reaches down into the shell, so its foot never shows a gap on the curve. */
+const PAD_SINK = 0.3;
 const GLOW = new THREE.Color(1.0, 0.86, 0.6);
 
 export class Lift {
@@ -85,19 +89,44 @@ export class Lift {
     this.bottom = new Iris();
     this.bottom.mesh.rotation.x = Math.PI / 2;
     this.bottom.mesh.position.y = undersideY;
-    // The base on the shell: the same brass iris, held part open, its light rising into the column.
+    // The base on the shell: a low brass plinth, tilted with the shell, topped
+    // by the same iris held part open, its light rising into the column. Its
+    // top is a floor (padTop).
+    this.padNormal = shellNormal.clone();
+    this.padCentreY = shellY + PAD_H / shellNormal.y;
+    const pad = new THREE.Group();
+    pad.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), shellNormal);
+    pad.position.y = shellY;
+    const plinthMat = new THREE.MeshStandardNodeMaterial({ color: 0x8a6428, metalness: 1, roughness: 0.38 });
+    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(IRIS_RADIUS, IRIS_RADIUS * 1.05, PAD_H + PAD_SINK, 48, 1, true), plinthMat);
+    plinth.position.y = (PAD_H - PAD_SINK) / 2;
+    plinth.raycast = () => undefined;
     const base = new Iris();
     base.open = base.target = 0.6;
     base.step(0);
-    base.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), shellNormal);
-    base.mesh.position.y = shellY + 0.01;
-    this.group.add(this.top.mesh, this.bottom.mesh, base.mesh);
+    base.mesh.rotation.x = -Math.PI / 2;
+    base.mesh.position.y = PAD_H;
+    pad.add(plinth, base.mesh);
+    this.group.add(this.top.mesh, this.bottom.mesh, pad);
     this.group.visible = false;
   }
 
   /** Feet height a ride from `surface` ends at: the deck going up, the shell going down. */
   destination(surface: Surface) {
-    return surface === 'shell' ? this.deckY : this.shellY;
+    return surface === 'shell' ? this.deckY : this.padCentreY;
+  }
+
+  private padNormal: THREE.Vector3;
+  /** Height of the plinth's top over the column's axis. */
+  private padCentreY: number;
+
+  /** The plinth's top under world point (x, z) (a tilted plane), or null off the plinth. */
+  padTop(x: number, z: number): number | null {
+    const dx = x - this.at.x,
+      dz = z - this.at.y;
+    if (dx * dx + dz * dz > IRIS_RADIUS * IRIS_RADIUS) return null;
+    const n = this.padNormal;
+    return this.padCentreY - (n.x * dx + n.z * dz) / n.y;
   }
 
   /**
