@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { batchedMeshes } from '../scene/batch';
+import { BATCHED_LAYER } from '../scene/batch';
 
 /** Layer culled details are moved to: the cameras don't draw it (and rays don't hit it). */
 const CULLED = 7;
@@ -28,7 +28,7 @@ export class DetailCuller {
         const m = o as THREE.Mesh;
         if (!m.isMesh || (m as THREE.InstancedMesh).isInstancedMesh || (m as THREE.BatchedMesh).isBatchedMesh) return;
         // Batched parts are drawn (and culled) by their batch.
-        if (batchedMeshes.has(m)) return;
+        if (m.layers.isEnabled(BATCHED_LAYER)) return;
         // Pick proxies are invisible meshes that rays must always find.
         const mat = m.material as THREE.Material;
         if (!Array.isArray(m.material) && mat.visible === false) return;
@@ -50,7 +50,6 @@ export class DetailCuller {
     const part = this.frame++ % share;
     for (let i = part; i < n; i += share) {
       const { mesh, centre, radius } = this.meshes[i];
-      if (batchedMeshes.has(mesh)) continue;
       const e = mesh.matrixWorld.elements;
       const scale = Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10]));
       const at = this.tmp.copy(centre).applyMatrix4(mesh.matrixWorld);
@@ -60,15 +59,8 @@ export class DetailCuller {
     }
   }
 
-  /** Forget the roots, so the next setRoots() lists the meshes afresh (after batching changed). */
-  reset() {
-    this.restore();
-    this.roots = [];
-    this.meshes = [];
-  }
-
   /** Put everything back on the default layer. */
   restore() {
-    for (const { mesh } of this.meshes) if (!batchedMeshes.has(mesh)) mesh.layers.set(0);
+    for (const { mesh } of this.meshes) mesh.layers.set(0);
   }
 }

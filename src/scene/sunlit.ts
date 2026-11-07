@@ -72,8 +72,6 @@ export function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirro
   m.lightsNode = SUN_LIGHTS;
   m.setupEnvironment = () => null;
   m.setupLightingModel = () => new SunlitLightingModel(night);
-  // (Tells a VR uber batch which sunlit materials shade alike.)
-  mat.userData.sunlit = `${fill}|${mirrorSouth}`;
   if (mirrorSouth) mirrorUnmappedSouth(mat);
 }
 
@@ -135,22 +133,4 @@ function mirrored(t: THREE.Texture): THREE.Texture {
   out.wrapS = t.wrapS;
   out.wrapT = t.wrapT;
   return out;
-}
-
-/**
- * The renderer keys shader programs on a material's properties, and a
- * function property by its source text, so sunlit materials with different
- * night fills share one program: whichever compiles first sets every body's
- * night side. (A latent bug on the desktop, left as is there so its render
- * stays identical.) VR scrunch: key each fill to its own program, so every
- * body gets its own fill whatever the compile order (batching changes it).
- */
-export function ownSunlitProgram(mat: THREE.Material) {
-  const tag = (mat.userData as { sunlit?: string }).sunlit;
-  if (!tag || Object.prototype.hasOwnProperty.call(mat, 'customProgramCacheKey')) return;
-  // (Called on the material as it is, node material or not: keep its own class's key and add the fill.)
-  const base = mat.customProgramCacheKey;
-  (mat as unknown as { customProgramCacheKey: () => string }).customProgramCacheKey = function (this: THREE.Material) {
-    return base.call(this) + `|sunlit:${tag}`;
-  };
 }

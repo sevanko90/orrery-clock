@@ -49,9 +49,3 @@ export function allowedError(d: number, px = LOD_PX, f = QUEST_PX_PER_RAD) {
 
 /** Relative hysteresis on LOD switches, so a level doesn't flicker at its boundary. */
 export const LOD_HYSTERESIS = 0.06;
-
-/**
- * Largest texel of a globe's shared texture layer allowed on screen (pixels
- * on the eye buffer): nearer than that the globe draws alone with its own map.
- */
-export const LAYER_TEXEL_PX = 0.5;
