@@ -98,7 +98,7 @@ boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend, mu
 const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
-// Scrunched (the headset): the glass drum in cheap unlit glass (telemetry `glass` switches it live).
+// Scrunched (the headset): no glass in the drum, the mechanism open in its frame (telemetry `glass` switches it live).
 const vrGlass = new VrGlass(orrery.root);
 if (scrunch) vrGlass.set(true);
 // Draw the instrument's hundreds of parts as a few batches (one per material).
@@ -753,7 +753,7 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
       frame: takeFrameStats(1000 / ((stage.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate || 72)),
       hidden: [...forcedHidden.keys()],
       probes: probes.on,
-      cheapGlass: vrGlass.on,
+      noGlass: vrGlass.on,
       // Scene graph size: every object, and those the renderer walks (visible chain).
       objects: sceneCounts(),
       scrunch,
@@ -853,9 +853,7 @@ const telemetry = new Telemetry((c: Command) => {
       probes.on = c.on;
       return;
     case 'glass':
-      vrGlass.set(c.cheap);
-      // (The batches captured the glass's material: rebuild them.)
-      if (scrunch) rebatchDue = true;
+      vrGlass.set(!c.on);
       return;
     case 'list': {
       const groups: Record<string, string[]> = {};

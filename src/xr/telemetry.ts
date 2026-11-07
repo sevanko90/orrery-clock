@@ -21,8 +21,8 @@ export type Command =
   | { type: 'list' }
   /** Heavier probes (GPU timer, three's render split) on or off. */
   | { type: 'probe'; on: boolean }
-  /** The glass drum: cheap VR glass, or the desktop's. */
-  | { type: 'glass'; cheap: boolean };
+  /** The drum's glass shown (the desktop's) or hidden (VR default). */
+  | { type: 'glass'; on: boolean };
 
 export class Telemetry {
   readonly enabled = import.meta.env.DEV;

@@ -87,16 +87,16 @@ async function measure(view, step) {
   return row;
 }
 
-// `--toggle glass`: at rim and hub only, alternate the cheap VR glass and the desktop glass, twice each.
+// `--toggle glass`: at rim and hub only, alternate no glass (VR) and the desktop glass, twice each.
 if (process.argv.includes('--toggle')) {
   for (const view of ['hub', 'rim']) {
     await command({ type: 'view', name: view });
-    for (const cheap of [true, false, true, false]) {
-      await command({ type: 'glass', cheap });
-      await measure(view, cheap ? 'glass cheap' : 'glass full');
+    for (const on of [false, true, false, true]) {
+      await command({ type: 'glass', on });
+      await measure(view, on ? 'glass' : 'no glass');
     }
   }
-  await command({ type: 'glass', cheap: true });
+  await command({ type: 'glass', on: false });
   console.log(`done: ${OUT} (label ${label})`);
   process.exit(0);
 }
