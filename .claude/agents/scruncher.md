@@ -39,13 +39,15 @@ minimum loss. Numbers, not adjectives.
 
 ## Context you start with
 
-- Quest 3 findings (WebGL 2 multiview, Quest Browser): at the marker-1 view
-  (head -0.739, 12.092, 19.396, yaw 0) whole orrery in view ≈ 48 fps, cpu
-  ≈ 12 ms. Target 72 fps. Resolution scale made no difference; fps tracks
-  objects in view. Batching cut draw calls 720→284 but fps barely moved.
-  ~1.1M triangles/frame: gear teeth ≈ 339k, Discworld ≈ 135k. Hangar ≈ 70
-  unbatched static pieces (~8 fps). Fiction: many unique-material pieces
-  (~8 fps).
+- Quest 3 findings, 2026-11-07 (WebGL 2 multiview, Quest Browser, VR scene
+  on the Disc, 72 Hz): VR viewpoints `spawn`, `rim`, `hub`, `far`
+  (`viewpoints()` in `src/xr/vrScene.ts`; telemetry command
+  `{"type":"view","name":…}`). spawn: 35 draws, 52k tris, locked 72 fps.
+  rim / hub / far: 117–131 draws, 180k–490k tris, 61–68 fps.
+  **CPU-bound on draw submission** (~6 ms render CPU for ~130 draws, about
+  45 µs per draw): fps did not change with triangles (hub 480k ≈ rim 180k),
+  resolution scale 0.8, MSAA off, or 90 vs 72 Hz. Draw calls are the lever;
+  triangles barely matter below ~500k.
 - Key files: `src/scene/gear.ts` (`gearGeometry()`, ExtrudeGeometry,
   curveSegments 24, bevel, cached by options), `src/scene/batch.ts`
   (`Batcher`, BatchedMesh per material, `sync()` per frame; LOD can pick a
@@ -97,7 +99,7 @@ minimum loss. Numbers, not adjectives.
    - Branch name and commit hashes.
    - Table: object/group, before tris/verts/draws, after (per LOD level),
      switch distances and the pixel error each implies.
-   - Totals per VR viewpoint (marker 1 at least): triangles and draw calls
+   - Totals per VR viewpoint (spawn, rim, hub, far): triangles and draw calls
      before vs after.
    - Fidelity self-check numbers and every place you knowingly lost detail.
    - Boot-time and memory added.
@@ -109,12 +111,13 @@ minimum loss. Numbers, not adjectives.
 You are done, and must report rather than keep polishing, when the first of
 these holds:
 
-1. **Budget met.** Marker-1 proxy ≤ 600k triangles and ≤ 200 draw calls,
-   with every LOD switch at ≤ 0.5 px silhouette / ≤ 1 px interior error.
-   (Proxy budget, from 48 fps at 1.1M tris scaled to 72 fps plus margin; the
-   headset test is the real judge.) Meeting it ends perf work: do not chase
-   further cuts.
-2. **Diminishing returns.** Your last change cut marker-1 triangles or draws
+1. **Budget met.** At every VR viewpoint (spawn, rim, hub, far): ≤ 70
+   draw calls and ≤ 500k triangles, with every LOD switch at ≤ 0.5 px
+   silhouette / ≤ 1 px interior error. (From headset data: 35 draws holds
+   72 fps, ~130 draws gives ~64; the headset test is the real judge.)
+   Meeting it ends perf work: do not chase further cuts. Below 500k,
+   triangles are not a perf reason to lose detail.
+2. **Diminishing returns.** Your last change cut the worst viewpoint's draws
    by < 3 % of the starting total. Stop that line of work; if nothing on your
    ranked list promises ≥ 3 %, stop altogether.
 3. **Iteration round scope.** When given a reviewer's iteration list, fix

@@ -27,16 +27,18 @@ your own measurements agree.
 ## What to measure
 
 **Performance (proxy; real fps needs the headset):**
-- Triangles and draw calls per frame at the VR viewpoints: marker 1 (head
-  -0.739, 12.092, 19.396, yaw 0, whole orrery in view) plus at least one
-  close-up and one far view. Count what the renderer would actually submit
+- Draw calls and triangles per frame at the VR viewpoints `spawn`, `rim`,
+  `hub`, `far` (`viewpoints()` in `src/xr/vrScene.ts`). Count what the renderer would actually submit
   (after LOD selection, culling, batching), e.g. via `renderer.info` in a
   headless render or by walking the scene with the LOD selection applied.
 - Vertices, materials/shader programs, BatchedMesh/instance counts.
 - Added CPU per frame (LOD selection in `sync()` etc.) and boot time/memory.
-- Reference: Quest 3 at marker 1 was ~48 fps with ~1.1M tris and 284 draws;
-  72 fps is the target. Estimate where the change lands and say how
-  confident you are.
+- Reference (Quest 3, 72 Hz, 2026-11-07): spawn 35 draws / 52k tris holds
+  72 fps; rim, hub, far 117–131 draws / 180k–490k tris give 61–68 fps. The
+  headset is CPU-bound on draw submission (~45 µs per draw); fps did not
+  move with triangles, resolution or MSAA. Weigh draw calls first; a
+  triangle cut below 500k earns little. Estimate where the change lands
+  and say how confident you are.
 
 **Fidelity:**
 - Geometric: for each changed mesh/LOD level, sampled two-sided Hausdorff and
@@ -70,10 +72,10 @@ your own measurements agree.
 
 ## Scoring
 
-- **Performance score 0–100**: 0 = no gain, 100 = marker-1 proxy at or
-  under budget: ≤ 600k triangles and ≤ 200 draw calls (from 1.1M / 284).
-  Linear in between on each axis; score = the lower of the two. Use this
-  formula every round so scores compare.
+- **Performance score 0–100**, from the worst viewpoint's draw calls:
+  130 draws = 0, ≤ 70 draws = 100, linear in between. Any viewpoint over
+  500k triangles caps the score at 50. Use this formula every round so
+  scores compare.
 - **Fidelity score 0–100**: 100 = no perceptible difference in VR at any
   supported viewpoint; subtract for measured pixel error, SSIM drop, popping
   and style-critical loss. Show the deductions.

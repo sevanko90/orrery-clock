@@ -262,7 +262,19 @@ export class XrMode {
       optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'],
     });
     await this.renderer.xr.setSession(session);
+    // Quest runs at 90 Hz by default; 72 Hz gives each frame 13.9 ms instead
+    // of 11.1 ms (?xrhz=90 or 120 to compare). Only rates the headset offers.
+    const rates = session.supportedFrameRates;
+    if (rates?.includes(this.targetHz) && session.updateTargetFrameRate) {
+      await session.updateTargetFrameRate(this.targetHz).catch(() => undefined);
+    }
   }
+
+  /** Display refresh rate asked for in VR (?xrhz=, default 72). */
+  private readonly targetHz = (() => {
+    const v = Number(new URLSearchParams(location.search).get('xrhz'));
+    return v > 0 ? v : 72;
+  })();
 
   /** Eye-buffer resolution relative to the headset's default (?xrscale=0.7 for a test); set before a session starts. */
   private readonly resolutionScale = (() => {
@@ -778,6 +790,7 @@ export class XrMode {
       metresPerUnit: r(this.metresPerUnit),
       grounded: this.grounded,
       resolutionScale: this.resolutionScale,
+      hz: (this.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate ?? null,
       renderer: this.backendText(),
     };
   }
