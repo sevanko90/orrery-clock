@@ -57,17 +57,21 @@ function onDisc(r: number, fromHeading: number) {
  * the head reaches out past the front of the shell.
  */
 /**
- * How far forward of the crown the arrival lands (world units, along the
- * heading): near the front of the shell, peering over its rim at A'Tuin's
- * head. (From the crown the view ran between the front elephants'
- * hindquarters: they face outward.)
+ * Where the arrival lands, in the turtle's frame (world units: `ahead` along
+ * the heading from the crown, `side` across it): toward the front of the
+ * shell and a little to one side, looking over its rim at A'Tuin's head,
+ * with the elephants and the Disc in view when you turn your head. (Marked
+ * on the headset, 2026-11-07. From the crown the view ran between the front
+ * elephants' hindquarters: they face outward.)
  */
-const SPAWN_AHEAD = 14.5;
+const SPAWN = { ahead: 11.3, side: -1.35 };
 
 export function spawnPoint(): Viewpoint {
-  const at = headingDir().multiplyScalar(SPAWN_AHEAD);
+  const c = Math.cos(HEADING),
+    s = Math.sin(HEADING);
+  const at = new THREE.Vector3(SPAWN.ahead * c + SPAWN.side * s, 0, -SPAWN.ahead * s + SPAWN.side * c);
   at.y = shellTopAt(at.x, at.z) ?? SHELL_CROWN_Y;
-  return { head: at, yawDeg: yawFacing(headingDir()), onGround: true, note: "spawn: near the front of A'Tuin's shell, looking over its rim at the head" };
+  return { head: at, yawDeg: yawFacing(headingDir()), onGround: true, note: "spawn: toward the front of A'Tuin's shell, looking over its rim at the head" };
 }
 
 /**
