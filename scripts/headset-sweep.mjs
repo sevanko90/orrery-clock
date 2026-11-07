@@ -14,7 +14,7 @@ import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 const LOG = '.telemetry/log.jsonl';
 const CMDS = '.telemetry/commands.jsonl';
 const OUT = '.telemetry/sweep.jsonl';
-const label = process.argv[2] ?? `sweep-${new Date().toISOString().slice(11, 16)}`;
+const label = process.argv.slice(2).find((a) => !a.startsWith('--') && a !== 'glass') ?? `sweep-${new Date().toISOString().slice(11, 16)}`;
 const VIEWS = ['spawn', 'rim', 'hub', 'far'];
 const HEAVY = new Set(['rim', 'hub']);
 // Scene parts to price by hiding (names in the scene, or "type:X" for top-level objects of a type).
@@ -85,6 +85,20 @@ async function measure(view, step) {
       `render ${f(cpu.render, 2)} (walk ${f(cpu['render>project'], 2)} draw ${f(cpu['render>draw'], 2)})  missed/s ${f(row.missed, 0)}  gc ${row.gcs}  draws ${row.draws}`,
   );
   return row;
+}
+
+// `--toggle glass`: at rim and hub only, alternate the cheap VR glass and the desktop glass, twice each.
+if (process.argv.includes('--toggle')) {
+  for (const view of ['hub', 'rim']) {
+    await command({ type: 'view', name: view });
+    for (const cheap of [true, false, true, false]) {
+      await command({ type: 'glass', cheap });
+      await measure(view, cheap ? 'glass cheap' : 'glass full');
+    }
+  }
+  await command({ type: 'glass', cheap: true });
+  console.log(`done: ${OUT} (label ${label})`);
+  process.exit(0);
 }
 
 await command({ type: 'list' });
