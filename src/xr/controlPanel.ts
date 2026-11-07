@@ -21,6 +21,8 @@ const MAX_H = 1800;
 const ROW = 64;
 const SLIDER_ROW = 96;
 const SIDE = 34;
+/** Panels fade in and out over this (seconds): seen, not waited for. */
+export const FADE_S = 0.4;
 
 /**
  * A VR panel: an engraved brass plate with enamel inlays, worked with the
@@ -41,6 +43,9 @@ export class ControlPanel {
   /** Top of each row and the header's height (canvas px), from the last layout. */
   private tops: number[] = [];
   private used = MAX_H;
+  /** Shown amount, easing to `wanted` over FADE_S. */
+  private fade = 0;
+  private wanted = 0;
 
   constructor(
     private getRows: () => PanelRow[],
@@ -65,6 +70,22 @@ export class ControlPanel {
     this.mesh.renderOrder = 26;
     this.mesh.name = 'control-panel';
     this.redraw();
+  }
+
+  /** Show or hide (fading). A hidden panel ignores the ray. */
+  set shown(on: boolean) {
+    this.wanted = on ? 1 : 0;
+  }
+
+  get shown() {
+    return this.wanted === 1;
+  }
+
+  /** Per frame: ease the fade. */
+  step(dt: number) {
+    this.fade = THREE.MathUtils.clamp(this.fade + (this.wanted ? dt : -dt) / FADE_S, 0, 1);
+    this.mesh.material.opacity = this.fade;
+    this.mesh.visible = this.fade > 0.001;
   }
 
   /** Physical width (metres). */
@@ -96,7 +117,7 @@ export class ControlPanel {
 
   /** Test a ray: the hit (with distance) if it lands on the panel. Updates the hover light. */
   hit(raycaster: THREE.Raycaster): THREE.Intersection | null {
-    if (!this.mesh.parent || !this.mesh.visible) {
+    if (!this.mesh.parent || !this.wanted) {
       this.setHover(null);
       return null;
     }

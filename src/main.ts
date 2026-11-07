@@ -766,6 +766,8 @@ function sceneCounts() {
 }
 const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS, sky: stage.sky }, {
   pick: xrPick,
+  faster: () => clock.setStep(clock.step + 1),
+  slower: () => clock.setStep(clock.step - 1),
   card: (hit) => {
     const { body, lore } = hit;
     if (body) return () => bodyCard(body, clock.nowMs(), armLongitude);

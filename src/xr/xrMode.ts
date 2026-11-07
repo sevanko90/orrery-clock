@@ -34,6 +34,8 @@ export interface XrHit {
 /** What VR needs from the rest of the app. */
 export interface XrHooks {
   pick(ray: THREE.Raycaster): XrHit | null;
+  faster(): void;
+  slower(): void;
   now(): void;
   /** Called each frame in VR with the head's world position (to skip drawing what it can't see); null on leaving VR. */
   view?(head: THREE.Vector3 | null): void;
@@ -125,6 +127,9 @@ export class XrMode {
 
   private vignette: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicNodeMaterial>;
   private vignetteStrength = uniform(0);
+  /** When a panel popped up by A/B goes away again (performance.now() ms), or 0. */
+  private popUntil = 0;
+  private lastDt = 0;
   /** Which wrist panel is out: X toggles the time panel, Y the scene panel (one at a time). */
   private open: 'time' | 'scene' | null = null;
   /** The debug panel shown beside the scene panel (its Debug row toggles it). */
@@ -331,6 +336,7 @@ export class XrMode {
 
   private end() {
     this.info.hide();
+    this.info.update(1); // (gone at once: no frames left to fade in)
     SPRITE_SCALE.value = 1;
     this.hooks.view?.(null);
     POINT_UNIFORMS.uPointView.value = 1;
@@ -598,6 +604,19 @@ export class XrMode {
 
     if (a.timePanel) this.open = this.open === 'time' ? null : 'time';
     if (a.scenePanel) this.open = this.open === 'scene' ? null : 'scene';
+    // A choice made with X or Y stands: no popped panel to take away.
+    if (a.timePanel || a.scenePanel) this.popUntil = 0;
+    // A / B step the clock, and pop the time panel up to show it (unless a panel is already out by choice).
+    if (a.faster || a.slower) {
+      if (a.faster) this.hooks.faster();
+      else this.hooks.slower();
+      if (this.open === null || this.popUntil) {
+        this.open = 'time';
+        this.popUntil = performance.now() + 2500;
+        this.timePanel.refresh();
+      }
+    }
+    this.lastDt = dt;
     if (a.mark) {
       this.marks++;
       this.hooks.report?.({ kind: 'mark', n: this.marks, ...this.snapshot() });
@@ -821,10 +840,16 @@ export class XrMode {
     const eye = this.head();
     let hit: XrHit | null = null;
     // The open wrist panel sits above the left wrist (rising from it); the debug panel beside the scene panel.
+    // A/B popped the time panel to show the speed change: put it away again after a moment.
+    if (this.popUntil && performance.now() > this.popUntil) {
+      if (this.open === 'time') this.open = null;
+      this.popUntil = 0;
+    }
     const wrist = this.input.hand('left')?.grip ?? null;
-    this.wear(this.timePanel, this.open === 'time' ? wrist : null, 0);
-    this.wear(this.scenePanel, this.open === 'scene' ? wrist : null, 0);
-    this.wear(this.debugPanel, this.open === 'scene' && this.debugShown ? wrist : null, this.scenePanel.width + 0.012);
+    this.wear(this.timePanel, wrist, 0, this.open === 'time');
+    this.wear(this.scenePanel, wrist, 0, this.open === 'scene');
+    this.wear(this.debugPanel, wrist, this.scenePanel.width + 0.012, this.open === 'scene' && this.debugShown);
+    for (const p of [this.timePanel, this.scenePanel, this.debugPanel]) p.step(this.lastDt);
     if (hand) {
       this.raycaster.setFromXRController(hand.ray);
       this.raycaster.camera = this.camera;
@@ -869,7 +894,7 @@ export class XrMode {
       if (card) this.info.show(card, this.rig, this.camera);
       else if (!hit?.label) this.info.hide();
     }
-    this.info.update();
+    this.info.update(this.lastDt);
 
     const hoverShown = !!hit && !!hit.label;
     this.hoverLabel.sprite.visible = hoverShown;
@@ -905,14 +930,15 @@ export class XrMode {
     this.cpuMs = cpuMs;
   }
 
-  /** Wear a panel on `parent` (null: take it off), `x` metres to the side. */
-  private wear(panel: ControlPanel, parent: THREE.Object3D | null, x: number) {
+  /** Wear a panel on `wrist`, `x` metres to the side, fading in or out as `on` says. */
+  private wear(panel: ControlPanel, wrist: THREE.Object3D | null, x: number, on: boolean) {
+    panel.shown = on && !!wrist;
     const m = panel.mesh;
-    if (m.parent === parent) return;
-    m.removeFromParent();
     m.position.set(x, 0.07, 0.03);
     m.rotation.set(-0.75, 0, 0);
-    parent?.add(m);
+    if (m.parent === wrist) return;
+    m.removeFromParent();
+    wrist?.add(m);
   }
 
   private backendText() {

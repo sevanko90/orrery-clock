@@ -12,7 +12,7 @@ import { XR } from './config';
  *                along the left aim   Right trigger  select (pointer ray)
  *  Y             scene panel on/off   Right grip + stick Y  world scale
  *                                     Left grip  telemetry marker
- *  X             time panel on/off
+ *  X             time panel on/off    A / B          faster / slower time
  *                                     Right stick click  back to now
  */
 export interface Actions {
@@ -36,6 +36,9 @@ export interface Actions {
   scenePanel: boolean;
   /** Left grip: drop a telemetry marker here. */
   mark: boolean;
+  /** A / B: clock faster / slower (the time panel pops up to show it). */
+  faster: boolean;
+  slower: boolean;
   now: boolean;
 }
 
@@ -62,6 +65,8 @@ export class XrInput {
     select: false,
     timePanel: false,
     scenePanel: false,
+    faster: false,
+    slower: false,
     mark: false,
     now: false,
   };
@@ -103,7 +108,7 @@ export class XrInput {
     const a = this.actions;
     a.move.set(0, 0);
     a.thrust = a.lift = a.snapTurn = a.scale = 0;
-    a.scaling = a.select = a.timePanel = a.scenePanel = a.mark = a.now = false;
+    a.scaling = a.select = a.timePanel = a.scenePanel = a.mark = a.faster = a.slower = a.now = false;
 
     for (const s of this.slots) {
       const pad = s.source?.gamepad;
@@ -132,6 +137,8 @@ export class XrInput {
           this.turnArmed = false;
         } else if (Math.abs(x) < 0.3) this.turnArmed = true;
         a.select = edge(0);
+        a.faster = edge(4);
+        a.slower = edge(5);
         a.now = edge(3);
       }
       pad.buttons.forEach((b, i) => (s.pressed[i] = b.pressed));

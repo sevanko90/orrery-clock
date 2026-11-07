@@ -29,6 +29,8 @@ const TEXT: Record<Hand, Record<string, string[]>> = {
     'xr-standard-thumbstick': ['Turn · rise / sink', 'click: now'],
     'xr-standard-trigger': ['Select'],
     'xr-standard-squeeze': ['Hold + stick: scale'],
+    'a-button': ['Faster'],
+    'b-button': ['Slower'],
   },
 };
 

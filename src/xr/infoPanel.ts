@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import type { CardContent } from '../ui/infocard';
+import { FADE_S } from './controlPanel';
 
 /**
  * The info card in VR: what the desktop card shows (name, kind, blurb, live
@@ -17,6 +18,9 @@ export class InfoPanel {
   private last = '';
   private closeLit = false;
   private refreshAt = 0;
+  /** Shown amount, easing to `wanted` over FADE_S. */
+  private fade = 0;
+  private wanted = 0;
   /** Canvas height in use (px): the card is cut to its content. */
   private used = 1024;
   private static W = 768;
@@ -44,7 +48,7 @@ export class InfoPanel {
   }
 
   get open() {
-    return this.mesh.visible;
+    return this.wanted === 1;
   }
 
   /**
@@ -65,18 +69,23 @@ export class InfoPanel {
     this.mesh.rotation.set(0, Math.atan2(-fwd.x, -fwd.z), 0);
     // Tilted back a touch, like a lectern.
     this.mesh.rotateX(-0.15);
+    this.wanted = 1;
     this.mesh.visible = true;
     this.redraw();
   }
 
+  /** Fade away (the content stays until it has). */
   hide() {
-    this.mesh.visible = false;
-    this.content = null;
+    this.wanted = 0;
     this.closeLit = false;
   }
 
-  /** Per frame: refresh the live figures four times a second. */
-  update() {
+  /** Per frame: ease the fade, and refresh the live figures four times a second. */
+  update(dt: number) {
+    this.fade = THREE.MathUtils.clamp(this.fade + (this.wanted ? dt : -dt) / FADE_S, 0, 1);
+    this.mesh.material.opacity = this.fade;
+    this.mesh.visible = this.fade > 0.001;
+    if (!this.mesh.visible) this.content = null;
     if (!this.open) return;
     const t = performance.now();
     if (t < this.refreshAt) return;
