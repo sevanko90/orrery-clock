@@ -90,6 +90,7 @@ gap between the end of our frame's work and the start of the next.
 | 10 | Movement hidden only while under the Disc (not "below table height") | gears popped in past the rim | correctness | pop gone; small extra draw cost outside the rim | 3484a4a |
 | 11 | BVH (three-mesh-bvh) for Discworld lore picking | VR picks every frame; the plain test walked ~92k triangles of 199 parts | our JS | VR pointer 3.0 ms → 0.33 ms per frame (headset); desktop pick 1.77 → 0.09 ms, identical hits | bbe9eb5 |
 | 12 | Cheap VR glass drum: unlit additive Fresnel sheen, one pass, instead of lit double-sided transparent PBR | sweep S1: hiding the glass took hub 52 → 61 fps (GPU) | GPU (outside time) | live A/B at hub, alternating twice: cheap 63.4 / 64.2 vs full 57.3 / 62.1 fps (outside 7.0 vs 7.2–9.2 ms); rim unchanged (~61). Then dropped the glass in VR altogether (the player walks through it anyway): the mechanism stands open in its brass frame | 3f009a1, 8ac1109, telemetry `glass` |
+| 13 | Lights and environment map priced at hub (no glass), switching each off live | sweep S1 blamed the movement's shading at hub | GPU | none is a big lever: lamp off +1 fps (3 alternations: 62.5/63.8/64.0 vs 61.8/60.9/64.3), env map off ~+4 (single run), Sun/fill/Disc lights within noise. With the glass gone, hub's outside time is ~7.3 ms, about the floor seen at spawn: hub is no longer GPU-bound, the remaining gap is our JS (~8.5 ms) | 3a0eeb3, sweep L1/L2 |
 
 ## Models that turned out wrong
 

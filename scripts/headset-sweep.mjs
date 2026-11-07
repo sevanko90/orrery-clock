@@ -14,7 +14,7 @@ import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 const LOG = '.telemetry/log.jsonl';
 const CMDS = '.telemetry/commands.jsonl';
 const OUT = '.telemetry/sweep.jsonl';
-const label = process.argv.slice(2).find((a) => !a.startsWith('--') && a !== 'glass') ?? `sweep-${new Date().toISOString().slice(11, 16)}`;
+const label = process.argv.slice(2).find((a, i, all) => !a.startsWith('--') && a !== 'glass' && all[i - 1] !== '--toggle-hide') ?? `sweep-${new Date().toISOString().slice(11, 16)}`;
 const VIEWS = ['spawn', 'rim', 'hub', 'far'];
 const HEAVY = new Set(['rim', 'hub']);
 // Scene parts to price by hiding (names in the scene, or "type:X" for top-level objects of a type).
@@ -85,6 +85,20 @@ async function measure(view, step) {
       `render ${f(cpu.render, 2)} (walk ${f(cpu['render>project'], 2)} draw ${f(cpu['render>draw'], 2)})  missed/s ${f(row.missed, 0)}  gc ${row.gcs}  draws ${row.draws}`,
   );
   return row;
+}
+
+// `--toggle-hide <name>`: at hub, alternate that part shown / hidden, three times each (longer settle: hiding a light recompiles).
+const th = process.argv.indexOf('--toggle-hide');
+if (th > 0) {
+  const name = process.argv[th + 1];
+  await command({ type: 'view', name: 'hub' });
+  for (const on of [true, false, true, false, true, false]) {
+    await command({ type: 'hide', name, on });
+    await sleep(5000);
+    await measure('hub', on ? `-${name}` : `+${name}`);
+  }
+  console.log(`done: ${OUT} (label ${label})`);
+  process.exit(0);
 }
 
 // `--lights`: at hub, price each light and the environment map by switching it off
