@@ -458,8 +458,10 @@ function panelPress(i: number) {
 
 /** Discworld's state before VR turned it on, to put back after. */
 let discBeforeVr = false;
+/** Fiction's state before VR or the tabletop turned it on, to put back after. */
+let fictionBeforeVr = false;
 
-function setFiction(on: boolean) {
+function setFiction(on: boolean, persist = true) {
   if (!fiction) {
     reseed('fiction');
     fiction = new Fiction(bodies, mats);
@@ -475,6 +477,7 @@ function setFiction(on: boolean) {
   // Don't leave the camera or a card on something that has just vanished (a place; events stay).
   const shown = [focus.focused, info.showingBody];
   if (!on && fiction && shown.some((b) => b && fiction!.bodies.includes(b) && b.available?.() === false)) unfocus();
+  if (!persist) return;
   try {
     localStorage.setItem('fiction', on ? '1' : '0');
   } catch {
@@ -745,6 +748,9 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   // The VR scene: Discworld on (assembled), without touching the saved setting.
   sessionStart: (mode) => {
     discBeforeVr = !!discworld?.enabled;
+    // Fiction always on in VR and the tabletop (the scene panel is its catalogue), without touching the saved setting.
+    fictionBeforeVr = !!fiction?.enabled;
+    if (!fictionBeforeVr) setFiction(true, false);
     // The VR scene stands on the Disc; the tabletop is the instrument alone.
     if (mode === 'ar') {
       // Gone at once, not sinking away at the player's feet.
@@ -757,6 +763,7 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
     }
   },
   sessionEnd: () => {
+    if (!!fiction?.enabled !== fictionBeforeVr) setFiction(fictionBeforeVr, false);
     // Discworld back as it was (VR turned it on; the tabletop turned it off).
     if (!!discworld?.enabled !== discBeforeVr) setDiscworld(discBeforeVr, false);
     vrReturn = null;
