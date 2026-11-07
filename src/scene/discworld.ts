@@ -717,6 +717,8 @@ export class Discworld {
   /** Current stroke rate (signed; negative swims backwards). */
   private rate = 0;
   private pickables: THREE.Object3D[] = [];
+  /** The hit behind the last pickLore() result (where the ray lands), or null. */
+  loreHit: THREE.Intersection | null = null;
   private turtleLore: Lore = {
     id: 'atuin',
     name: "Great A'Tuin",
@@ -808,6 +810,7 @@ export class Discworld {
    * Only once the stack has fully assembled.
    */
   pickLore(raycaster: THREE.Raycaster): Lore | null {
+    this.loreHit = null;
     if (this.progress < 1 || !this.enabled) return null;
     // Test every solid part, so a plaque behind the shell or another
     // elephant isn't picked through it.
@@ -817,6 +820,7 @@ export class Discworld {
       });
     }
     const hit = raycaster.intersectObjects(this.pickables, false)[0];
+    this.loreHit = hit ?? null;
     for (let o: THREE.Object3D | null = hit?.object ?? null; o; o = o.parent) {
       const lore = o.userData.lore as Lore | 'atuin' | undefined;
       if (lore) return lore === 'atuin' ? this.turtleLore : lore;

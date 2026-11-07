@@ -565,7 +565,8 @@ function xrPick(ray: THREE.Raycaster): XrHit | null {
   }
   const lore = discworld?.pickLore(raycaster);
   if (lore) {
-    const hit = raycaster.intersectObject(discworld!.root, true)[0];
+    // (Where pickLore's ray landed: a second pass over the whole root would also test the rimfall and dust points.)
+    const hit = discworld!.loreHit;
     if (hit) return { point: hit.point, distance: hit.distance, label: lore.name, note: lore.kind };
   }
   return null;
@@ -776,7 +777,12 @@ function frame(now: number) {
 
 function step(now: number) {
   // (Frozen by the scrunch debug tools: every animation holds still for frame diffs.)
-  const dt = debug.dt(Math.min(0.1, (now - prev) / 1000));
+  // three's animation loop calls once with no timestamp when it (re)starts,
+  // e.g. on leaving VR. A NaN step would poison every animated transform (the
+  // camera, the Discworld) for good, so fall back to the clock; and the XR and
+  // page clocks can differ, so never step backwards either.
+  if (!Number.isFinite(now)) now = performance.now();
+  const dt = debug.dt(THREE.MathUtils.clamp((now - prev) / 1000, 0, 0.1));
   prev = now;
   elapsed += dt;
 
