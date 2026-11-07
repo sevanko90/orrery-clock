@@ -162,7 +162,7 @@ export class ControllerLabels {
       // (The pointing direction is the target ray's −Z; the grip's −Z runs along the handle.)
       const pointing = this.fwd.set(0, 0, -1).transformDirection(c.ray.matrixWorld);
       const upright = pointing.y > 0.5;
-      const want = this.showing > 0 || (dist < 0.45 && inView && upright && facing > 0) ? 1 : 0;
+      const want = this.showing > 0 || (dist < 0.5 && inView && upright && facing > 0) ? 1 : 0;
       Object.assign(this.state[b.hand] as object, { dist: +dist.toFixed(2), facing: +facing.toFixed(2), inView, upright, opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2) });
       const o0 = this.opacity.get(b.group) ?? 0;
       // A gentle fade (~0.8 s), not a pop.
