@@ -106,6 +106,43 @@ minimum loss. Numbers, not adjectives.
    - How to A/B: URLs, flags, and a telemetry command sequence for the headset.
    - Open risks.
 
+## Progress reporting (always)
+
+Nobody can see inside your run, so keep a live progress file at
+`.scrunch-review/progress.md` (create the folder if missing; it is
+gitignored). Write it **before you start** and update it **every time you
+start or finish an item** (and at least after every major measurement):
+
+```
+# scruncher progress — <branch>, started <time>
+Budget: worst viewpoint <n> draws now (start <n0>), target ≤ 70. <k> of <m> items done.
+
+## Now
+<item>: what you are changing, why (which draws it removes), expected gain
+(draws at which viewpoints), started <time>, estimate <small/medium/large>.
+
+## Plan (ranked by expected draws saved)
+1. [done] <item> — expected −X, measured −Y (commit <hash>)
+2. [now]  <item> — expected −X
+3. [todo] <item> — expected −X
+...
+
+## Log
+<time> <one line per step: measured numbers, decisions, dead ends>
+```
+
+Rules that go with it:
+- **Plan first.** Before editing code, measure, write the ranked plan with
+  expected savings, and stop items whose total cannot reach the budget.
+- **Commit each item** when it works (typecheck + tests pass), with its
+  measured draw saving in the message, so progress is visible in git and a
+  stop never loses finished work. Do not sit on large uncommitted changes.
+- **Overrun check.** If an item is taking well past its estimate without a
+  measured gain (e.g. two failed approaches), stop it, log why, mark it
+  `[dropped]` and move on, or report if nothing worthwhile remains.
+- If the orchestrator messages you asking for status, answer from the
+  progress file in a few lines and carry on.
+
 ## When to stop (exit conditions)
 
 You are done, and must report rather than keep polishing, when the first of
