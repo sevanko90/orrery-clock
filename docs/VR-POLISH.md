@@ -30,7 +30,7 @@ above it. Combine the clock and the scene (fiction) controls into one
 panel. Move the debug readouts (fps, CPU, backend) and in-VR toggles to a
 separate debug panel, opened from a button.
 
-## 3. Controller labels (done; bundling the model still open)
+## 3. Controller labels (done; Quest 3 model bundled)
 
 Done 2026-11-07 (`src/xr/controllerLabels.ts`): engraved brass plates,
 one per control, spread round the controller (stick outside, buttons and
@@ -40,7 +40,7 @@ mesh). They show for the first 30 s in VR, then when a controller is raised
 in front of the face: within 50 cm, ~40° of the gaze, pointing up, top
 toward the eyes; ~0.8 s fade. Wrist panels also face the eyes. Dev builds:
 left stick click takes a VR screenshot to `.telemetry/captures/`.
-Still to do: bundle the Quest 3 controller model (below).
+The Quest 3 controller model now ships in `public/controllers` (7be3103); other headsets still use the CDN.
 
 
 An overlay on the controllers: arrows and short text for each control
