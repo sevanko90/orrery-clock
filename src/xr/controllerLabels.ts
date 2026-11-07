@@ -177,6 +177,9 @@ export class ControllerLabels {
     const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
     // Outward is −x for the left hand, +x for the right.
     const outward = hand === 'left' ? -1 : 1;
+    // The controller's outline (model space): leader lines stop where they reach it.
+    const outline = new THREE.Box3().setFromObject(model).applyMatrix4(inv);
+    const ray = new THREE.Ray();
     let any = false;
     for (const [id, lines] of Object.entries(TEXT[hand])) {
       const node = anchorOf(model, comps[id]);
@@ -193,7 +196,12 @@ export class ControllerLabels {
       plate.renderOrder = 24;
       plates.push(plate);
       const lineMat = new THREE.LineBasicMaterial({ color: 0xd9b46a, transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
-      const leader = new THREE.Line(new THREE.BufferGeometry().setFromPoints([p, at]), lineMat);
+      // From the plate toward the control, ending where it meets the controller
+      // (a control underneath, like the trigger, is reached at the top, not tunnelled to).
+      ray.set(at, p.clone().sub(at).normalize());
+      const hitAt = ray.intersectBox(outline, new THREE.Vector3());
+      const end = hitAt && hitAt.distanceTo(at) < p.distanceTo(at) ? hitAt : p;
+      const leader = new THREE.Line(new THREE.BufferGeometry().setFromPoints([end, at]), lineMat);
       leader.renderOrder = 24;
       group.add(plate, leader);
       materials.push(mat, lineMat);
