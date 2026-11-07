@@ -116,6 +116,7 @@ export class ControllerLabels {
   private head = new THREE.Vector3();
   private eyeQ = new THREE.Quaternion();
   private q = new THREE.Quaternion();
+  private fwd = new THREE.Vector3();
   private up = new THREE.Vector3();
 
   /**
@@ -153,7 +154,10 @@ export class ControllerLabels {
       const dist = toEye.length() * metresPerUnit;
       this.up.set(0, 1, 0).transformDirection(c.grip.matrixWorld);
       const facing = toEye.normalize().dot(this.up);
-      const want = this.showing > 0 || (dist < 0.35 && facing > 0.2) ? 1 : 0;
+      // Raised in front of the face: near, within ~40° of the gaze, top toward the eyes (arms out or in the lap don't count).
+      const gaze = this.fwd.set(0, 0, -1).applyQuaternion(this.eyeQ);
+      const inView = gaze.dot(toEye.clone().negate()) > 0.77;
+      const want = this.showing > 0 || (dist < 0.45 && inView && facing > 0.2) ? 1 : 0;
       Object.assign(this.state[b.hand] as object, { dist: +dist.toFixed(2), facing: +facing.toFixed(2), opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2) });
       const o0 = this.opacity.get(b.group) ?? 0;
       // A gentle fade (~0.8 s), not a pop.
@@ -198,13 +202,18 @@ export class ControllerLabels {
       plate.renderOrder = 24;
       plates.push(plate);
       const lineMat = new THREE.LineBasicMaterial({ color: 0xd9b46a, transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
-      // From the plate toward the control, ending where it meets the controller
-      // (a control underneath, like the trigger, is reached at the top, not tunnelled to).
-      ray.set(at, p.clone().sub(at).normalize());
-      const hitAt = ray.intersectBox(outline, new THREE.Vector3());
-      const end = hitAt && hitAt.distanceTo(at) < p.distanceTo(at) ? hitAt : p;
+      // The line ends at the control, or for one underneath (the trigger) on the
+      // top face right above it; the grip's, where it reaches the controller's side.
+      let end = p;
+      if (id === 'xr-standard-trigger') end = p.clone().setY(outline.max.y);
+      else if (id === 'xr-standard-squeeze') {
+        ray.set(at, p.clone().sub(at).normalize());
+        const hitAt = ray.intersectBox(outline, new THREE.Vector3());
+        if (hitAt && hitAt.distanceTo(at) < p.distanceTo(at)) end = hitAt;
+      }
       const leader = new THREE.Line(new THREE.BufferGeometry().setFromPoints([end, at]), lineMat);
-      leader.renderOrder = 24;
+      // Drawn before the plates, so a plate always covers the end of its line.
+      leader.renderOrder = 23;
       group.add(plate, leader);
       materials.push(mat, lineMat);
     }
