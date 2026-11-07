@@ -742,7 +742,11 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   sessionStart: (mode) => {
     discBeforeVr = !!discworld?.enabled;
     // The VR scene stands on the Disc; the tabletop is the instrument alone.
-    if (mode === 'ar') setDiscworld(false, false);
+    if (mode === 'ar') {
+      // Gone at once, not sinking away at the player's feet.
+      setDiscworld(false, false);
+      discworld?.finish();
+    }
     else {
       setDiscworld(true, false);
       discworld!.finish();

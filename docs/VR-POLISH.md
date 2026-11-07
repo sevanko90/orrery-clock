@@ -88,3 +88,22 @@ already capped at 1 MB) so it can't fill the disk.
   (2d4fe76); before, the Sun's glow swamped the tabletop view.
 - Scrunch round 2's rebuild hitch (~0.5 s when moons or fiction are first
   turned on mid-session).
+
+## 5. Tabletop (passthrough) mode — proof works, UX to do
+
+Proof 2026-11-07 (branch `tabletop`, 65567e6): a Tabletop button starts a
+WebXR `immersive-ar` session; three's WebGPU renderer (WebGL 2, multiview)
+clears to transparent and the room shows through. The instrument is placed
+at ~60 cm across, base at 72 cm, 80 cm ahead. To work through:
+
+- Place on a real table: hit-test against real surfaces (Space Setup's table
+  plane where present), with a ghost preview before the trigger sets it;
+  an anchor keeps it fixed as the player moves.
+- Handling: grab with a grip to move and turn it, two-hand pinch to scale;
+  no thumbstick flying in the tabletop.
+- What shows: the stars as a faint dome over the orrery or none; Discworld
+  as an option at tabletop scale?
+- Lighting: the orrery's own warm light (no real-world light estimation on
+  the web).
+- Panels, labels and cards at tabletop distances; leaving and re-placing.
+
