@@ -51,8 +51,8 @@ export interface XrHooks {
   quake(): number;
   /** Is Discworld on (the Disc is then the ground)? */
   discOn?(): boolean;
-  /** Session start / end (Discworld goes on for VR, and back after). */
-  sessionStart?(): void;
+  /** Session start / end (Discworld goes on for VR, and back after; off for the tabletop). */
+  sessionStart?(mode: XrSessionMode): void;
   sessionEnd?(): void;
   /** The panel's time controls (rows) and a press on one (`part`: which button or slider stop). */
   timeRows?(): PanelRow[];
@@ -98,6 +98,12 @@ const DISC_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), -GROUND_Y);
 /** Controller models: the Quest 3's bundled (public/controllers, from @webxr-input-profiles/assets 1.0.20, MIT), the rest from the CDN. */
 const BUNDLED_PROFILES = `${import.meta.env.BASE_URL}controllers/profiles`;
 const CDN_PROFILES = 'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles';
+
+/** 'vr': the immersive scene. 'ar': the tabletop orrery over passthrough. */
+export type XrSessionMode = 'vr' | 'ar';
+
+/** Tabletop: metres per world unit (the instrument ~60 cm across), and where it stands from the head (metres). */
+const TABLETOP = { metresPerUnit: 0.016, ahead: 0.8, height: 0.72 };
 
 /** Display refresh rate asked for in VR (Hz). */
 const TARGET_HZ = 72;
@@ -194,9 +200,17 @@ export class XrMode {
     lift?: { centre: THREE.Vector3; top: THREE.Vector3; exit: THREE.Vector3 | null; tc: number; tv: number };
   } | null = null;
 
+  /** The session's kind: the VR scene or the tabletop over passthrough. */
+  mode: XrSessionMode = 'vr';
+  /** Tabletop: place the orrery in front of the player on the first posed frame. */
+  private placePending = false;
+  /** What the tabletop hides or clears, to put back after. */
+  private arSaved: { background: THREE.Scene['background']; sky: boolean[]; clear: THREE.Color; alpha: number } | null = null;
+  private orreryBox: THREE.Box3;
+
   constructor(
     private renderer: THREE.WebGPURenderer,
-    scene: THREE.Scene,
+    private scene: THREE.Scene,
     layout: XrLayout,
     private hooks: XrHooks,
   ) {
@@ -205,6 +219,7 @@ export class XrMode {
     renderer.xr.setReferenceSpaceType('local-floor');
 
     // The hall, sized from the instrument (only with ?hangar=1: the VR scene now has no hall).
+    this.orreryBox = layout.orrery;
     this.floorY = layout.orrery.min.y - XR.hoverGap;
     this.half = layout.tableRadius + XR.hangarMargin;
     this.roofY = layout.orrery.max.y + XR.roofClearance;
@@ -320,12 +335,13 @@ export class XrMode {
   }
 
   /** Ask for an immersive session (from a click). */
-  async enter() {
+  async enter(mode: XrSessionMode = 'vr') {
     const xr = navigator.xr;
     if (!xr) return;
-    const session = await xr.requestSession('immersive-vr', {
+    this.mode = mode;
+    const session = await xr.requestSession(mode === 'ar' ? 'immersive-ar' : 'immersive-vr', {
       // 'layers' lets the renderer draw both eyes in one pass (multiview).
-      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'],
+      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers', ...(mode === 'ar' ? ['hit-test', 'anchors', 'plane-detection'] : [])],
     });
     await this.renderer.xr.setSession(session);
     // Quest runs at 90 Hz by default; 72 Hz gives each frame 13.9 ms instead
@@ -343,7 +359,11 @@ export class XrMode {
     this.renderer.xr.setFoveation(1);
     this.hangar.visible = LEGACY_HALL;
     this.rig.visible = true;
-    this.hooks.sessionStart?.();
+    this.hooks.sessionStart?.(this.mode);
+    if (this.mode === 'ar') {
+      this.beginTabletop();
+      return;
+    }
     this.resetPosition();
     // Arrive through the wormhole: standing still while it streams past, once per session.
     if (!LEGACY_HALL) {
@@ -354,6 +374,7 @@ export class XrMode {
   }
 
   private end() {
+    this.endTabletop();
     this.info.hide();
     this.info.update(1); // (gone at once: no frames left to fade in)
     SPRITE_SCALE.value = 1;
@@ -372,6 +393,58 @@ export class XrMode {
     this.fader.visible = false;
     this.rayDot.visible = false;
     this.hoverLabel.sprite.visible = false;
+  }
+
+  /**
+   * Tabletop: the room shows through (passthrough), so the scene's sky,
+   * stars and background go and the frame clears to transparent; the orrery
+   * is placed on the first posed frame.
+   */
+  private beginTabletop() {
+    const clear = new THREE.Color();
+    this.renderer.getClearColor(clear);
+    this.arSaved = { background: this.scene.background, sky: this.sky.map((o) => o.visible), clear, alpha: this.renderer.getClearAlpha() };
+    this.scene.background = null;
+    for (const o of this.sky) o.visible = false;
+    this.renderer.setClearColor(0x000000, 0);
+    this.velocity.set(0, 0, 0);
+    this.grounded = false;
+    this.placePending = true;
+  }
+
+  /** Put back what the tabletop hid or cleared. */
+  private endTabletop() {
+    const saved = this.arSaved;
+    if (!saved) return;
+    this.scene.background = saved.background;
+    this.sky.forEach((o, i) => (o.visible = saved.sky[i]));
+    this.renderer.setClearColor(saved.clear, saved.alpha);
+    this.arSaved = null;
+    this.placePending = false;
+  }
+
+  /**
+   * Tabletop: the instrument at coffee-table size, its base at table height a
+   * little in front of where the player is looking.
+   */
+  private placeTabletop() {
+    const M = TABLETOP.metresPerUnit;
+    this.metresPerUnit = M;
+    this.rig.rotation.set(0, 0, 0);
+    this.applyScale();
+    // The head in the rig's space (metres), and its facing on the horizontal.
+    const head = this.camera.position;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).setY(0);
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const spot = head.clone().addScaledVector(fwd, TABLETOP.ahead);
+    spot.y = TABLETOP.height;
+    // The orrery's base centre (world) lands on that spot: world = rig + local / M.
+    const box = this.orreryBox;
+    const base = new THREE.Vector3((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2);
+    this.rig.position.copy(base).addScaledVector(spot, -1 / M);
+    this.velocity.set(0, 0, 0);
+    this.grounded = false;
   }
 
   private resetPosition() {
@@ -616,6 +689,11 @@ export class XrMode {
   /** Per frame, before rendering, while presenting. `cpuMs` is the last frame's simulation time. */
   update(dt: number, cpuMs: number) {
     this.input.update();
+    // Tabletop: place the orrery once the head has a pose.
+    if (this.placePending && this.camera.position.lengthSq() > 1e-6) {
+      this.placePending = false;
+      this.placeTabletop();
+    }
     mark('xr.input');
     const a = this.input.actions;
     const M = this.metresPerUnit;

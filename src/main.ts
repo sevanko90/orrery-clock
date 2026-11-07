@@ -739,13 +739,18 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   backend: () => stage.backend,
   discOn: () => !!discworld?.enabled,
   // The VR scene: Discworld on (assembled), without touching the saved setting.
-  sessionStart: () => {
+  sessionStart: (mode) => {
     discBeforeVr = !!discworld?.enabled;
-    setDiscworld(true, false);
-    discworld!.finish();
+    // The VR scene stands on the Disc; the tabletop is the instrument alone.
+    if (mode === 'ar') setDiscworld(false, false);
+    else {
+      setDiscworld(true, false);
+      discworld!.finish();
+    }
   },
   sessionEnd: () => {
-    if (!discBeforeVr) setDiscworld(false, false);
+    // Discworld back as it was (VR turned it on; the tabletop turned it off).
+    if (!!discworld?.enabled !== discBeforeVr) setDiscworld(discBeforeVr, false);
     vrReturn = null;
     vrFlyPending = null;
   },
@@ -763,6 +768,16 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   vrButton.addEventListener('click', () => {
     info.hide();
     xr.enter().catch((err) => console.error('Could not start VR', err));
+  });
+  // Tabletop: the orrery on a real table, over the headset's passthrough.
+  const arButton = document.getElementById('c-ar') as HTMLButtonElement;
+  navigator.xr
+    ?.isSessionSupported('immersive-ar')
+    .then((ok) => (arButton.hidden = !ok))
+    .catch(() => undefined);
+  arButton.addEventListener('click', () => {
+    info.hide();
+    xr.enter('ar').catch((err) => console.error('Could not start the tabletop', err));
   });
 }
 
