@@ -54,3 +54,18 @@ export function allowedError(d: number, px = LOD_PX, f = QUEST_PX_PER_RAD) {
 
 /** Relative hysteresis on LOD switches, so a level doesn't flicker at its boundary. */
 export const LOD_HYSTERESIS = 0.06;
+
+/**
+ * Largest texel of a globe's shared texture layer allowed on screen (pixels
+ * on the eye buffer): nearer than that the globe draws alone with its own map.
+ * (`?layerpx=` overrides, for measuring.)
+ */
+export const LAYER_TEXEL_PX = Number(params.get('layerpx')) || 0.5;
+
+/**
+ * `?sunlitkey=1`: give each night fill its own shader program on the desktop
+ * too (see ownSunlitProgram in sunlit.ts). For measuring only: the desktop
+ * otherwise shades every body with whichever fill compiled first, which the
+ * scrunched scene doesn't, so A/B frames differ on the globes' night sides.
+ */
+export const SUNLIT_KEY_FLAG = params.get('sunlitkey') === '1';

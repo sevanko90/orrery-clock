@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { batchIndirectIndex, int, ivec2, materialMetalness, materialRoughness, materialEmissive, texture, textureLoad, uv, vec4 } from 'three/tsl';
 import type { TextureLayers } from './textureLayers';
+import { ownSunlitProgram } from './sunlit';
 import { lodChain, registerLod, type LodLevel } from './lod';
 import { sphereLevels } from './meshLod';
 import { LOD_HYSTERESIS } from '../xr/scrunch';
@@ -133,7 +134,7 @@ function uberMaterial(src: THREE.Material, kind: Kind, params: THREE.DataTexture
   const m = new THREE.MeshStandardNodeMaterial();
   const from = src as unknown as Record<string, unknown>;
   const to = m as unknown as Record<string, unknown>;
-  for (const k in from) if (k !== '_listeners' && k !== 'uuid' && k !== 'version') to[k] = from[k];
+  for (const k in from) if (k !== '_listeners' && k !== 'uuid' && k !== 'version' && k !== 'customProgramCacheKey') to[k] = from[k];
   (m as { uuid: string }).uuid = THREE.MathUtils.generateUUID();
   m.userData = { ...src.userData };
   // (New objects: the copied ones are the source material's own.)
@@ -157,6 +158,7 @@ function uberMaterial(src: THREE.Material, kind: Kind, params: THREE.DataTexture
     m.colorNode = vec4(texture(layers.texture, uv()).depth(int(p0.z)));
   }
   m.name = `uber-${src.name || 'standard'}`;
+  ownSunlitProgram(m);
   m.needsUpdate = true;
   return m;
 }

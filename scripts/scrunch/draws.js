@@ -89,7 +89,7 @@ export function rows(r, filter = '') {
  * each viewpoint is captured to .telemetry/captures/<view>-<tag>.png after
  * the textures have settled. Diff with scripts/scrunch/imgdiff.mjs.
  */
-export async function shoot(tag, views = ['spawn', 'rim', 'hub', 'far'], at = 600, settle = 8000) {
+export async function shoot(tag, views = ['spawn', 'rim', 'hub', 'far'], at = 1200, settle = 8000) {
   while (!window.orreryDebug) await new Promise((r) => setTimeout(r, 50));
   const s = D().scrunch;
   if (s.ticks >= at) throw new Error(`too late: frame ${s.ticks}`);

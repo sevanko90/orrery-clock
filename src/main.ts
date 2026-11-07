@@ -28,13 +28,14 @@ import { Batcher, raycastLayers } from './scene/batch';
 import { Telemetry, type Command } from './xr/telemetry';
 import { XR } from './xr/config';
 import { TABLE_RADIUS } from './scene/layout';
-import { QUEST_PX_PER_RAD, SCRUNCH_SKIP, scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
+import { LAYER_TEXEL_PX, QUEST_PX_PER_RAD, SCRUNCH_SKIP, SUNLIT_KEY_FLAG, scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
 import { ScrunchDebug } from './xr/scrunchDebug';
 import { MeshLods, beltRock } from './scene/meshLod';
 import { SpriteBatch } from './scene/spriteBatch';
 import { LineBatch } from './scene/lineBatch';
 import { singlePass } from './scene/singlePass';
 import { TextureLayers } from './scene/textureLayers';
+import { ownSunlitProgram } from './scene/sunlit';
 import { viewpoints, yawFacing } from './xr/vrScene';
 import { POINT_UNIFORMS } from './scene/pointSize';
 import type { PanelRow } from './xr/controlPanel';
@@ -126,6 +127,8 @@ function rebuildBatches() {
   discBatch = null;
   const roots = [orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])];
   const on = (part: string) => !SCRUNCH_SKIP.has(part);
+  // Each night fill its own shader program (see ownSunlitProgram).
+  for (const root of roots) root.traverse((o) => { const m = (o as THREE.Mesh).material; if (m && !Array.isArray(m)) ownSunlitProgram(m as THREE.Material); });
   // The globes' surface maps go into layers of one array texture, so they batch together.
   if (on('layers')) {
     globeLayers ??= new TextureLayers(512, 256, 32);
@@ -139,7 +142,7 @@ function rebuildBatches() {
   // (Every batch is drawn on its first frames, shown or not, so its shader is built
   // then, not on first use. Warming them through compileAsync() instead leaves the
   // WebGL backend drawing black.)
-  orreryBatch = new Batcher(roots, stage.scene, { lod: true, uber: on('uber'), noShadows: !quality.shadows, pxPerRad: QUEST_PX_PER_RAD });
+  orreryBatch = new Batcher(roots, stage.scene, { lod: true, uber: on('uber'), noShadows: !quality.shadows, pxPerRad: QUEST_PX_PER_RAD / LAYER_TEXEL_PX });
   fictionSprites?.dispose();
   fictionSprites = new SpriteBatch(on('sprites') ? [...roots, ...trueMarkers.values()] : fiction ? [fiction.root] : [], stage.scene);
   lineBatch?.dispose();
@@ -877,6 +880,7 @@ function step(now: number) {
   elapsed += dt;
 
   if (rebatchDue) rebuildBatches();
+  if (SUNLIT_KEY_FLAG && frames % 30 === 0) bodies.root.traverse((o) => { const m = (o as THREE.Mesh).material; if (m && !Array.isArray(m)) ownSunlitProgram(m as THREE.Material); });
   const simMs = clock.nowMs();
   const jumped = clock.jumps !== seenJumps;
   kinematics.update(simMs, clock.speed === 1, jumped, dt);
@@ -1051,4 +1055,4 @@ const vrPreview = {
 stage.renderer.setAnimationLoop(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, culler, fictionSprites: () => fictionSprites, lineBatch: () => lineBatch, batch: () => orreryBatch }, vr: vrPreview } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, culler, fictionSprites: () => fictionSprites, lineBatch: () => lineBatch, batch: () => orreryBatch, globeLayers: () => globeLayers, rebuild: () => { const t0 = performance.now(); rebuildBatches(); return performance.now() - t0; } }, vr: vrPreview } });
