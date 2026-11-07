@@ -168,6 +168,14 @@ export function buildOrrery(mats: Materials): Orrery {
   const cornice = new THREE.Mesh(new THREE.CylinderGeometry(drumR + 0.3, drumR + 0.18, 0.14, 128, 1, true), mats.brass);
 
   cornice.position.y = H - 0.05;
+  // Close both bands into solid brass rings: with the drum open (VR has no
+  // glass) the footing read as a stray sloped wall, and the cornice as a ring
+  // floating over its posts (its top face can't be seen from below).
+  const footingTop = flatRing(drumR - 0.02, drumR + 0.18, S + 0.16, true, mats.brassDark);
+  const footingInner = innerWall(drumR - 0.02, 0.16, S + 0.08, mats.brassDark);
+  const corniceUnder = flatRing(drumR - 0.02, drumR + 0.18, H - 0.12, false, mats.brass);
+  const corniceInner = innerWall(drumR - 0.02, 0.14, H - 0.05, mats.brass);
+  cabinet.add(footingTop, footingInner, corniceUnder, corniceInner);
   const corniceCap = new THREE.Mesh(new THREE.RingGeometry(drumR - 0.02, drumR + 0.3, 128), mats.brass);
   corniceCap.rotation.x = -Math.PI / 2;
   corniceCap.position.y = H + 0.02;
@@ -342,4 +350,24 @@ export function buildOrrery(mats: Materials): Orrery {
       }
     },
   };
+}
+
+/** A flat ring (annulus) at height `y`, facing up or down. */
+function flatRing(r0: number, r1: number, y: number, up: boolean, mat: THREE.Material) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 128), mat);
+  m.rotation.x = up ? -Math.PI / 2 : Math.PI / 2;
+  m.position.y = y;
+  return m;
+}
+
+/** The inside wall of a band: an open cylinder of radius `r` and height `h`, centred at `y`, facing its axis. */
+function innerWall(r: number, h: number, y: number, mat: THREE.Material) {
+  const g = new THREE.CylinderGeometry(r, r, h, 128, 1, true);
+  // Mirror to turn the faces inward, then point the normals inward too.
+  g.scale(-1, 1, 1);
+  const n = g.attributes.normal as THREE.BufferAttribute;
+  for (let i = 0; i < n.count; i++) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
+  const m = new THREE.Mesh(g, mat);
+  m.position.y = y;
+  return m;
 }
