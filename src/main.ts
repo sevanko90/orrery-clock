@@ -1,5 +1,6 @@
 // First: a seeded Math.random (?seed=N) must be in place before anything draws one.
 import { reseed } from './xr/seed';
+import { mark, startFrame, takeCpuParts } from './perfMarks';
 import './style.css';
 import * as THREE from 'three/webgpu';
 import { registerSW } from 'virtual:pwa-register';
@@ -720,6 +721,13 @@ function countNonFinite() {
   });
   return n;
 }
+function sceneCounts() {
+  let all = 0,
+    shown = 0;
+  stage.scene.traverse(() => all++);
+  stage.scene.traverseVisible(() => shown++);
+  return [all, shown];
+}
 const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS, sky: stage.sky }, {
   pick: xrPick,
   view: viewFrom,
@@ -736,6 +744,8 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
       // Objects with a non-finite world matrix (NaN state hides them and makes picking crawl).
       nonFinite: countNonFinite(),
       cpuParts: takeCpuParts(),
+      // Scene graph size: every object, and those the renderer walks (visible chain).
+      objects: sceneCounts(),
       scrunch,
       // Batches draw as one multi-draw call each; without the extension three falls back to a GL draw per part.
       multiDraw,
@@ -843,32 +853,9 @@ let frameFailed = false;
 let cpuMs = 0;
 /** What the last frame drew (read straight after it, for telemetry). */
 const lastRender = { drawCalls: 0, triangles: 0 };
-/**
- * Where a frame's CPU time goes (ms, summed over the frames since the last
- * telemetry sample): `mark(part)` books the time since the previous mark.
- */
-const cpuParts: Record<string, number> = {};
-let cpuFrames = 0;
-let markAt = 0;
-function mark(part: string) {
-  const t = performance.now();
-  cpuParts[part] = (cpuParts[part] ?? 0) + (t - markAt);
-  markAt = t;
-}
-/** The average split per frame since the last call, then start again. */
-function takeCpuParts() {
-  const avg: Record<string, number> = {};
-  for (const k in cpuParts) {
-    avg[k] = +(cpuParts[k] / Math.max(1, cpuFrames)).toFixed(2);
-    cpuParts[k] = 0;
-  }
-  cpuFrames = 0;
-  return avg;
-}
 function frame(now: number) {
   const t0 = performance.now();
-  markAt = t0;
-  cpuFrames++;
+  startFrame(t0);
   try {
     step(now);
   } catch (err) {

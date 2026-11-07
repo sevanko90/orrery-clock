@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { XR, speedScale } from './config';
+import { mark } from '../perfMarks';
 import { XrInput } from './input';
 import { buildHangar } from './hangar';
 import { groundAt, spawnPoint, walkRadius, drumRadius, liftPoint, WALK_RADIUS, GROUND_Y, UNDERSIDE_Y, type Surface, type Viewpoint } from './vrScene';
@@ -573,6 +574,7 @@ export class XrMode {
   /** Per frame, before rendering, while presenting. `cpuMs` is the last frame's simulation time. */
   update(dt: number, cpuMs: number) {
     this.input.update();
+    mark('xr.input');
     const a = this.input.actions;
     const M = this.metresPerUnit;
     const s = speedScale(M);
@@ -728,6 +730,7 @@ export class XrMode {
       }
     }
 
+    mark('xr.move');
     // The lift: walk into its light (on the shell or the deck) to ride it.
     if (!LEGACY_HALL) {
       const discOn = this.hooks.discOn?.() ?? false;
@@ -747,11 +750,16 @@ export class XrMode {
     u.value += (vig - u.value) * Math.min(1, dt * 6);
     this.vignette.visible = u.value > 0.01;
 
+    mark('xr.lift');
     this.updatePointSizes();
     this.updateSky();
+    mark('xr.sky');
     this.hooks.view?.(this.head());
+    mark('xr.view');
     this.updatePointer(a.select);
+    mark('xr.pointer');
     this.updateWrist(dt, cpuMs);
+    mark('xr.wrist');
 
     const quake = this.hooks.quake();
     if (quake > 0.05) this.input.rumble(Math.min(1, quake * quake), 60);
