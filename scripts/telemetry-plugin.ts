@@ -24,8 +24,20 @@ export function telemetry(root: string): Plugin {
         if (req.method === 'POST' && req.url?.startsWith('/capture')) {
           const name = (new URL(req.url, 'http://x').searchParams.get('name') ?? 'frame').replace(/[^\w.-]/g, '_');
           const chunks: Buffer[] = [];
-          req.on('data', (c: Buffer) => chunks.push(c));
+          // Anyone on the local network can reach the dev server: cap a capture so it can't fill the disk.
+          let size = 0;
+          req.on('data', (c: Buffer) => {
+            size += c.length;
+            if (size > 16_000_000) {
+              res.statusCode = 413;
+              res.end();
+              req.destroy();
+              return;
+            }
+            chunks.push(c);
+          });
           req.on('end', () => {
+            if (size > 16_000_000) return;
             const url = Buffer.concat(chunks).toString('utf8');
             const b64 = url.slice(url.indexOf(',') + 1);
             mkdirSync(join(dir, 'captures'), { recursive: true });
