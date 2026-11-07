@@ -4,7 +4,7 @@ import { XR, speedScale } from './config';
 import { XrInput } from './input';
 import { buildHangar } from './hangar';
 import { groundAt, spawnPoint, walkRadius, drumRadius, liftPoint, WALK_RADIUS, GROUND_Y, UNDERSIDE_Y, type Surface, type Viewpoint } from './vrScene';
-import { Lift } from './lift';
+import { CAPTURE_RADIUS, Lift } from './lift';
 import { shellTopAt } from '../scene/discworld';
 import { TABLE_RADIUS } from '../scene/layout';
 import { Wormhole } from './wormhole';
@@ -154,6 +154,8 @@ export class XrMode {
     scaleTo: number;
     turned: boolean;
     done?: () => void;
+    /** A lift ride's phases: centre in the beam, ride, then glide clear of it. Times in seconds. */
+    lift?: { centre: THREE.Vector3; top: THREE.Vector3; exit: THREE.Vector3 | null; tc: number; tv: number };
   } | null = null;
 
   constructor(
@@ -182,7 +184,12 @@ export class XrMode {
     scene.add(this.rig);
     {
       const at = liftPoint();
-      this.lift = new Lift(at, shellTopAt(at.x, at.y) ?? GROUND_Y - 8, UNDERSIDE_Y, GROUND_Y);
+      const shellY = shellTopAt(at.x, at.y) ?? GROUND_Y - 8;
+      // The shell's normal there, from its slope.
+      const e = 0.05;
+      const dx = ((shellTopAt(at.x + e, at.y) ?? shellY) - (shellTopAt(at.x - e, at.y) ?? shellY)) / (2 * e);
+      const dz = ((shellTopAt(at.x, at.y + e) ?? shellY) - (shellTopAt(at.x, at.y - e) ?? shellY)) / (2 * e);
+      this.lift = new Lift(at, shellY, UNDERSIDE_Y, GROUND_Y, new THREE.Vector3(-dx, 1, -dz).normalize());
       scene.add(this.lift.group);
     }
     this.input = new XrInput(renderer, this.rig);
@@ -404,17 +411,28 @@ export class XrMode {
     this.velocity.set(0, 0, 0);
   }
 
-  /** Ride the lift from `surface`: straight up to the deck or down to the shell, at a steady walking-lift pace. */
+  /**
+   * Ride the lift from `surface`: drawn to the beam's centre, carried
+   * straight up to the deck or down to the shell at a steady pace, then
+   * glided forward clear of the light.
+   */
   private startLift(surface: Surface) {
     const from = this.head();
     const dy = this.lift.destination(surface) - this.rig.position.y;
     const metres = Math.abs(dy) * this.metresPerUnit;
+    const centre = new THREE.Vector3(this.lift.at.x, from.y, this.lift.at.y);
+    const top = centre.clone().setY(from.y + dy);
+    const exit = this.clearOfLift(top, surface === 'shell' ? 'disc' : 'shell');
+    const tc = 0.6,
+      tv = THREE.MathUtils.clamp(metres / 3, 2.5, 6),
+      tp = 0.8;
     this.move = {
       kind: 'lift',
       t: 0,
-      duration: THREE.MathUtils.clamp(metres / 3, 2.5, 6),
+      duration: tc + tv + tp,
+      lift: { centre, top, exit, tc, tv },
       from,
-      to: from.clone().setY(from.y + dy),
+      to: exit ?? top,
       yawFrom: this.rig.rotation.y,
       yawTo: null,
       scaleTo: this.metresPerUnit,
@@ -422,6 +440,38 @@ export class XrMode {
     };
     this.grounded = false;
     this.velocity.set(0, 0, 0);
+  }
+
+  /**
+   * Where to set a player down clear of the beam at the end of a ride
+   * (`top` is their head at the ride's end, standing on `onto`): forward,
+   * the way they face, just past the beam's pull. If that isn't somewhere
+   * to stand (inside the glass drum, past the rim, off the shell), they slide
+   * sideways instead, else straight out from the hub, else back toward it.
+   * The head keeps its height above the ground there.
+   */
+  private clearOfLift(top: THREE.Vector3, onto: Surface): THREE.Vector3 {
+    const M = this.metresPerUnit;
+    const fwd = new THREE.Vector3(0, 0, -1).transformDirection(this.camera.matrixWorld).setY(0);
+    const out = new THREE.Vector3(top.x, 0, top.z).normalize();
+    if (fwd.lengthSq() < 1e-6) fwd.copy(out);
+    fwd.normalize();
+    const reach = CAPTURE_RADIUS + 0.4;
+    const groundY = (x: number, z: number) => {
+      if (onto === 'shell') return shellTopAt(x, z);
+      const r = Math.hypot(x, z);
+      const drum = drumRadius(M);
+      return r <= walkRadius(M) && (drum === null || r >= drum + 0.3) ? GROUND_Y : null;
+    };
+    const side = fwd.clone().addScaledVector(out, -fwd.dot(out));
+    const tries = [fwd, side.lengthSq() > 1e-4 ? side.normalize() : out, out, out.clone().negate()];
+    const feetY = this.lift.destination(onto === 'disc' ? 'shell' : 'disc');
+    for (const d of tries) {
+      const p = top.clone().addScaledVector(d, reach);
+      const g = groundY(p.x, p.z);
+      if (g !== null) return p.setY(top.y + g - feetY);
+    }
+    return top.clone();
   }
 
   /** Desktop preview: show the lift with its hatches open by `open` (0..1). */
@@ -442,10 +492,17 @@ export class XrMode {
       m.turned = true;
     };
     let vignette = 0;
-    if (m.kind === 'lift') {
-      // Eased at both ends, steady between: no lurch.
-      const k = m.t * m.t * (3 - 2 * m.t);
-      this.setHead(this.tmpV.lerpVectors(m.from, m.to, k));
+    if (m.kind === 'lift' && m.lift) {
+      // Centre in the beam, ride (eased at both ends, steady between), glide clear.
+      const L = m.lift;
+      const T = m.t * m.duration;
+      const ease = (x: number) => {
+        const k = THREE.MathUtils.clamp(x, 0, 1);
+        return k * k * (3 - 2 * k);
+      };
+      if (T < L.tc) this.setHead(this.tmpV.lerpVectors(m.from, L.centre, ease(T / L.tc)));
+      else if (T < L.tc + L.tv || !L.exit) this.setHead(this.tmpV.lerpVectors(L.centre, L.top, ease((T - L.tc) / L.tv)));
+      else this.setHead(this.tmpV.lerpVectors(L.top, L.exit, ease((T - L.tc - L.tv) / (m.duration - L.tc - L.tv))));
       vignette = 0.45;
     } else if (m.kind === 'swoop') {
       const k = m.t < 0.5 ? 4 * m.t ** 3 : 1 - (-2 * m.t + 2) ** 3 / 2;

@@ -10,12 +10,18 @@ import type { Surface } from './vrScene';
  * come near; their open mouths are filled with the beam's light, so the
  * player rises through light rather than through the Disc's wood.
  *
- * Three draws: the column and the two irises (each iris is one procedural
+ * A matching brass base on the shell marks the beam's foot. Step within
+ * CAPTURE_RADIUS and the beam takes you: it draws you to its centre, then
+ * carries you.
+ *
+ * Four draws: the column, the two hatches and the base (each a procedural
  * disc: brass rim, eight blades and the light, all in its shader).
  */
 
-/** Column radius (world units); walking within it starts a ride. */
+/** Column radius (world units). */
 export const LIFT_RADIUS = 1.0;
+/** Walking within this of the column's axis (world units) and the beam takes you: centred, then carried. */
+export const CAPTURE_RADIUS = LIFT_RADIUS * 1.6;
 /** How near (world units, horizontally) a hatch starts opening for someone walking up to it. */
 const OPEN_NEAR = 3.2;
 
@@ -37,12 +43,14 @@ export class Lift {
    * @param at the column's position (world x, z)
    * @param shellY top of the shell under it, where the column starts
    * @param undersideY the Disc's underside, @param deckY its top
+   * @param shellNormal the shell's surface normal at the column's foot (the base lies flush on it)
    */
   constructor(
     at: THREE.Vector2,
     readonly shellY: number,
     undersideY: number,
     readonly deckY: number,
+    shellNormal: THREE.Vector3,
   ) {
     this.at = at.clone();
     this.group.name = 'lift';
@@ -77,7 +85,13 @@ export class Lift {
     this.bottom = new Iris();
     this.bottom.mesh.rotation.x = Math.PI / 2;
     this.bottom.mesh.position.y = undersideY;
-    this.group.add(this.top.mesh, this.bottom.mesh);
+    // The base on the shell: the same brass iris, held part open, its light rising into the column.
+    const base = new Iris();
+    base.open = base.target = 0.6;
+    base.step(0);
+    base.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), shellNormal);
+    base.mesh.position.y = shellY + 0.01;
+    this.group.add(this.top.mesh, this.bottom.mesh, base.mesh);
     this.group.visible = false;
   }
 
@@ -95,7 +109,7 @@ export class Lift {
   update(dt: number, head: THREE.Vector3, surface: Surface | null, riding: boolean): boolean {
     this.time.value += dt;
     const d = Math.hypot(head.x - this.at.x, head.z - this.at.y);
-    const inside = d < LIFT_RADIUS * 0.9;
+    const inside = d < CAPTURE_RADIUS;
     // Hatches open for someone walking up to them, and for the whole ride.
     this.top.target = riding || (surface === 'disc' && d < OPEN_NEAR) ? 1 : 0;
     this.bottom.target = riding || (surface === 'shell' && d < OPEN_NEAR + 1) ? 1 : 0;
