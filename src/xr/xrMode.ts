@@ -7,7 +7,9 @@ import { XrInput } from './input';
 import { buildHangar } from './hangar';
 import { groundAt, spawnPoint, walkRadius, drumRadius, liftPoint, WALK_RADIUS, GROUND_Y, UNDERSIDE_Y, type Surface, type Viewpoint } from './vrScene';
 import { CAPTURE_RADIUS, Lift } from './lift';
-import { shellTopAt } from '../scene/discworld';
+import { shellTopAt, type Lore } from '../scene/discworld';
+import type { CardContent } from '../ui/infocard';
+import { InfoPanel } from './infoPanel';
 import { TABLE_RADIUS } from '../scene/layout';
 import { Wormhole } from './wormhole';
 import { ControlPanel, type PanelRow } from './controlPanel';
@@ -24,6 +26,8 @@ export interface XrHit {
   note?: string;
   /** Set when the hit stands for a selectable body. */
   body?: Body;
+  /** Set when the hit is a Discworld figure with lore. */
+  lore?: Lore;
 }
 
 /** What VR needs from the rest of the app. */
@@ -36,7 +40,6 @@ export interface XrHooks {
   view?(head: THREE.Vector3 | null): void;
   /** Lines for the wrist readout: the date shown and the speed. */
   status(): string[];
-  /** Bloom on or off in VR (left stick click), for comparing look against frame rate. */
   /** Telemetry: a sample each second and markers on the left grip (with app state merged in). */
   report?(entry: Record<string, unknown>): void;
   /** Which GPU backend is drawing, for the readout. */
@@ -51,6 +54,8 @@ export interface XrHooks {
   /** The control box's rows, and a press on one. */
   panelRows?(): PanelRow[];
   panelPress?(index: number): void;
+  /** The info card for a pointed-at object (its content, called again for live figures), or null if it has none. */
+  card?(hit: XrHit): (() => CardContent) | null;
 }
 
 /** ?hangar=1: the old VR layout (the hall), for comparison. */
@@ -144,6 +149,8 @@ export class XrMode {
   private sky: THREE.Object3D[];
   private fader: THREE.Mesh;
   readonly panel: ControlPanel;
+  /** The info card, opened with the trigger on a body or a Discworld figure. */
+  readonly info = new InfoPanel();
   private panelAt = 0;
   /** A move in progress (swoop or fade), driven by update(). */
   private move: {
@@ -305,6 +312,7 @@ export class XrMode {
   }
 
   private end() {
+    this.info.hide();
     SPRITE_SCALE.value = 1;
     this.hooks.view?.(null);
     POINT_UNIFORMS.uPointView.value = 1;
@@ -807,10 +815,16 @@ export class XrMode {
       this.raycaster.setFromXRController(hand.ray);
       this.raycaster.camera = this.camera;
       const onPanel = this.panel.hit(this.raycaster);
+      const onCard = onPanel ? null : this.info.hit(this.raycaster);
       if (onPanel) {
         // A press on the panel, not on the world.
         hit = { point: onPanel.point, distance: onPanel.distance, label: '' };
         if (select) this.panel.press();
+        select = false;
+      } else if (onCard) {
+        // On the info card: only its close mark does anything.
+        hit = { point: onCard.hit.point, distance: onCard.hit.distance, label: '' };
+        if (select && onCard.close) this.info.hide();
         select = false;
       } else hit = this.hooks.pick(this.raycaster);
     }
@@ -831,7 +845,14 @@ export class XrMode {
       this.rayDot.scale.setScalar(hit.point.distanceTo(eye) * 0.012);
     }
 
-    if (select) this.selected = hit?.body ?? null;
+    if (select) {
+      this.selected = hit?.body ?? null;
+      // The trigger on something with a card opens it; on nothing, closes it.
+      const card = hit ? (this.hooks.card?.(hit) ?? null) : null;
+      if (card) this.info.show(card, this.rig, this.camera);
+      else if (!hit?.label) this.info.hide();
+    }
+    this.info.update();
 
     // The selected body: a warm halo and its name pinned above it.
     const sel = this.selected;

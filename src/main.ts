@@ -19,7 +19,7 @@ import { meanLongitude, planetPosition, type PlanetId } from './astro/orbits';
 import { ARMS, PLANE_Y } from './scene/layout';
 import { Readout } from './ui/readout';
 import { bindControls } from './ui/controls';
-import { InfoCard } from './ui/infocard';
+import { InfoCard, bodyCard, loreCard } from './ui/infocard';
 import { detectGpu, warnIfNoGpu } from './ui/gpuCheck';
 import { Fiction } from './scene/fiction';
 import { FictionPanel } from './ui/fictionPanel';
@@ -636,7 +636,7 @@ function xrPick(ray: THREE.Raycaster): XrHit | null {
   if (lore) {
     // (Where pickLore's ray landed: a second pass over the whole root would also test the rimfall and dust points.)
     const hit = discworld!.loreHit;
-    if (hit) return { point: hit.point, distance: hit.distance, label: lore.name, note: lore.kind };
+    if (hit) return { point: hit.point, distance: hit.distance, label: lore.name, note: lore.kind, lore };
   }
   return null;
 }
@@ -728,6 +728,11 @@ function sceneCounts() {
 }
 const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS, sky: stage.sky }, {
   pick: xrPick,
+  card: (hit) => {
+    const { body, lore } = hit;
+    if (body) return () => bodyCard(body, clock.nowMs(), armLongitude);
+    return lore ? () => loreCard(lore) : null;
+  },
   view: viewFrom,
   faster: () => clock.setStep(clock.step + 1),
   slower: () => clock.setStep(clock.step - 1),
