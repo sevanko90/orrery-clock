@@ -52,6 +52,11 @@ favour of polish; the renderer stays WebGPURenderer.
 - **Test a hypothesis with a same-build A/B (URL flag or live toggle)
   before building on it.** Across sessions, run noise is ±4 fps and the
   headset slows as it warms (render time crept 4.1 → 5.5 ms in an hour).
+- **Thermal slowdown shows as judder.** A warm headset clocks its CPU down:
+  every part of the frame got ~25–30% slower together (same draws, same
+  objects), dropping 72 → ~60 fps, which on a 72 Hz display judders when
+  the head turns. A uniform slowdown across all parts means clocks, not
+  content: test cool before blaming the scene.
 - **Quest Browser quirks:** `window.requestAnimationFrame` doesn't run
   during an XR session, so anything polling with it (three's GPU readback
   and async shader compile) never finishes unless a timer stands in. The

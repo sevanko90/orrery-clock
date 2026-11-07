@@ -1069,6 +1069,8 @@ function step(now: number) {
     }
   }
   if (fiction) {
+    // (In VR and the tabletop the construction hologram is held to ~9° across, to be read.)
+    fiction.minSignAngle = xr.presenting ? 0.157 : 0.078;
     fiction.update(simMs, dt, elapsed, jumped, viewer(), clock.speed);
     // Build the Demolition's shaders once per display (desktop, or the headset's
     // two-eye variants) as soon as fiction exists: in VR that's the arrival

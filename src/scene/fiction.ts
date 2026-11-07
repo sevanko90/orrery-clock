@@ -961,6 +961,9 @@ class Demolition {
   private arrival = glow(0xffffff, 0);
   /** The construction site: Earth's ghost, the sign, the survey line, and the ships' projector rays. */
   private ghost = new THREE.Mesh(new THREE.SphereGeometry(0.34, 48, 32), new HoloGlobeMaterial());
+  /** Smallest the construction hologram may look (radians across): bigger in VR and the tabletop, to be read. */
+  minSignAngle = 0.078;
+  private parentQ = new THREE.Quaternion();
   private sign = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.43), new HoloSignMaterial(constructionSignTexture()));
   private survey = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1, 6, 1, true), new SurveyLineMaterial(TABLE_RADIUS));
 
@@ -1408,12 +1411,15 @@ class Demolition {
       this.ghost.material.uniforms.uTime.value = this.time;
     }
     if (this.sign.visible) {
-      // Never smaller than ~4.5° across (1.3 units wide): seen from far off, or with the
+      // Never smaller than `minSignAngle` across (1.3 units wide): seen from far off, or with the
       // world at tabletop size, it would shrink to a few pixels. It grows, lifted clear of Earth to match.
-      const boost = Math.max(1, (camera.position.distanceTo(this.earth) * 0.078) / 1.3);
+      const boost = Math.max(1, (camera.position.distanceTo(this.earth) * this.minSignAngle) / 1.3);
       this.sign.scale.setScalar(boost);
       this.sign.position.copy(this.earth).addScaledVector(UP, 0.72 * boost);
-      this.sign.quaternion.copy(camera.quaternion);
+      // Face the viewer: their rotation, taken into the sign's parent's space (copying it as is is
+      // only right while nothing above the sign is turned).
+      (this.sign.parent ?? this.group).getWorldQuaternion(this.parentQ).invert().multiply(camera.quaternion);
+      this.sign.quaternion.copy(this.parentQ);
       this.sign.material.uniforms.uReveal.value = signIn;
       this.sign.material.uniforms.uOpacity.value = site;
       this.sign.material.uniforms.uTime.value = this.time;
@@ -1996,6 +2002,11 @@ export class Fiction {
   }
 
   /** Scene parts whose shaders should be compiled now (once, ahead of first use), or null. */
+  /** Smallest apparent size of on-screen signs (radians across): bigger in VR and the tabletop, where they're read at a distance. */
+  set minSignAngle(a: number) {
+    this.demolition.minSignAngle = a;
+  }
+
   /** The parts whose shaders are worth building ahead of time (the Demolition: its first frame otherwise stalls). */
   get warmupRoot(): THREE.Object3D {
     return this.demolition.group;
