@@ -735,6 +735,7 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
       ...lastRender,
       // Objects with a non-finite world matrix (NaN state hides them and makes picking crawl).
       nonFinite: countNonFinite(),
+      cpuParts: takeCpuParts(),
       scrunch,
       // Batches draw as one multi-draw call each; without the extension three falls back to a GL draw per part.
       multiDraw,
@@ -842,8 +843,32 @@ let frameFailed = false;
 let cpuMs = 0;
 /** What the last frame drew (read straight after it, for telemetry). */
 const lastRender = { drawCalls: 0, triangles: 0 };
+/**
+ * Where a frame's CPU time goes (ms, summed over the frames since the last
+ * telemetry sample): `mark(part)` books the time since the previous mark.
+ */
+const cpuParts: Record<string, number> = {};
+let cpuFrames = 0;
+let markAt = 0;
+function mark(part: string) {
+  const t = performance.now();
+  cpuParts[part] = (cpuParts[part] ?? 0) + (t - markAt);
+  markAt = t;
+}
+/** The average split per frame since the last call, then start again. */
+function takeCpuParts() {
+  const avg: Record<string, number> = {};
+  for (const k in cpuParts) {
+    avg[k] = +(cpuParts[k] / Math.max(1, cpuFrames)).toFixed(2);
+    cpuParts[k] = 0;
+  }
+  cpuFrames = 0;
+  return avg;
+}
 function frame(now: number) {
   const t0 = performance.now();
+  markAt = t0;
+  cpuFrames++;
   try {
     step(now);
   } catch (err) {
@@ -857,6 +882,7 @@ function frame(now: number) {
   }
   cpuMs = performance.now() - t0;
   telemetry.tick(t0);
+  mark('uiTelemetry');
 }
 
 /**
@@ -911,6 +937,7 @@ function step(now: number) {
   for (const p of design.planets) armAngles[p.id] = kinematics.angle(p.tube) + armOffsets[p.id];
   orrery.setArmAngles(armAngles);
   orrery.root.updateMatrixWorld();
+  mark('mechanism');
 
   const simDate = new Date(simMs);
   for (const a of ARMS) {
@@ -918,6 +945,7 @@ function step(now: number) {
     trueMarkers.get(a.id)!.position.set(Math.cos(lon) * a.radius, PLANE_Y, -Math.sin(lon) * a.radius);
   }
   bodies.update(simMs, dt, elapsed);
+  mark('bodies');
   if (playing) {
     if (clock.jumps !== playing.jumps) dropScene();
     else if (simMs >= playing.end) finishScene();
@@ -963,7 +991,7 @@ function step(now: number) {
       pendingFrame = null;
     }
   }
-  // New batches' shaders, built now rather than on their first draw.
+  mark('fiction');
   vrFlyToFocus();
   fictionPanel.update(simMs);
   focus.update(dt);
@@ -978,7 +1006,9 @@ function step(now: number) {
   if (!stage.controls.autoRotate && !focus.flying && now - lastInteraction > 20_000) {
     stage.controls.autoRotate = true;
   }
+  mark('discworld');
   if (xr.presenting) xr.update(dt, cpuMs);
+  mark('xr');
   stage.controls.update(dt);
   // Scale the near plane with zoom: depth precision falls off with distance,
   // so a fixed 0.1 makes thin inlays flicker when zoomed out.
@@ -998,7 +1028,9 @@ function step(now: number) {
     const f = stage.renderer.domElement.height / 2 / Math.tan(THREE.MathUtils.degToRad(stage.camera.fov / 2));
     POINT_UNIFORMS.uPointMax.value = (XR.maxPointPx * f) / 720;
   }
+  mark('misc');
   stage.scene.updateMatrixWorld();
+  mark('matrices');
   const eye = xr.presenting || VRVIEW_FLAG ? (xrHead ?? undefined) : undefined;
   // Scrunched: pick LOD levels by distance from the head (or the desktop camera).
   const lodEye = scrunch ? (xr.presenting ? (xrHead ?? undefined) : stage.camera.position) : undefined;
@@ -1008,7 +1040,9 @@ function step(now: number) {
   if (meshLods && lodEye) meshLods.update(lodEye, [bodies.root, ...(fiction ? [fiction.root] : [])]);
   orreryBatch.sync(eye, cullAngle, lodEye, scrunch && eye && SCRUNCH_SKIP.has('occlude') === false ? (c, r) => discHides(eye, c, r) : undefined);
   discBatch?.sync(eye, cullAngle);
+  mark('sync');
   stage.render(xr.camera);
+  mark('render');
   {
     const r = stage.renderer.info.render as unknown as { drawCalls: number; triangles: number };
     lastRender.drawCalls = r.drawCalls;
