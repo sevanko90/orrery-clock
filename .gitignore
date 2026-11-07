@@ -5,3 +5,4 @@ dist/
 .texture-cache/
 .design-cache-phaseA.json
 .telemetry/
+.scrunch-review/
