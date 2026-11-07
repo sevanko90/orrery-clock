@@ -97,6 +97,7 @@ interface Built {
   hand: Hand;
   group: THREE.Group;
   materials: (THREE.MeshBasicMaterial | THREE.LineBasicMaterial)[];
+  plates: THREE.Mesh[];
 }
 
 export class ControllerLabels {
@@ -112,14 +113,19 @@ export class ControllerLabels {
     this.showing = seconds;
   }
   private tmp = new THREE.Vector3();
+  private head = new THREE.Vector3();
+  private eyeQ = new THREE.Quaternion();
+  private q = new THREE.Quaternion();
   private up = new THREE.Vector3();
 
   /**
    * Per frame. `controllers`: each controller's grip space, the model loaded
-   * into it and its handedness (null until known). `head`: the eyes (world);
-   * `metresPerUnit`: the world scale.
+   * into it and its handedness (null until known). `eyes`: the camera (the
+   * plates turn to face it); `metresPerUnit`: the world scale.
    */
-  update(dt: number, controllers: { grip: THREE.Object3D; model: ModelLike; hand: Hand | null }[], head: THREE.Vector3, metresPerUnit: number) {
+  update(dt: number, controllers: { grip: THREE.Object3D; model: ModelLike; hand: Hand | null }[], eyes: THREE.Object3D, metresPerUnit: number) {
+    const head = eyes.getWorldPosition(this.head);
+    eyes.getWorldQuaternion(this.eyeQ);
     this.showing = Math.max(0, this.showing - dt);
     for (const c of controllers) {
       let b = this.built.find((x) => x.model === c.model);
@@ -153,6 +159,11 @@ export class ControllerLabels {
       this.opacity.set(b.group, o);
       b.group.visible = o > 0.01;
       for (const m of b.materials) m.opacity = o;
+      if (b.group.visible) {
+        // Face the eyes whatever way the controller is turned (seen from above, a plate lying on it is edge-on).
+        b.group.getWorldQuaternion(this.q).invert().multiply(this.eyeQ);
+        for (const p of b.plates) p.quaternion.copy(this.q);
+      }
     }
   }
 
@@ -161,6 +172,7 @@ export class ControllerLabels {
     const group = new THREE.Group();
     group.name = `controller-labels-${hand}`;
     const materials: Built['materials'] = [];
+    const plates: THREE.Mesh[] = [];
     model.updateWorldMatrix(true, true);
     const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
     // Outward is −x for the left hand, +x for the right.
@@ -178,9 +190,8 @@ export class ControllerLabels {
       const mat = new THREE.MeshBasicMaterial({ map: tex.texture, transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
       const plate = new THREE.Mesh(new THREE.PlaneGeometry(PLATE_H * tex.aspect, PLATE_H * lines.length), mat);
       plate.position.copy(at);
-      // Lying back toward the eyes, like a label engraved on a sloping face.
-      plate.rotation.x = -1.0;
       plate.renderOrder = 24;
+      plates.push(plate);
       const lineMat = new THREE.LineBasicMaterial({ color: 0xd9b46a, transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
       const leader = new THREE.Line(new THREE.BufferGeometry().setFromPoints([p, at]), lineMat);
       leader.renderOrder = 24;
@@ -190,7 +201,7 @@ export class ControllerLabels {
     if (!any) return null;
     group.visible = false;
     model.add(group);
-    const b = { model, hand, group, materials };
+    const b = { model, hand, group, materials, plates };
     this.built.push(b);
     return b;
   }

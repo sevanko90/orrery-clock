@@ -800,7 +800,7 @@ export class XrMode {
     this.controllerLabels.update(
       dt,
       this.controllerModels.map(({ slot, model }) => ({ grip: slot.grip, model, hand: (slot.source?.handedness as 'left' | 'right' | undefined) ?? null })),
-      this.head(),
+      this.renderer.xr.getCamera(),
       this.metresPerUnit,
     );
     mark('xr.wrist');
