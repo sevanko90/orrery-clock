@@ -4,3 +4,5 @@ dist/
 .DS_Store
 .texture-cache/
 .design-cache-phaseA.json
+.telemetry/
+.scrunch-review/

@@ -30,6 +30,8 @@ services:
       # Set to true in .env if hot-reload doesn't fire (common on Windows/WSL2)
       - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}
       - CHOKIDAR_INTERVAL=${CHOKIDAR_INTERVAL:-100}
+      # HTTPS=1 in .env: serve over a self-signed certificate (for testing VR on a headset over Wi-Fi)
+      - HTTPS=${HTTPS:-0}
 
     # docker-compose.yml is the source of truth for this environment: all
     # setup happens here, not in a devcontainer postCreateCommand, so the

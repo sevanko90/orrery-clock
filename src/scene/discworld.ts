@@ -1,4 +1,9 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
+import { mergeStaticMeshes } from './merge';
+import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { cos, float, fract, mod, modelViewMatrix, sin, smoothstep, uniform, uv, vec3, vec4 } from 'three/tsl';
+import { particleFloat, particleVec3, particles, pointSize } from './pointSize';
 import type { Materials } from './materials';
 import { TABLE_RADIUS } from './layout';
 import { BOTTOM_PLATE, PLATE_T } from '../mechanism/heights';
@@ -14,7 +19,7 @@ import { BOTTOM_PLATE, PLATE_T } from '../mechanism/heights';
  */
 
 /** Disc underside is at y = 0; the table's top (where the rim sits) is here. */
-const DISC_TOP = BOTTOM_PLATE - PLATE_T / 2;
+export const DISC_TOP = BOTTOM_PLATE - PLATE_T / 2;
 
 // Shell half-axes (turtle frame: +x forward, y up).
 const RX = 18;
@@ -30,7 +35,11 @@ const FOOT_ON_SHELL = RY * Math.sqrt(1 - (ELEPHANT_R / Math.SQRT2 / RX) ** 2 - (
 /** Shell rim height so the elephants' pads just touch the Disc's underside. */
 const SHELL_Y = -ELEPHANT_H * ELEPHANT_SCALE - FOOT_ON_SHELL + 0.25;
 /** Overall heading of the stack, so A'Tuin swims across the default view. */
-const HEADING = THREE.MathUtils.degToRad(-30);
+export const HEADING = THREE.MathUtils.degToRad(-30);
+/** The brass boss on the shell's apex: half-axes (x, height, z) in the turtle's frame. */
+const BOSS = { x: 2.2, h: 0.5, z: 2.0 };
+/** Height of the top of the boss on the shell's crown (world units): where the VR player arrives. */
+export const SHELL_CROWN_Y = SHELL_Y + RY + BOSS.h;
 
 export const DISC_HOME_TARGET = new THREE.Vector3(0, -7, 0);
 export const DISC_HOME_CAMERA = new THREE.Vector3(56, 6, 62);
@@ -423,18 +432,13 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
   head.add(mesh(sphere, m.bronze, [0.6, 0.3, 0], [1.6, 1.75, 1.5]));
   head.add(mesh(sphere, m.bronze, [0.2, 1.3, 0], [1.2, 0.9, 1.2]));
   for (const s of [1, -1]) {
-    const tusk = new THREE.TubeGeometry(
-      new THREE.CatmullRomCurve3([
-        new THREE.Vector3(1.4, -0.7, s * 0.6),
-        new THREE.Vector3(2.0, -1.3, s * 0.72),
-        new THREE.Vector3(2.6, -1.55, s * 0.8),
-        new THREE.Vector3(3.0, -1.4, s * 0.82),
-      ]),
-      16,
-      0.16,
-      8,
-    );
-    head.add(new THREE.Mesh(tusk, m.steel));
+    const tuskCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(1.4, -0.7, s * 0.6),
+      new THREE.Vector3(2.0, -1.3, s * 0.72),
+      new THREE.Vector3(2.6, -1.55, s * 0.8),
+      new THREE.Vector3(3.0, -1.4, s * 0.82),
+    ]);
+    head.add(new THREE.Mesh(tuskGeometry(tuskCurve, 0.16), m.steel));
     head.add(mesh(sphere, m.eye, [1.45, 0.8, s * 1.18], [0.17, 0.17, 0.17]));
     head.add(mesh(new THREE.TorusGeometry(0.22, 0.05, 6, 16), m.brass, [1.45, 0.8, s * 1.2]));
   }
@@ -481,6 +485,25 @@ function buildElephant(m: DiscMaterials, sphere: THREE.SphereGeometry, name: str
   group.add(...ears);
 
   return { group, legs, ears, head, trunk, phase: Math.random() * Math.PI * 2 };
+}
+
+/**
+ * The walkable top of A'Tuin's shell under world point (x, z), or null off
+ * it (the stack is centred on the origin, turned to HEADING), the brass
+ * boss on its apex included. Only the
+ * gentler part of the dome counts: past ~90% of the way out it is too steep
+ * to stand on.
+ */
+export function shellTopAt(x: number, z: number): number | null {
+  const c = Math.cos(HEADING),
+    s = Math.sin(HEADING);
+  const lx = x * c - z * s,
+    lz = x * s + z * c;
+  if ((lx / RX) ** 2 + (lz / RZ) ** 2 > 0.81) return null;
+  // The brass boss on the apex stands up from the dome: stand on it too.
+  const b = 1 - (lx / BOSS.x) ** 2 - (lz / BOSS.z) ** 2;
+  const shell = SHELL_Y + shellHeight(lx, lz);
+  return b > 0 ? Math.max(shell, SHELL_Y + RY + BOSS.h * Math.sqrt(b)) : shell;
 }
 
 /** Height of the shell dome above its rim at (x, z) in the turtle's frame. */
@@ -566,7 +589,7 @@ function buildTurtle(m: DiscMaterials, sphere: THREE.SphereGeometry, lowQuality:
     for (let j = 0; j < 40; j++) rivetSpots.push(shellPoint(t, (j / 40) * Math.PI * 2, 1.012));
   }
   // Boss on the apex.
-  group.add(mesh(sphere, m.brass, [0, RY, 0], [2.2, 0.5, 2.0]));
+  group.add(mesh(sphere, m.brass, [0, RY, 0], [BOSS.x, BOSS.h, BOSS.z]));
   const rivets = new THREE.InstancedMesh(new THREE.SphereGeometry(0.24, 8, 6), m.brass, rivetSpots.length);
   const mtx = new THREE.Matrix4();
   rivetSpots.forEach((p, i) => rivets.setMatrixAt(i, mtx.makeTranslation(p.x, p.y, p.z)));
@@ -632,56 +655,30 @@ function buildRimfall(count: number, pixelScale: number) {
     seed[i] = Math.random();
     rate[i] = 0.24 + Math.random() * 0.12;
   }
-  const geo = new THREE.BufferGeometry();
-  // Positions are computed in the shader; this attribute only sets the count.
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-  geo.setAttribute('aAngle', new THREE.BufferAttribute(angle, 1));
-  geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
-  geo.setAttribute('aRate', new THREE.BufferAttribute(rate, 1));
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, -20, 0), TABLE_RADIUS + 30);
-
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uTime: { value: 0 },
-      uOpacity: { value: 0 },
-      uRadius: { value: TABLE_RADIUS + 0.05 },
-      uTop: { value: DISC_TOP + 0.04 },
-      uScale: { value: pixelScale },
-    },
-    vertexShader: /* glsl */ `
-      attribute float aAngle;
-      attribute float aSeed;
-      attribute float aRate;
-      uniform float uTime, uRadius, uTop, uScale;
-      varying float vAlpha;
-      void main() {
-        float life = fract(uTime * aRate + aSeed);
-        float t = life * 3.6;
-        // Pour outward over the lip, then fall away and spread into spray.
-        float jitter = fract(aSeed * 91.7) - 0.5;
-        float r = uRadius + t * (0.55 + 0.25 * fract(aSeed * 13.1)) + t * t * 0.18;
-        float a = aAngle + jitter * 0.01 * t;
-        float y = uTop - 2.6 * t * t - 0.4 * t;
-        vec4 mv = modelViewMatrix * vec4(cos(a) * r, y, sin(a) * r, 1.0);
-        gl_Position = projectionMatrix * mv;
-        gl_PointSize = uScale * (0.1 + 0.16 * life) / -mv.z;
-        vAlpha = smoothstep(0.0, 0.04, life) * pow(1.0 - life, 1.4);
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform float uOpacity;
-      varying float vAlpha;
-      void main() {
-        float d = length(gl_PointCoord - 0.5);
-        float soft = smoothstep(0.5, 0.0, d);
-        gl_FragColor = vec4(vec3(0.62, 0.8, 1.0) * soft, soft * vAlpha * uOpacity * 0.55);
-      }`,
+  const aAngle = particleFloat(angle).node;
+  const aSeed = particleFloat(seed).node;
+  const aRate = particleFloat(rate).node;
+  const uniforms = { uTime: uniform(0), uOpacity: uniform(0) };
+  const radius = TABLE_RADIUS + 0.05;
+  const top = DISC_TOP + 0.04;
+  const { sprite } = particles(count, (mat) => {
+    const life = fract(uniforms.uTime.mul(aRate).add(aSeed));
+    const t = life.mul(3.6);
+    // Pour outward over the lip, then fall away and spread into spray.
+    const jitter = fract(aSeed.mul(91.7)).sub(0.5);
+    const r = t.mul(fract(aSeed.mul(13.1)).mul(0.25).add(0.55)).add(t.mul(t).mul(0.18)).add(radius);
+    const a = aAngle.add(jitter.mul(0.01).mul(t));
+    const y = float(top).sub(t.mul(t).mul(2.6)).sub(t.mul(0.4));
+    const p = vec3(cos(a).mul(r), y, sin(a).mul(r));
+    mat.positionNode = p;
+    const depth = modelViewMatrix.mul(vec4(p, 1)).z.negate();
+    mat.sizeNode = pointSize(float(pixelScale).mul(life.mul(0.16).add(0.1)).div(depth));
+    const fade = smoothstep(0, 0.04, life).mul(life.oneMinus().pow(1.4));
+    const soft = smoothstep(0, 0.5, uv().sub(0.5).length()).oneMinus();
+    mat.colorNode = vec3(0.62, 0.8, 1.0).mul(soft);
+    mat.opacityNode = soft.mul(fade).mul(uniforms.uOpacity).mul(0.55);
   });
-  const points = new THREE.Points(geo, mat);
-  points.frustumCulled = false;
-  return { points, mat };
+  return { points: sprite, uniforms };
 }
 
 /** Motes of space dust streaming past, so A'Tuin visibly swims. */
@@ -692,36 +689,20 @@ function buildDust(count: number, pixelScale: number) {
     pos[i * 3 + 1] = -12 + (Math.random() - 0.5) * 70;
     pos[i * 3 + 2] = (Math.random() - 0.5) * 160;
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: { uOffset: { value: 0 }, uOpacity: { value: 0 }, uScale: { value: pixelScale } },
-    vertexShader: /* glsl */ `
-      uniform float uOffset, uScale;
-      varying float vFade;
-      void main() {
-        vec3 p = position;
-        p.x = mod(p.x - uOffset + 80.0, 160.0) - 80.0;
-        vFade = 1.0 - smoothstep(55.0, 80.0, abs(p.x));
-        vec4 mv = modelViewMatrix * vec4(p, 1.0);
-        gl_Position = projectionMatrix * mv;
-        gl_PointSize = uScale * 0.12 / -mv.z + 1.0;
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform float uOpacity;
-      varying float vFade;
-      void main() {
-        float d = length(gl_PointCoord - 0.5);
-        float soft = smoothstep(0.5, 0.1, d);
-        gl_FragColor = vec4(vec3(1.0, 0.9, 0.75) * soft, soft * vFade * uOpacity * 0.5);
-      }`,
+  const aPos = particleVec3(pos).node;
+  const uniforms = { uOffset: uniform(0), uOpacity: uniform(0) };
+  const { sprite } = particles(count, (mat) => {
+    const x = mod(aPos.x.sub(uniforms.uOffset).add(80), 160).sub(80);
+    const p = vec3(x, aPos.y, aPos.z);
+    mat.positionNode = p;
+    const fadeX = smoothstep(55, 80, x.abs()).oneMinus();
+    const depth = modelViewMatrix.mul(vec4(p, 1)).z.negate();
+    mat.sizeNode = pointSize(float(pixelScale * 0.12).div(depth).add(1));
+    const soft = smoothstep(0.1, 0.5, uv().sub(0.5).length()).oneMinus();
+    mat.colorNode = vec3(1.0, 0.9, 0.75).mul(soft);
+    mat.opacityNode = soft.mul(fadeX).mul(uniforms.uOpacity).mul(0.5);
   });
-  const points = new THREE.Points(geo, mat);
-  points.frustumCulled = false;
-  return { points, mat };
+  return { points: sprite, uniforms };
 }
 
 // ---- Assembly -----------------------------------------------------------------
@@ -748,6 +729,10 @@ export class Discworld {
   /** Current stroke rate (signed; negative swims backwards). */
   private rate = 0;
   private pickables: THREE.Object3D[] = [];
+  /** Shapes still waiting for a ray index (BVH); a few are built per pick so none stalls a frame. */
+  private bvhQueue: THREE.BufferGeometry[] = [];
+  /** The hit behind the last pickLore() result (where the ray lands), or null. */
+  loreHit: THREE.Intersection | null = null;
   private turtleLore: Lore = {
     id: 'atuin',
     name: "Great A'Tuin",
@@ -769,6 +754,7 @@ export class Discworld {
     const sphere = new THREE.SphereGeometry(1, opts.lowQuality ? 20 : 32, opts.lowQuality ? 14 : 20);
 
     this.stack.rotation.y = HEADING;
+    this.stack.name = 'stack';
     this.root.add(this.stack);
 
     this.turtle = buildTurtle(m, sphere, opts.lowQuality);
@@ -788,11 +774,15 @@ export class Discworld {
 
     // Let the Disc shade the stack from the orrery's Sun above it.
     this.stack.traverse((o) => (o.receiveShadow = true));
+    // Hundreds of small parts: bake each rig's fixed parts together to cut draw calls
+    // (the shins stretch as the legs step, so they stay separate).
+    mergeStaticMeshes(this.stack, new Set(this.elephants.flatMap((e) => e.legs.map((l) => l.shin))));
 
     // World units to pixels at unit distance, for point sprites (40° fov).
     const pixelScale = (innerHeight * opts.pixelRatio) / (2 * Math.tan(THREE.MathUtils.degToRad(20)));
     this.rimfall = buildRimfall(opts.lowQuality ? 3000 : 9000, pixelScale);
     this.dust = buildDust(opts.lowQuality ? 500 : 1400, pixelScale);
+    this.rimfall.points.name = 'rimfall';
     this.root.add(this.rimfall.points);
     this.stack.add(this.dust.points);
 
@@ -802,6 +792,8 @@ export class Discworld {
     under.position.set(-30, -60, 25);
     const key = new THREE.DirectionalLight(0xffcf96, 0);
     key.position.set(60, -8, 45);
+    under.name = 'disc-under';
+    key.name = 'disc-key';
     this.lights.push({ light: under, base: 1.4 }, { light: key, base: 1.1 });
     this.root.add(under, key);
   }
@@ -835,15 +827,31 @@ export class Discworld {
    * Only once the stack has fully assembled.
    */
   pickLore(raycaster: THREE.Raycaster): Lore | null {
+    this.loreHit = null;
     if (this.progress < 1 || !this.enabled) return null;
     // Test every solid part, so a plaque behind the shell or another
     // elephant isn't picked through it.
     if (!this.pickables.length) {
+      const shapes = new Set<THREE.BufferGeometry>();
       this.stack.traverse((o) => {
-        if ((o as THREE.Mesh).isMesh) this.pickables.push(o);
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        this.pickables.push(mesh);
+        shapes.add(mesh.geometry);
+        mesh.raycast = pickRaycast;
       });
+      this.bvhQueue = [...shapes];
+    }
+    // VR picks every frame, and a plain walk tests every triangle of every
+    // part the ray passes near (~92k): milliseconds on a headset. A ray index
+    // per shape makes it a handful of tests.
+    const until = performance.now() + 1;
+    while (this.bvhQueue.length && performance.now() < until) {
+      const g = this.bvhQueue.pop()!;
+      (g as THREE.BufferGeometry & { boundsTree?: MeshBVH }).boundsTree = new MeshBVH(g, { indirect: true }); // (indirect: leaves the shape's index, shared with drawing, untouched)
     }
     const hit = raycaster.intersectObjects(this.pickables, false)[0];
+    this.loreHit = hit ?? null;
     for (let o: THREE.Object3D | null = hit?.object ?? null; o; o = o.parent) {
       const lore = o.userData.lore as Lore | 'atuin' | undefined;
       if (lore) return lore === 'atuin' ? this.turtleLore : lore;
@@ -853,6 +861,11 @@ export class Discworld {
 
   get enabled() {
     return this.target === 1;
+  }
+
+  /** Jump straight to the end of the entrance or exit (VR arrives with the stack already assembled). */
+  finish() {
+    this.progress = this.target;
   }
 
   setEnabled(on: boolean) {
@@ -875,9 +888,9 @@ export class Discworld {
     // arrives (~1.2–2.9 s) and the turtle surfaces alongside (~1.6–4 s).
     this.elephantGroup.position.y = -(1 - smooth(0.3, 0.72, p)) * 45;
     this.turtle.group.position.y = SHELL_Y - (1 - easeOut(smooth(0.4, 1, p))) * 80;
-    this.rimfall.mat.uniforms.uOpacity.value = smooth(0.08, 0.45, p);
-    this.rimfall.mat.uniforms.uTime.value = this.time;
-    this.dust.mat.uniforms.uOpacity.value = smooth(0.5, 1, p);
+    this.rimfall.uniforms.uOpacity.value = smooth(0.08, 0.45, p);
+    this.rimfall.uniforms.uTime.value = this.time;
+    this.dust.uniforms.uOpacity.value = smooth(0.5, 1, p);
     for (const { light, base } of this.lights) light.intensity = base * p;
 
     // Swimming: faster time means harder paddling; reverse time, reverse strokes.
@@ -886,7 +899,7 @@ export class Discworld {
     this.rate = rate;
     this.swimPhase += dt * rate * Math.PI * 2 * 0.35;
     this.swimDistance += dt * rate * 6;
-    this.dust.mat.uniforms.uOffset.value = this.swimDistance;
+    this.dust.uniforms.uOffset.value = this.swimDistance;
     const ph = this.swimPhase;
     this.turtle.front.forEach((f, i) => {
       const s = i === 0 ? 1 : -1;
@@ -932,4 +945,50 @@ export class Discworld {
       if (L.t >= 1) this.lift = null;
     }
   }
+}
+
+const pickSphere = new THREE.Sphere();
+/**
+ * A part's ray test for lore picking: the cheap bounding-sphere reject first
+ * (the indexed test skips it), then the shape's ray index once built, a plain
+ * triangle walk until then.
+ */
+function pickRaycast(this: THREE.Mesh, raycaster: THREE.Raycaster, hits: THREE.Intersection[]) {
+  const g = this.geometry;
+  if (!g.boundingSphere) g.computeBoundingSphere();
+  pickSphere.copy(g.boundingSphere!).applyMatrix4(this.matrixWorld);
+  if (!raycaster.ray.intersectsSphere(pickSphere)) return;
+  acceleratedRaycast.call(this, raycaster, hits);
+}
+
+/**
+ * A tusk along `curve`: a tube of radius `r` for most of its length, then
+ * tapering to a closed, blunt point (a plain tube would end in an open
+ * ring). Seam vertices are welded so the shading runs smooth round it.
+ */
+function tuskGeometry(curve: THREE.Curve<THREE.Vector3>, r: number) {
+  const segs = 24,
+    radial = 10;
+  const tube = new THREE.TubeGeometry(curve, segs, r, radial);
+  const pos = tube.attributes.position;
+  const centre = new THREE.Vector3(),
+    v = new THREE.Vector3();
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    // Full width to 55% of the length, then easing to nothing at the tip.
+    const k = t <= 0.55 ? 1 : Math.pow(Math.cos(((t - 0.55) / 0.45) * (Math.PI / 2)), 0.55);
+    curve.getPointAt(t, centre);
+    for (let j = 0; j <= radial; j++) {
+      const n = i * (radial + 1) + j;
+      v.fromBufferAttribute(pos, n).sub(centre).multiplyScalar(k).add(centre);
+      pos.setXYZ(n, v.x, v.y, v.z);
+    }
+  }
+  tube.deleteAttribute('normal');
+  tube.deleteAttribute('uv');
+  const welded = mergeVertices(tube, 1e-5);
+  welded.computeVertexNormals();
+  // (Steel is untextured, but merged and batched neighbours carry uvs: keep the attribute set the same.)
+  welded.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(welded.attributes.position.count * 2), 2));
+  return welded;
 }

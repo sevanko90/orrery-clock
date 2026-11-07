@@ -1,5 +1,10 @@
+// First: a seeded Math.random (?seed=N) must be in place before anything draws one.
+import { reseed } from './xr/seed';
+import { frameBegin, frameEnd, mark, probeRenderer, probes, startFrame, takeCpuParts, takeFrameStats } from './perfMarks';
+import { VrGlass } from './xr/vrGlass';
+import { captureEye } from './xr/vrCapture';
 import './style.css';
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { registerSW } from 'virtual:pwa-register';
 import { Stage, detectQuality } from './scene/stage';
 import { createMaterials } from './scene/materials';
@@ -15,16 +20,35 @@ import { meanLongitude, planetPosition, type PlanetId } from './astro/orbits';
 import { ARMS, PLANE_Y } from './scene/layout';
 import { Readout } from './ui/readout';
 import { bindControls } from './ui/controls';
-import { InfoCard } from './ui/infocard';
+import { InfoCard, bodyCard, loreCard } from './ui/infocard';
 import { detectGpu, warnIfNoGpu } from './ui/gpuCheck';
 import { Fiction } from './scene/fiction';
 import { FictionPanel } from './ui/fictionPanel';
 import { nextOccurrence, type FictionEntry } from './fiction/catalog';
+import { XrMode, type XrHit } from './xr/xrMode';
+import { DetailCuller } from './xr/detailCull';
+import { Batcher, raycastLayers } from './scene/batch';
+import { Telemetry, type Command } from './xr/telemetry';
+import { XR } from './xr/config';
+import { TABLE_RADIUS } from './scene/layout';
+import { scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
+import { ScrunchDebug } from './xr/scrunchDebug';
+import { MeshLods, beltRock } from './scene/meshLod';
+import { SpriteBatch } from './scene/spriteBatch';
+import { viewpoints, yawFacing } from './xr/vrScene';
+import { POINT_UNIFORMS } from './scene/pointSize';
+import type { PanelRow } from './xr/controlPanel';
+import { FICTION } from './fiction/catalog';
 
 if (import.meta.env.PROD) {
   // Activate new builds immediately; reload once the new worker takes control.
   const updateSW = registerSW({ immediate: true, onNeedRefresh: () => updateSW(true) });
 }
+
+// Start-up progress to the dev server's telemetry log, so a page stuck on the
+// veil (on a headset, with no console to hand) says how far it got.
+const boot = new Telemetry(() => undefined);
+boot.sendNow({ kind: 'boot', stage: 'start', url: location.href });
 
 // Surface failures on the page rather than leaving a silent black canvas.
 function showFatal(msg: string) {
@@ -38,8 +62,19 @@ function showFatal(msg: string) {
   el.textContent = `The orrery couldn't start: ${msg}`;
   document.getElementById('veil')?.classList.add('gone');
 }
-addEventListener('error', (e) => showFatal(e.message || String(e.error)));
-addEventListener('unhandledrejection', (e) => showFatal(String(e.reason?.message ?? e.reason)));
+addEventListener('error', (e) => {
+  showFatal(e.message || String(e.error));
+  boot.sendNow({ kind: 'error', message: e.message, stack: String(e.error?.stack ?? '').slice(0, 2000) });
+});
+addEventListener('unhandledrejection', (e) => {
+  showFatal(String(e.reason?.message ?? e.reason));
+  boot.sendNow({ kind: 'error', message: String(e.reason?.message ?? e.reason), stack: String(e.reason?.stack ?? '').slice(0, 2000) });
+});
+
+const bootStall = setTimeout(() => {
+  boot.sendNow({ kind: 'boot', stage: 'stalled' });
+  showFatal('start-up stalled (the graphics device never came up). Try closing the tab and opening the page again.');
+}, 20_000);
 
 const container = document.getElementById('scene')!;
 const gpu = detectGpu();
@@ -48,12 +83,33 @@ const quality = detectQuality();
 // Without a GPU, drop to the light settings so it at least stays usable.
 if (gpu === 'software') Object.assign(quality, { low: true, pixelRatio: 1, shadows: false, bloom: false });
 const stage = new Stage(container, quality);
+/** The headset's cheaper scene (LODs, merged hall): see xr/scrunch.ts. */
+const scrunch = scrunchOn(quality.headset);
+// The GPU backend (WebGPU, or WebGL 2) comes up asynchronously.
+boot.sendNow({ kind: 'boot', stage: 'renderer' });
+await stage.init();
+const multiDraw = (stage.renderer.backend as { extensions?: { has(name: string): boolean } }).extensions?.has('WEBGL_multi_draw') ?? null;
+boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend, multiDraw });
 const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
+// Scrunched (the headset): no glass in the drum, the mechanism open in its frame.
+const vrGlass = new VrGlass(orrery.root);
+if (scrunch) vrGlass.set(true);
+// Draw the instrument's hundreds of parts as a few batches (one per material).
+const orreryBatch = new Batcher(orrery.root, stage.scene, { lod: scrunch });
+// World matrices are brought up to date once a frame, just before the batches copy them.
+stage.scene.matrixWorldAutoUpdate = false;
+reseed('bodies');
 const bodies = new Bodies(orrery.arms, { lowQuality: quality.low });
 stage.scene.add(bodies.root);
-
+/** Scrunched: spheres (planets, Sun, moons) step down in segments with distance. */
+const meshLods = scrunch ? new MeshLods() : null;
+if (scrunch) {
+  // The belt's 1800 rocks: 20-face indexed rocks instead of 36-face unindexed ones.
+  const belt = bodies.root.getObjectByName('belt') as THREE.InstancedMesh | undefined;
+  if (belt) belt.geometry = beltRock();
+}
 const clock = new SimClock();
 const kinematics = new Kinematics(design);
 
@@ -157,11 +213,14 @@ const { syncDate } = bindControls(clock, unfocus);
 // ---- Discworld mode ------------------------------------------------------------
 // Built on first use so normal mode pays nothing for it.
 let discworld: Discworld | null = null;
+let discBatch: Batcher | null = null;
 const discButton = document.getElementById('c-disc') as HTMLButtonElement;
 const NORMAL_LIMITS = { maxPolar: stage.controls.maxPolarAngle, maxDistance: stage.controls.maxDistance };
-function setDiscworld(on: boolean) {
+function setDiscworld(on: boolean, persist = true) {
   if (on && !discworld) {
-    discworld = new Discworld(mats, { lowQuality: quality.low, pixelRatio: quality.pixelRatio });
+    reseed('discworld');
+    discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio });
+    discBatch = new Batcher(discworld.root, stage.scene);
     stage.scene.add(discworld.root);
   }
   discworld?.setEnabled(on);
@@ -179,6 +238,7 @@ function setDiscworld(on: boolean) {
   info.hide();
   focus.goHome(2.4);
   lastInteraction = performance.now();
+  if (!persist) return;
   try {
     localStorage.setItem('discworld', on ? '1' : '0');
   } catch {
@@ -194,6 +254,7 @@ addEventListener('keydown', (e) => {
 // ---- Moons ---------------------------------------------------------------------
 const moonButton = document.getElementById('c-moons') as HTMLButtonElement;
 function setMoons(on: boolean) {
+  if (on && !bodies.moonsVisible) reseed('moons');
   bodies.setMoonsVisible(on);
   moonButton.setAttribute('aria-pressed', String(on));
   moonButton.title = on ? 'Hide moons (M)' : 'Show moons (M)';
@@ -224,6 +285,8 @@ addEventListener('keydown', (e) => {
 // Built at startup even with the mode off: its dated events (the Vogons every
 // Thursday, the Martians every August) play whenever the clock reaches them.
 let fiction: Fiction | null = null;
+/** Scrunched: fiction's ~130 additive glow sprites drawn as one. */
+let fictionSprites: SpriteBatch | null = null;
 /** Entry whose show was just started: frame it once the jump has landed. */
 let pendingFrame: string | null = null;
 /**
@@ -282,13 +345,122 @@ function finishScene() {
   if (fictionInView(id)) info.hide();
   focus.goHome();
   lastInteraction = performance.now();
+  // In VR: swoop back to where the player was before choosing the scene.
+  vrReturnHome();
 }
+
+// ---- VR: fiction from the control box ---------------------------------------------
+/** Where the VR player was before a fiction scene carried them off (pose and scale). */
+let vrReturn: import('./xr/xrMode').XrPose | null = null;
+/** A fiction entry chosen in VR, waiting for the desktop focus logic to give its viewpoint. */
+let vrFlyPending: string | null = null;
+/** The entry the VR player was last carried to. */
+let vrFictionAt: string | null = null;
+
+/**
+ * Chosen on the control box: play or show the entry exactly as the desktop
+ * catalogue does, then carry the player to the viewpoint the desktop camera
+ * flies to (approached from the player's own direction of view).
+ */
+function vrFiction(entry: FictionEntry) {
+  if (!vrReturn) vrReturn = xr.pose();
+  if (!fiction?.enabled) setFiction(true);
+  const p = xr.pose();
+  const fwd = new THREE.Vector3(-Math.sin(THREE.MathUtils.degToRad(p.yawDeg)), 0, -Math.cos(THREE.MathUtils.degToRad(p.yawDeg)));
+  stage.camera.position.copy(p.head);
+  stage.controls.target.copy(p.head).addScaledVector(fwd, 4);
+  playFiction(entry);
+  vrFlyPending = entry.id;
+  vrFictionAt = entry.id;
+}
+
+/** Back to where the player was before the fiction scene (if they were carried off). */
+function vrReturnHome() {
+  vrFictionAt = null;
+  if (!vrReturn || !xr.presenting) return;
+  const r = vrReturn;
+  vrReturn = null;
+  xr.moveTo(r.head, r.yawDeg, r.metresPerUnit);
+}
+
+/** After the desktop logic has chosen its view: carry the VR player there. */
+function vrFlyToFocus() {
+  if (!vrFlyPending || pendingFrame) return;
+  vrFlyPending = null;
+  const d = focus.destination();
+  if (!d || !xr.presenting) return;
+  xr.moveTo(d.camera, yawFacing(d.target.clone().sub(d.camera).setY(0)));
+}
+
+/** The control box's rows. */
+/** The VR panel's time controls: the desktop's speed slider, play/pause and now, and date steps standing in for its calendar. */
+function timeRows(): PanelRow[] {
+  const paused = clock.speed === 0;
+  return [
+    { label: 'Time', heading: true },
+    { label: 'Speed', slider: { stops: SPEED_STEPS.length, at: clock.step, caption: SPEED_STEPS[clock.step].label } },
+    { label: 'Play', buttons: [{ label: 'Slower' }, { label: paused ? 'Play' : 'Pause', active: paused }, { label: 'Faster' }, { label: 'Now', active: clock.isLive() }] },
+    { label: 'Date', buttons: DATE_STEPS.map((d) => ({ label: d.label })) },
+  ];
+}
+/** Date steps (calendar months and years, so the day of the month holds). */
+const DATE_STEPS: { label: string; years?: number; months?: number; days?: number }[] = [
+  { label: '−yr', years: -1 },
+  { label: '−mo', months: -1 },
+  { label: '−day', days: -1 },
+  { label: '+day', days: 1 },
+  { label: '+mo', months: 1 },
+  { label: '+yr', years: 1 },
+];
+function timePress(i: number, part: number) {
+  if (i === 1) return clock.setStep(part);
+  if (i === 2) {
+    if (part === 0) clock.setStep(clock.step - 1);
+    else if (part === 1) clock.togglePause();
+    else if (part === 2) clock.setStep(clock.step + 1);
+    else clock.resetToNow();
+    return;
+  }
+  const d = DATE_STEPS[part];
+  if (i === 3 && d) {
+    const t = new Date(clock.nowMs());
+    if (d.years) t.setFullYear(t.getFullYear() + d.years);
+    if (d.months) t.setMonth(t.getMonth() + d.months);
+    if (d.days) t.setDate(t.getDate() + d.days);
+    clock.jumpTo(t.getTime());
+  }
+}
+
+function panelRows(): PanelRow[] {
+  return [
+    { label: 'Show', heading: true },
+    { label: 'Moons', on: bodies.moonsVisible },
+    { label: 'Fiction', heading: true },
+    ...FICTION.map((e) => ({ label: e.title, active: vrFictionAt === e.id })),
+    { label: vrReturn ? 'Return' : 'Return to the Disc' },
+  ];
+}
+function panelPress(i: number) {
+  if (i === 1) return setMoons(!bodies.moonsVisible);
+  const entry = FICTION[i - 3];
+  if (entry) return vrFiction(entry);
+  if (i === FICTION.length + 3) {
+    if (playing) dropScene();
+    if (vrReturn) vrReturnHome();
+    else xr.goTo(viewpoints().spawn);
+  }
+}
+
+/** Discworld's state before VR turned it on, to put back after. */
+let discBeforeVr = false;
 
 function setFiction(on: boolean) {
   if (!fiction) {
+    reseed('fiction');
     fiction = new Fiction(bodies, mats);
     hiddenPlaces.forEach((id) => fiction!.setPlaceShown(id, false));
     stage.scene.add(fiction.root);
+    if (scrunch) fictionSprites = new SpriteBatch([fiction.root], stage.scene);
   }
   if (!on && playing) finishScene();
   fiction?.setEnabled(on);
@@ -358,7 +530,8 @@ stage.controls.addEventListener('start', () => {
 stage.controls.addEventListener('end', () => (lastInteraction = performance.now()));
 
 // ---- Picking & hover ---------------------------------------------------------
-const raycaster = new THREE.Raycaster();
+// Also hits meshes drawn through batches (their originals sit on their own layer).
+const raycaster = raycastLayers(new THREE.Raycaster());
 const pointer = new THREE.Vector2();
 /** Pick proxies of the bodies on show (hidden moons can't be picked). */
 function allBodies(): Body[] {
@@ -384,9 +557,13 @@ function bodyOf(o: THREE.Object3D): Body | null {
  * planet's generous pick sphere, so a moon hit wins over its planet.
  */
 function bodyUnderPointer(): Body | null {
+  return bodyHit()?.body ?? null;
+}
+function bodyHit(): { body: Body; hit: THREE.Intersection } | null {
   const hits = raycaster.intersectObjects(activeProxies(), false);
   const hit = hits.find((h) => bodyOf(h.object)?.moon) ?? hits[0];
-  return hit ? bodyOf(hit.object) : null;
+  const body = hit ? bodyOf(hit.object) : null;
+  return body ? { body, hit } : null;
 }
 const hoverTag = document.getElementById('hover-tag')!;
 const canvas = stage.renderer.domElement;
@@ -408,9 +585,33 @@ function pick(clientX: number, clientY: number): Body | null {
 
 /** Planet id whose true-position ring is under the pointer (call after setPointer). */
 function pickMarker(): string | null {
+  return markerHit()?.id ?? null;
+}
+function markerHit(): { id: string; hit: THREE.Intersection } | null {
   if (!markersOn) return null;
   const hit = raycaster.intersectObjects([...trueMarkers.values()], false)[0];
-  return hit ? (markerOwner.get(hit.object) ?? null) : null;
+  const id = hit ? markerOwner.get(hit.object) : undefined;
+  return hit && id ? { id, hit } : null;
+}
+
+/** VR pointer: what a controller's ray is on, with where it lands. */
+function xrPick(ray: THREE.Raycaster): XrHit | null {
+  raycaster.ray.copy(ray.ray);
+  raycaster.camera = ray.camera;
+  const b = bodyHit();
+  if (b) return { point: b.hit.point, distance: b.hit.distance, label: b.body.hoverLabel ?? b.body.name, body: b.body };
+  const m = markerHit();
+  if (m) {
+    const body = bodies.bodies.find((x) => x.id === m.id);
+    return { point: m.hit.point, distance: m.hit.distance, label: `${body?.name ?? m.id}: true position`, body };
+  }
+  const lore = discworld?.pickLore(raycaster);
+  if (lore) {
+    // (Where pickLore's ray landed: a second pass over the whole root would also test the rimfall and dust points.)
+    const hit = discworld!.loreHit;
+    if (hit) return { point: hit.point, distance: hit.distance, label: lore.name, note: lore.kind, lore };
+  }
+  return null;
 }
 
 let downAt: { x: number; y: number; t: number } | null = null;
@@ -457,6 +658,197 @@ canvas.addEventListener('pointermove', (e) => {
 });
 canvas.addEventListener('pointerleave', () => (hoverTag.hidden = true));
 
+// ---- VR ------------------------------------------------------------------------
+// The hall is sized from the instrument as built (cabinet and arms).
+orrery.root.updateMatrixWorld(true);
+const orreryBox = new THREE.Box3().setFromObject(orrery.root);
+const culler = new DetailCuller();
+let cullAngle: number = XR.detailCullAngle;
+/** The VR player's head (world units), for culling small batched parts; null outside VR. */
+let xrHead: THREE.Vector3 | null = null;
+/** What VR skips drawing from where the head is (or, with ?vrview=1, the desktop camera). */
+function viewFrom(head: THREE.Vector3 | null) {
+  if (!head) {
+    culler.restore();
+    xrHead = null;
+    orrery.mechanism.root.visible = true;
+    return;
+  }
+  // From under the Disc its opaque underside hides the whole movement (115 draw calls): skip it.
+  // (Only under it: out past the rim, below table height, the drum shows over the edge.)
+  orrery.mechanism.root.visible = head.y > orreryBox.min.y || Math.hypot(head.x, head.z) > TABLE_RADIUS;
+  culler.setRoots([orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
+  culler.update(head, cullAngle);
+  xrHead = head;
+}
+function countNonFinite() {
+  let n = 0;
+  stage.scene.traverse((o) => {
+    if (!o.matrixWorld.elements.every(Number.isFinite)) n++;
+  });
+  return n;
+}
+function sceneCounts() {
+  let all = 0,
+    shown = 0;
+  stage.scene.traverse(() => all++);
+  stage.scene.traverseVisible(() => shown++);
+  return [all, shown];
+}
+const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS, sky: stage.sky }, {
+  pick: xrPick,
+  ...(import.meta.env.DEV ? { capture: () => (captureDue = `vr-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`) } : {}),
+  faster: () => clock.setStep(clock.step + 1),
+  slower: () => clock.setStep(clock.step - 1),
+  card: (hit) => {
+    const { body, lore } = hit;
+    if (body) return () => bodyCard(body, clock.nowMs(), armLongitude);
+    return lore ? () => loreCard(lore) : null;
+  },
+  view: viewFrom,
+  now: () => clock.resetToNow(),
+  status: () => [new Date(clock.nowMs()).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), SPEED_STEPS[clock.step].label],
+  quake: () => Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0),
+  // Bloom can't run on a multiview frame; the toggle only works without it.
+  report: (entry) => {
+    telemetry.send({
+      ...entry,
+      ...lastRender,
+      // Objects with a non-finite world matrix (NaN state hides them and makes picking crawl).
+      nonFinite: countNonFinite(),
+      cpuParts: takeCpuParts(),
+      frame: takeFrameStats(1000 / ((stage.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate || 72)),
+      hidden: [...forcedHidden.keys()],
+      probes: probes.on,
+      noGlass: vrGlass.on,
+      // Scene graph size: every object, and those the renderer walks (visible chain).
+      objects: sceneCounts(),
+      scrunch,
+      // Batches draw as one multi-draw call each; without the extension three falls back to a GL draw per part.
+      multiDraw,
+      lod: orreryBatch.lodCounts(),
+      sphereLod: meshLods?.counts(),
+      sim: new Date(clock.nowMs()).toISOString(),
+      speed: SPEED_STEPS[clock.step].label,
+      modes: { fiction: !!fiction?.enabled, discworld: !!discworld?.enabled, moons: bodies.moonsVisible, markers: markersOn },
+      playing: playing?.id ?? null,
+      carried: xr.moving,
+    });
+  },
+  backend: () => stage.backend,
+  discOn: () => !!discworld?.enabled,
+  // The VR scene: Discworld on (assembled), without touching the saved setting.
+  sessionStart: () => {
+    discBeforeVr = !!discworld?.enabled;
+    setDiscworld(true, false);
+    discworld!.finish();
+  },
+  sessionEnd: () => {
+    if (!discBeforeVr) setDiscworld(false, false);
+    vrReturn = null;
+    vrFlyPending = null;
+  },
+  timeRows,
+  timePress,
+  panelRows,
+  panelPress,
+});
+{
+  const vrButton = document.getElementById('c-vr') as HTMLButtonElement;
+  navigator.xr
+    ?.isSessionSupported('immersive-vr')
+    .then((ok) => (vrButton.hidden = !ok))
+    .catch(() => undefined);
+  vrButton.addEventListener('click', () => {
+    info.hide();
+    xr.enter().catch((err) => console.error('Could not start VR', err));
+  });
+}
+
+// Dev-server telemetry: headset samples and markers out, workstation commands in.
+const telemetry = new Telemetry((c: Command) => {
+  telemetry.send({ kind: 'command', ...c });
+  switch (c.type) {
+    case 'teleport':
+      return xr.teleport(c.x, c.y, c.z, c.yawDeg);
+    case 'scale':
+      return xr.setScale(c.metresPerUnit);
+    case 'mode':
+      if (c.mode === 'fiction') setFiction(c.on);
+      else if (c.mode === 'discworld') setDiscworld(c.on);
+      else if (c.mode === 'moons') setMoons(c.on);
+      else if (c.mode === 'markers') setMarkers(c.on);
+      else if (c.mode === 'hangar') xr.setHangar(c.on, VRVIEW_FLAG);
+      return;
+    case 'date':
+      return clock.jumpTo(Date.parse(c.iso));
+    case 'speed':
+      return clock.setStep(c.step);
+    case 'cull':
+      cullAngle = c.angle;
+      return;
+    case 'view': {
+      const v = viewpoints()[c.name];
+      if (v) xr.goTo(v);
+      return;
+    }
+    case 'fiction': {
+      const e = FICTION.find((f) => f.id === c.id);
+      if (e) vrFiction(e);
+      return;
+    }
+    case 'return':
+      if (playing) dropScene();
+      return vrReturnHome();
+    case 'hide': {
+      if (!c.on) {
+        for (const o of forcedHidden.get(c.name) ?? []) {
+          o.visible = hiddenWas.get(o) ?? true;
+          hiddenWas.delete(o);
+        }
+        forcedHidden.delete(c.name);
+        return;
+      }
+      const found = findHideable(c.name);
+      if (!found.length) telemetry.send({ kind: 'hide-missing', name: c.name });
+      else if (!forcedHidden.has(c.name)) {
+        for (const o of found) if (!hiddenWas.has(o)) hiddenWas.set(o, o.visible);
+        forcedHidden.set(c.name, found);
+      }
+      return;
+    }
+    case 'probe':
+      probes.on = c.on;
+      return;
+    case 'capture':
+      captureDue = c.name ?? `vr-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`;
+      return;
+    case 'list': {
+      const groups: Record<string, string[]> = {};
+      for (const o of stage.scene.children) groups[o.name || o.type] = o.children.filter((k) => k.name).map((k) => k.name);
+      telemetry.send({ kind: 'scene-list', groups });
+      return;
+    }
+  }
+});
+
+// ---- Scrunch measuring tools (console / automation only) ------------------------
+const debug = new ScrunchDebug({
+  stage,
+  clock,
+  scrunch,
+  batches: () => [orreryBatch, ...(discBatch ? [discBatch] : [])],
+  roots: () => ({ movement: orrery.mechanism.root, orrery: orrery.root, bodies: bodies.root, discworld: discworld?.root, fiction: fiction?.root, hangar: xr.hall }),
+  setMode: (mode, on) => {
+    if (mode === 'fiction') setFiction(on);
+    else if (mode === 'discworld') setDiscworld(on);
+    else if (mode === 'moons') setMoons(on);
+    else if (mode === 'markers') setMarkers(on);
+    else xr.setHangar(on, VRVIEW_FLAG);
+  },
+});
+if (VRVIEW_FLAG) xr.setHangar(true, true);
+
 // ---- Main loop ---------------------------------------------------------------
 const veil = document.getElementById('veil')!;
 let prev = performance.now();
@@ -464,7 +856,29 @@ let elapsed = 0;
 let frames = 0;
 
 let frameFailed = false;
+/** Simulation time of the last frame (ms), for the VR performance readout. */
+let cpuMs = 0;
+/** What the last frame drew (read straight after it, for telemetry). */
+const lastRender = { drawCalls: 0, triangles: 0 };
+if (telemetry.enabled) probeRenderer(stage.renderer);
+/** Objects the workstation has forced hidden (telemetry `hide`), re-applied every frame before drawing. */
+/** A VR screenshot asked for by telemetry (its name), taken after the next frame's render. */
+let captureDue: string | null = null;
+const forcedHidden = new Map<string, THREE.Object3D[]>();
+const hiddenWas = new Map<THREE.Object3D, boolean>();
+/** Objects for a `hide` name: every object with that name, or every top-level object of that type ("type:Sprite"). */
+function findHideable(name: string): THREE.Object3D[] {
+  if (name.startsWith('type:')) return stage.scene.children.filter((o) => o.type === name.slice(5));
+  const found: THREE.Object3D[] = [];
+  stage.scene.traverse((o) => {
+    if (o.name === name) found.push(o);
+  });
+  return found;
+}
 function frame(now: number) {
+  const t0 = performance.now();
+  startFrame(t0);
+  frameBegin(now, t0);
   try {
     step(now);
   } catch (err) {
@@ -473,13 +887,81 @@ function frame(now: number) {
       console.error(err);
       showFatal(err instanceof Error ? err.message : String(err));
     }
+    stage.renderer.setAnimationLoop(null);
     return;
   }
-  requestAnimationFrame(frame);
+  cpuMs = performance.now() - t0;
+  telemetry.tick(t0);
+  mark('uiTelemetry');
+  frameEnd(t0);
+}
+
+/**
+ * Compile the shaders of everything under `root` in the background, hidden
+ * parts included, so their first appearance doesn't stall a frame. (The
+ * renderer only compiles what is visible and in view, so those flags are
+ * lifted for the call and put back straight after; nothing is drawn.)
+ */
+function warmShaders(root: THREE.Object3D) {
+  const restore: [THREE.Object3D, boolean, boolean][] = [];
+  root.traverse((o) => {
+    restore.push([o, o.visible, o.frustumCulled]);
+    o.visible = true;
+    o.frustumCulled = false;
+  });
+  // In VR the WebGL backend waits for the compile by polling with
+  // window.requestAnimationFrame, which the Quest Browser doesn't run during a
+  // session: stand a timer in for it (from before the first poll) until the
+  // compile is done, 10 s at most.
+  const settle = xr.presenting ? standInFrameTimer() : () => undefined;
+  let p: Promise<unknown> | undefined;
+  try {
+    // In VR, against the headset's camera, so the two-eye shader variants are the ones built.
+    const camera = xr.presenting ? stage.renderer.xr.getCamera() : stage.camera;
+    p = stage.renderer.compileAsync(root, camera, stage.scene);
+  } catch (e) {
+    settle();
+    throw e;
+  } finally {
+    for (const [o, visible, culled] of restore) {
+      o.visible = visible;
+      o.frustumCulled = culled;
+    }
+  }
+  if (!p) return settle();
+  const t0 = performance.now();
+  const name = root.name || root.type;
+  telemetry.send({ kind: 'warmup', stage: 'start', name, vr: xr.presenting });
+  const limit = setTimeout(settle, 10_000);
+  p.then(
+    () => telemetry.send({ kind: 'warmup', stage: 'done', name, ms: Math.round(performance.now() - t0) }),
+    (e) => telemetry.send({ kind: 'warmup', stage: 'failed', name, error: String(e) }),
+  ).finally(() => {
+    clearTimeout(limit);
+    settle();
+  });
+}
+
+/** Replace window.requestAnimationFrame with a short timer; returns the undo (safe to call twice). */
+function standInFrameTimer() {
+  const raf = window.requestAnimationFrame;
+  window.requestAnimationFrame = (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 4);
+  let undone = false;
+  return () => {
+    if (undone) return;
+    undone = true;
+    window.requestAnimationFrame = raf;
+  };
 }
 
 function step(now: number) {
-  const dt = Math.min(0.1, (now - prev) / 1000);
+  // (Frozen by the scrunch debug tools: every animation holds still for frame diffs.)
+  // three's animation loop calls once with no timestamp when it (re)starts,
+  // e.g. on leaving VR. A NaN step would poison every animated transform (the
+  // camera, the Discworld) for good, so fall back to the clock; and the XR and
+  // page clocks can differ, so never step backwards either.
+  if (!Number.isFinite(now)) now = performance.now();
+  const dt = debug.dt(THREE.MathUtils.clamp((now - prev) / 1000, 0, 0.1));
   prev = now;
   elapsed += dt;
 
@@ -495,6 +977,7 @@ function step(now: number) {
   for (const p of design.planets) armAngles[p.id] = kinematics.angle(p.tube) + armOffsets[p.id];
   orrery.setArmAngles(armAngles);
   orrery.root.updateMatrixWorld();
+  mark('mechanism');
 
   const simDate = new Date(simMs);
   for (const a of ARMS) {
@@ -502,6 +985,7 @@ function step(now: number) {
     trueMarkers.get(a.id)!.position.set(Math.cos(lon) * a.radius, PLANE_Y, -Math.sin(lon) * a.radius);
   }
   bodies.update(simMs, dt, elapsed);
+  mark('bodies');
   if (playing) {
     if (clock.jumps !== playing.jumps) dropScene();
     else if (simMs >= playing.end) finishScene();
@@ -538,13 +1022,17 @@ function step(now: number) {
     }
   }
   if (fiction) {
-    fiction.update(simMs, dt, elapsed, jumped, stage.camera);
+    fiction.update(simMs, dt, elapsed, jumped, stage.camera, clock.speed);
+    const warm = fiction.takeWarmup();
+    if (warm) warmShaders(warm);
     if (pendingFrame) {
       const points = fiction.framePoints(pendingFrame);
       if (points.length) focus.frame(points, 2.4);
       pendingFrame = null;
     }
   }
+  mark('fiction');
+  vrFlyToFocus();
   fictionPanel.update(simMs);
   focus.update(dt);
   if (discworld) {
@@ -558,26 +1046,67 @@ function step(now: number) {
   if (!stage.controls.autoRotate && !focus.flying && now - lastInteraction > 20_000) {
     stage.controls.autoRotate = true;
   }
+  mark('discworld');
+  if (xr.presenting) xr.update(dt, cpuMs);
+  mark('xr');
   stage.controls.update(dt);
   // Scale the near plane with zoom: depth precision falls off with distance,
   // so a fixed 0.1 makes thin inlays flicker when zoomed out.
-  const near = THREE.MathUtils.clamp(stage.camera.position.distanceTo(stage.controls.target) * 0.006, 0.1, 0.5);
+  const near = debug.near ?? THREE.MathUtils.clamp(stage.camera.position.distanceTo(stage.controls.target) * 0.006, 0.1, 0.5);
   if (Math.abs(near - stage.camera.near) > 0.01) {
     stage.camera.near = near;
     stage.camera.updateProjectionMatrix();
   }
   // An elephant shifting its feet shakes the whole Disc (and the camera).
   const quake = Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0);
-  const shake = quake > 0 ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
+  const shake = quake > 0 && !xr.presenting ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
   if (shake) stage.camera.position.add(shake);
-  stage.render();
+  // ?vrview=1: the desktop camera stands in for the head (hall shown, VR culling run).
+  if (VRVIEW_FLAG && !xr.presenting) {
+    viewFrom(stage.camera.position);
+    // The headset's particle cap, in this canvas's pixels (it's 64 px on a ~720 px/rad Quest eye).
+    const f = stage.renderer.domElement.height / 2 / Math.tan(THREE.MathUtils.degToRad(stage.camera.fov / 2));
+    POINT_UNIFORMS.uPointMax.value = (XR.maxPointPx * f) / 720;
+  }
+  mark('misc');
+  stage.scene.updateMatrixWorld();
+  mark('matrices');
+  const eye = xr.presenting || VRVIEW_FLAG ? (xrHead ?? undefined) : undefined;
+  // Scrunched: pick LOD levels by distance from the head (or the desktop camera).
+  const lodEye = scrunch ? (xr.presenting ? (xrHead ?? undefined) : stage.camera.position) : undefined;
+  // (Before the batches sync, so batched parts follow their hidden originals.)
+  for (const list of forcedHidden.values()) for (const o of list) o.visible = false;
+  fictionSprites?.sync();
+  if (meshLods && lodEye) meshLods.update(lodEye, [bodies.root, ...(fiction ? [fiction.root] : [])]);
+  orreryBatch.sync(eye, cullAngle, lodEye);
+  discBatch?.sync(eye, cullAngle);
+  mark('sync');
+  stage.render(xr.camera);
+  mark('render');
+  if (captureDue && xr.presenting) {
+    const name = captureDue;
+    captureDue = null;
+    captureEye(stage.renderer, stage.scene, name, (stage) => telemetry.sendNow({ kind: 'capture-stage', name, stage })).then(
+      () => telemetry.send({ kind: 'captured', name }),
+      (e) => telemetry.send({ kind: 'capture-failed', name, error: String(e) }),
+    );
+  }
+  {
+    const r = stage.renderer.info.render as unknown as { drawCalls: number; triangles: number };
+    lastRender.drawCalls = r.drawCalls;
+    lastRender.triangles = r.triangles;
+  }
   if (shake) stage.camera.position.sub(shake);
 
   readout.update();
   info.update(simMs);
   syncDate();
 
-  if (++frames === 3) veil.classList.add('gone');
+  if (++frames === 3) {
+    veil.classList.add('gone');
+    clearTimeout(bootStall);
+    boot.sendNow({ kind: 'boot', stage: 'running' });
+  }
 }
 // Restore Discworld mode last: it touches state declared throughout this file.
 {
@@ -590,7 +1119,40 @@ function step(now: number) {
   }
   if (param === '1' || (param !== '0' && saved)) setDiscworld(true);
 }
-requestAnimationFrame(frame);
+/**
+ * Desktop preview of the VR scene (?headset=1&vrview=1): stand the camera at a
+ * VR viewpoint at the default world scale (eye 1.6 m over the Disc), and show
+ * the arrival tunnel and the control box in front of it.
+ */
+const vrPreview = {
+  /** `metresPerUnit` previews another world scale (eye height and near plane as VR would have them). */
+  view(name: string, pitchDeg = -8, metresPerUnit: number = XR.metresPerUnit) {
+    const v = viewpoints()[name];
+    if (!v) throw new Error(`no viewpoint ${name}`);
+    const head = v.head.clone();
+    if (v.onGround) head.y += 1.6 / metresPerUnit;
+    debug.near = 0.1 / metresPerUnit;
+    const yaw = THREE.MathUtils.degToRad(v.yawDeg),
+      pitch = THREE.MathUtils.degToRad(pitchDeg);
+    const look = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+    debug.poseAt(head, look);
+    return { head: head.toArray(), yawDeg: v.yawDeg, note: v.note };
+  },
+  arrival(t = 1.2) {
+    const cam = stage.camera;
+    xr.previewArrival(stage.scene, cam.position, cam.rotation.y, t);
+  },
+  panel(on = true, which: 'time' | 'scene' = 'scene') {
+    xr.previewPanel(on ? stage.camera : null, which);
+  },
+  /** The lift, hatches open by `open` (0..1), or hidden with null. */
+  lift(open: number | null = 1) {
+    xr.previewLift(open);
+  },
+};
+
+// The animation loop is the renderer's, so it carries on at the headset's own rate in VR.
+stage.renderer.setAnimationLoop(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, culler, fictionSprites: () => fictionSprites, batch: () => orreryBatch }, vr: vrPreview } });

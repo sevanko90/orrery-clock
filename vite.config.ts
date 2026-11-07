@@ -1,14 +1,24 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import basicSsl from '@vitejs/plugin-basic-ssl';
+import { telemetry } from './scripts/telemetry-plugin';
 
 // BASE_PATH is set by the GitHub Pages workflow (e.g. "/orrery-clock/").
 const base = process.env.BASE_PATH ?? '/';
+// HTTPS=1 serves the dev server over a self-signed certificate, so a headset on
+// the same Wi-Fi can open it (WebXR only runs in a secure context).
+const https = process.env.HTTPS === '1';
 
 export default defineConfig({
   base,
+  // One three.js build for everything: the example modules (controls, loaders)
+  // import plain 'three', which must resolve to the same WebGPU build the app uses.
+  resolve: { alias: [{ find: /^three$/, replacement: 'three/webgpu' }] },
   server: { host: '0.0.0.0', port: Number(process.env.DEV_PORT ?? 5173) },
   build: { target: 'es2022', chunkSizeWarningLimit: 1200 },
   plugins: [
+    ...(https ? [basicSsl()] : []),
+    telemetry(process.cwd()),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,
@@ -40,6 +50,12 @@ export default defineConfig({
               expiration: { maxEntries: 160 },
               cacheableResponse: { statuses: [0, 200] },
             },
+          },
+          {
+            // The bundled VR controller model (Quest 3): cached when first loaded, so VR works offline after.
+            urlPattern: ({ url }) => url.pathname.includes('/controllers/'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'controllers-v1', cacheableResponse: { statuses: [0, 200] } },
           },
           {
             urlPattern: ({ url }) =>

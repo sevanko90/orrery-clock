@@ -1,4 +1,19 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
+import {
+  BeamMaterial,
+  CracksMaterial,
+  FireballMaterial,
+  GasConeMaterial,
+  HoloGlobeMaterial,
+  HoloSignMaterial,
+  LaneMaterial,
+  ShockwaveMaterial,
+  SlowZoneMaterial,
+  SurveyLineMaterial,
+  WormholeMaterial,
+  astrophageStream,
+  emberCloud,
+} from './fictionShaders';
 import { MOON_SYSTEMS, moonSize, sunlit, type Bodies, type Body } from './bodies';
 import type { Materials } from './materials';
 import { ARMS, PLANE_Y, SUN_RADIUS, TABLE_RADIUS, toWorld } from './layout';
@@ -31,6 +46,7 @@ import {
   WOTW_SHOTS,
   WOTW_SPAN_MS,
   wotwOccurrence,
+  tooFrequent,
 } from '../fiction/catalog';
 
 const DAY = 86_400_000;
@@ -86,54 +102,6 @@ const TRAIL_SPAN = 0.12;
 /** Loose puffs of gas drifting off along each trail. */
 const WAKE_PUFFS = 6;
 
-/**
- * A cone of glowing gas: brightest at the apex (the head of the shot),
- * fading toward the open tail and toward its silhouette edges, with a slow
- * shimmer running down it. Additive and double-sided, so it reads as a
- * volume of light rather than a solid.
- */
-class GasConeMaterial extends THREE.ShaderMaterial {
-  constructor(color: THREE.ColorRepresentation = MARTIAN_GREEN) {
-    super({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      uniforms: {
-        uColor: { value: new THREE.Color(color) },
-        uTime: { value: 0 },
-        uOpacity: { value: 1 },
-      },
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vN;
-        varying vec3 vV;
-        void main() {
-          vUv = uv;
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vN = normalize(normalMatrix * normal);
-          vV = normalize(-mv.xyz);
-          gl_Position = projectionMatrix * mv;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform vec3 uColor;
-        uniform float uTime;
-        uniform float uOpacity;
-        varying vec2 vUv;
-        varying vec3 vN;
-        varying vec3 vV;
-        void main() {
-          float along = vUv.y; // 1 at the head, 0 at the tail
-          float core = pow(abs(dot(normalize(vN), normalize(vV))), 1.6);
-          float shimmer = 0.7 + 0.3 * sin(along * 18.0 - uTime * 4.0 + vUv.x * 12.566);
-          float a = pow(along, 1.6) * core * shimmer * uOpacity * 0.9;
-          gl_FragColor = vec4(uColor * a, a);
-        }
-      `,
-    });
-  }
-}
 
 /** Apex at the origin, opening along −y to a rim of radius 1 at y = −1. */
 const CONE = new THREE.ConeGeometry(1, 1, 32, 1, true).translate(0, -0.5, 0);
@@ -185,7 +153,7 @@ class WarOfTheWorlds {
       head.scale.setScalar(0.07);
       const halo = glow(MARTIAN_GREEN, 0.35);
       halo.scale.setScalar(0.2);
-      const cone = new THREE.Mesh(CONE, new GasConeMaterial());
+      const cone = new THREE.Mesh(CONE, new GasConeMaterial(MARTIAN_GREEN));
       cone.frustumCulled = false;
       const wake = Array.from({ length: WAKE_PUFFS }, () => glow(MARTIAN_GREEN, 0));
       this.shots.push({ head, halo, cone, wake });
@@ -682,94 +650,6 @@ class Breakaway {
 
 // ---- Interstellar -----------------------------------------------------------------------
 
-/**
- * The wormhole as the film shows it: a sphere. Looking into it you see
- * another galaxy, bent and flipped as through a glass ball; round its edge our
- * own sky is wrapped into a thin, bright lensing ring. Both depend on the
- * viewing direction, so the view shifts as the camera moves round it. Faint
- * wisps of light drift over the surface.
- */
-class WormholeMaterial extends THREE.ShaderMaterial {
-  constructor() {
-    super({
-      transparent: true,
-      uniforms: { uTime: { value: 0 } },
-      vertexShader: /* glsl */ `
-        varying vec3 vWorld;
-        varying vec3 vN;
-        varying vec3 vObj;
-        void main() {
-          vObj = position;
-          vec4 w = modelMatrix * vec4(position, 1.0);
-          vWorld = w.xyz;
-          vN = normalize(mat3(modelMatrix) * normal);
-          gl_Position = projectionMatrix * viewMatrix * w;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform float uTime;
-        varying vec3 vWorld;
-        varying vec3 vN;
-        varying vec3 vObj;
-
-        float hash(vec3 p) {
-          p = fract(p * 0.3183099 + 0.1);
-          p *= 17.0;
-          return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-        }
-        // Point stars on the sky in direction d.
-        vec3 stars(vec3 d, float scale, float density) {
-          vec3 g = d * scale;
-          vec3 c = floor(g);
-          vec3 f = fract(g) - 0.5;
-          float h = hash(c);
-          float s = step(1.0 - density, h) * smoothstep(0.22, 0.0, length(f));
-          vec3 tint = mix(vec3(1.0, 0.85, 0.7), vec3(0.75, 0.85, 1.0), hash(c + 7.0));
-          return tint * s * (0.5 + 0.5 * hash(c + 3.0));
-        }
-        // The other galaxy: a warm, mottled band with a bright core.
-        vec3 galaxy(vec3 d) {
-          vec3 axis = normalize(vec3(0.3, 1.0, 0.2));
-          float lat = dot(d, axis);
-          float band = exp(-lat * lat * 40.0);
-          // Fine mottling, and a dark dust lane down the middle of the band.
-          float mottle = 0.72 + 0.28 * sin(d.x * 31.0 + d.z * 17.0) * sin(d.y * 29.0 - d.x * 13.0);
-          float lane = 1.0 - 0.7 * exp(-lat * lat * 900.0);
-          float toCore = max(dot(d, normalize(vec3(0.8, 0.1, -0.5))), 0.0);
-          float core = pow(toCore, 400.0);
-          float bulge = pow(toCore, 30.0);
-          return vec3(0.95, 0.72, 0.48) * band * (0.3 + 0.5 * bulge) * mottle * lane + vec3(1.0, 0.9, 0.75) * core * 1.4;
-        }
-
-        void main() {
-          vec3 N = normalize(vN);
-          vec3 V = normalize(cameraPosition - vWorld);
-          float mu = clamp(dot(N, V), 0.0, 1.0);
-
-          // Through the throat, a fish-eye view of the far side: the whole
-          // sky beyond is squeezed into the ball, and turns as you move round it.
-          vec3 through = normalize(-N - V * 0.35);
-          vec3 col = galaxy(through) + stars(through, 160.0, 0.05) * 1.4 + vec3(0.01, 0.01, 0.025);
-
-          // Round the edge, our own sky wrapped into a thin bright ring.
-          vec3 around = reflect(-V, N);
-          float rim = pow(1.0 - mu, 6.0);
-          col = mix(col, stars(around, 90.0, 0.08) * 1.6 + vec3(0.45, 0.55, 1.0) * 0.18, rim);
-          col += vec3(0.9, 0.95, 1.0) * exp(-pow((mu - 0.06) / 0.04, 2.0)) * 1.1;
-
-          // Thin streaks of light swirling slowly over the surface.
-          vec3 p = normalize(vObj);
-          float a = atan(p.z, p.x);
-          float swirl = sin(a * 2.0 + p.y * 7.0 - uTime * 0.3);
-          float streak = pow(max(swirl, 0.0), 24.0) * (0.5 + 0.5 * sin(a * 5.0 - p.y * 3.0 + uTime * 0.2));
-          col += vec3(0.6, 0.72, 1.0) * streak * 0.35 * (0.25 + 0.75 * (1.0 - mu));
-
-          gl_FragColor = vec4(col, smoothstep(0.0, 0.1, mu));
-        }
-      `,
-    });
-  }
-}
 
 class Wormhole {
   readonly anchor = new THREE.Group();
@@ -846,376 +726,19 @@ function vogonShip(mats: Materials, enamel: THREE.Material) {
   return ship;
 }
 
-/**
- * The hyperspace bypass: a glowing lane that fades out with distance from the
- * orrery's centre, so it runs right across the table and dies away at the rim.
- */
-class LaneMaterial extends THREE.ShaderMaterial {
-  constructor() {
-    super({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      uniforms: {
-        uColor: { value: new THREE.Color(0x9fd8ff) },
-        uOpacity: { value: 0 },
-        uRadius: { value: TABLE_RADIUS },
-      },
-      vertexShader: /* glsl */ `
-        varying vec3 vWorld;
-        void main() {
-          vec4 w = modelMatrix * vec4(position, 1.0);
-          vWorld = w.xyz;
-          gl_Position = projectionMatrix * viewMatrix * w;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform vec3 uColor;
-        uniform float uOpacity;
-        uniform float uRadius;
-        varying vec3 vWorld;
-        void main() {
-          float fade = 1.0 - smoothstep(uRadius * 0.5, uRadius, length(vWorld.xz));
-          float a = uOpacity * fade;
-          gl_FragColor = vec4(uColor * a, a);
-        }
-      `,
-    });
-  }
-}
 
 /** Fades the bypass traffic the same way as the lane. */
 const laneFade = (p: THREE.Vector3) => 1 - THREE.MathUtils.smoothstep(Math.hypot(p.x, p.z), TABLE_RADIUS * 0.5, TABLE_RADIUS);
 
-/** GLSL value noise (2D and 3D) and fBm, for the explosion's shaders. */
-const NOISE_GLSL = /* glsl */ `
-  float hash12(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-  }
-  float vnoise(vec2 p) {
-    vec2 i = floor(p), f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
-  }
-  float fbm(vec2 p) {
-    float v = 0.0, a = 0.5;
-    for (int i = 0; i < 5; i++) { v += a * vnoise(p); p *= 2.03; a *= 0.5; }
-    return v;
-  }
-  float hash13(vec3 p) {
-    p = fract(p * 0.1031);
-    p += dot(p, p.zyx + 31.32);
-    return fract((p.x + p.y) * p.z);
-  }
-  float vnoise3(vec3 p) {
-    vec3 i = floor(p), f = fract(p);
-    vec3 u = f * f * (3.0 - 2.0 * f);
-    return mix(
-      mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), u.x), mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), u.x), u.y),
-      mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), u.x), mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), u.x), u.y),
-      u.z);
-  }
-`;
 
-const PLANE_VERT = /* glsl */ `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
 
-/**
- * The shockwave: a turbulent ring racing outward on a 2×2 plane. White-hot at
- * the front, cooling through orange to blue as it spreads and fades, with a
- * ragged, wobbling edge and haze trailing behind it.
- */
-class ShockwaveMaterial extends THREE.ShaderMaterial {
-  constructor(seed: number) {
-    super({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      uniforms: { uAge: { value: 0 }, uFront: { value: 0 }, uSeed: { value: seed } },
-      vertexShader: PLANE_VERT,
-      fragmentShader: /* glsl */ `
-        uniform float uAge;
-        uniform float uFront;
-        uniform float uSeed;
-        varying vec2 vUv;
-        ${NOISE_GLSL}
-        void main() {
-          vec2 p = vUv * 2.0 - 1.0;
-          float r = length(p);
-          vec2 dir = p / max(r, 1e-4);
-          float wobble = (fbm(dir * 3.0 + uSeed) - 0.5) * 0.18 * uFront;
-          float d = r - (uFront + wobble);
-          float width = 0.02 + 0.1 * uAge;
-          float ring = exp(-d * d / (width * width));
-          float haze = d < 0.0 ? exp(d / (0.3 * uFront + 0.01)) : 0.0;
-          float tex = 0.35 + fbm(p * 7.0 + vec2(uAge * 2.0, uSeed)) * 1.1;
-          float heat = 1.0 - uAge;
-          vec3 cool = vec3(0.35, 0.55, 1.0);
-          vec3 warm = vec3(1.0, 0.5, 0.15);
-          vec3 hot = vec3(1.0, 0.95, 0.8);
-          vec3 col = mix(mix(cool, warm, smoothstep(0.0, 0.6, heat)), hot, smoothstep(0.65, 1.0, heat));
-          float a = (ring * 1.7 + haze * 0.3) * tex * pow(1.0 - uAge, 1.3);
-          gl_FragColor = vec4(col * a, a);
-        }
-      `,
-    });
-  }
-}
 
-/** The fireball: an expanding shell, brightest round its rim. */
-class FireballMaterial extends THREE.ShaderMaterial {
-  constructor() {
-    super({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      uniforms: { uFade: { value: 0 } },
-      vertexShader: /* glsl */ `
-        varying vec3 vN;
-        varying vec3 vV;
-        void main() {
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vN = normalize(normalMatrix * normal);
-          vV = normalize(-mv.xyz);
-          gl_Position = projectionMatrix * mv;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform float uFade;
-        varying vec3 vN;
-        varying vec3 vV;
-        void main() {
-          float mu = abs(dot(normalize(vN), normalize(vV)));
-          float a = (0.25 + 0.75 * pow(1.0 - mu, 2.0)) * uFade;
-          vec3 col = mix(vec3(1.0, 0.45, 0.12), vec3(1.0, 0.92, 0.75), uFade);
-          gl_FragColor = vec4(col * a, a);
-        }
-      `,
-    });
-  }
-}
 
-/** Glowing cracks spreading over the planet in its last seconds. */
-class CracksMaterial extends THREE.ShaderMaterial {
-  constructor() {
-    super({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      uniforms: { uIntensity: { value: 0 }, uTime: { value: 0 } },
-      vertexShader: /* glsl */ `
-        varying vec3 vObj;
-        void main() {
-          vObj = position;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform float uIntensity;
-        uniform float uTime;
-        varying vec3 vObj;
-        ${NOISE_GLSL}
-        void main() {
-          vec3 p = normalize(vObj);
-          float n = vnoise3(p * 5.0) * 0.6 + vnoise3(p * 11.0 + 3.1) * 0.4;
-          float w = 0.012 + 0.06 * uIntensity;
-          float crack = 1.0 - smoothstep(0.0, w, abs(n - 0.5));
-          float flicker = 0.85 + 0.15 * sin(uTime * 23.0 + n * 40.0);
-          float a = (crack * 1.6 + 0.12) * uIntensity * flicker;
-          vec3 col = mix(vec3(1.0, 0.35, 0.05), vec3(1.0, 0.85, 0.4), crack * uIntensity);
-          gl_FragColor = vec4(col * a, a);
-        }
-      `,
-    });
-  }
-}
 
-/**
- * A demolition beam: a hot core with pulses of energy racing down toward
- * Earth, flickering, growing heavier as the moment comes. The cylinder runs
- * from the ship (v = 0) to Earth (v = 1).
- */
-class BeamMaterial extends THREE.ShaderMaterial {
-  constructor(seed: number, edge = new THREE.Color(1.0, 0.8, 0.35), core = new THREE.Color(1.0, 1.0, 0.92)) {
-    super({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      uniforms: { uPower: { value: 0 }, uTime: { value: 0 }, uSeed: { value: seed }, uEdge: { value: edge }, uCore: { value: core } },
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vN;
-        varying vec3 vV;
-        void main() {
-          vUv = uv;
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vN = normalize(normalMatrix * normal);
-          vV = normalize(-mv.xyz);
-          gl_Position = projectionMatrix * mv;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform float uPower;
-        uniform float uTime;
-        uniform float uSeed;
-        uniform vec3 uEdge;
-        uniform vec3 uCore;
-        varying vec2 vUv;
-        varying vec3 vN;
-        varying vec3 vV;
-        void main() {
-          float core = pow(abs(dot(normalize(vN), normalize(vV))), 2.0);
-          float pulses = pow(0.5 + 0.5 * sin(vUv.y * 40.0 - uTime * 14.0 + uSeed), 8.0);
-          float flick = 0.8 + 0.2 * sin(uTime * 37.0 + uSeed * 3.0);
-          float a = uPower * (0.3 + 0.7 * core) * (0.55 + 1.3 * pulses) * flick;
-          vec3 col = mix(uEdge, uCore, core);
-          gl_FragColor = vec4(col * a, a);
-        }
-      `,
-    });
-  }
-}
 
-const HOLO_CYAN = 'vec3(0.45, 0.9, 1.0)';
 
-/**
- * Hologram of the planet that was: a cyan lat-long wireframe with a glowing
- * rim, drawn in from the bottom by a bright scan line, flickering.
- */
-class HoloGlobeMaterial extends THREE.ShaderMaterial {
-  constructor() {
-    super({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      uniforms: { uReveal: { value: 0 }, uOpacity: { value: 0 }, uTime: { value: 0 } },
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vN;
-        varying vec3 vV;
-        void main() {
-          vUv = uv;
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vN = normalize(normalMatrix * normal);
-          vV = normalize(-mv.xyz);
-          gl_Position = projectionMatrix * mv;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform float uReveal;
-        uniform float uOpacity;
-        uniform float uTime;
-        varying vec2 vUv;
-        varying vec3 vN;
-        varying vec3 vV;
-        float gridLine(float x, float n) {
-          float d = 0.5 - abs(fract(x * n) - 0.5);
-          return 1.0 - smoothstep(0.0, 0.05, d);
-        }
-        void main() {
-          if (vUv.y > uReveal) discard;
-          float grid = max(gridLine(vUv.y, 12.0), gridLine(vUv.x, 24.0));
-          float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
-          float edge = exp(-pow((uReveal - vUv.y) / 0.02, 2.0)) * step(uReveal, 0.999);
-          float scan = 0.85 + 0.15 * sin(vUv.y * 200.0 - uTime * 6.0);
-          float flicker = 0.9 + 0.1 * sin(uTime * 41.0);
-          float a = (grid * 0.8 + rim * 0.35 + edge * 1.5) * scan * flicker * uOpacity;
-          vec3 col = mix(${HOLO_CYAN}, vec3(1.0), edge);
-          gl_FragColor = vec4(col * a, a);
-        }
-      `,
-    });
-  }
-}
 
-/**
- * The survey line: a dashed holographic line marching along the route the
- * bypass will take, spreading out from Earth's position to the table's rim.
- */
-class SurveyLineMaterial extends THREE.ShaderMaterial {
-  constructor() {
-    super({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      uniforms: { uReveal: { value: 0 }, uOpacity: { value: 0 }, uTime: { value: 0 }, uRadius: { value: TABLE_RADIUS } },
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        varying vec3 vWorld;
-        void main() {
-          vUv = uv;
-          vec4 w = modelMatrix * vec4(position, 1.0);
-          vWorld = w.xyz;
-          gl_Position = projectionMatrix * viewMatrix * w;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform float uReveal;
-        uniform float uOpacity;
-        uniform float uTime;
-        uniform float uRadius;
-        varying vec2 vUv;
-        varying vec3 vWorld;
-        void main() {
-          if (abs(vUv.y - 0.5) * 2.0 > uReveal) discard;
-          float dash = step(0.45, fract(vUv.y * 160.0 - uTime * 1.5));
-          float fade = 1.0 - smoothstep(uRadius * 0.5, uRadius, length(vWorld.xz));
-          float a = dash * fade * uOpacity * 0.9;
-          vec3 col = mix(vec3(1.0, 0.85, 0.25), ${HOLO_CYAN}, 0.35);
-          gl_FragColor = vec4(col * a, a);
-        }
-      `,
-    });
-  }
-}
 
-/**
- * The construction sign, as a hologram: hazard stripes and lettering drawn
- * once to a canvas, shown with scanlines, flicker, an occasional glitch, and
- * wiped in from the left.
- */
-class HoloSignMaterial extends THREE.ShaderMaterial {
-  constructor(map: THREE.Texture) {
-    super({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      uniforms: { uMap: { value: map }, uReveal: { value: 0 }, uOpacity: { value: 0 }, uTime: { value: 0 } },
-      vertexShader: PLANE_VERT,
-      fragmentShader: /* glsl */ `
-        uniform sampler2D uMap;
-        uniform float uReveal;
-        uniform float uOpacity;
-        uniform float uTime;
-        varying vec2 vUv;
-        void main() {
-          if (vUv.x > uReveal) discard;
-          vec2 uv = vUv;
-          // Now and then a band of the sign slips sideways.
-          float glitch = step(0.93, fract(sin(floor(uTime * 7.0)) * 43758.5453));
-          uv.x += glitch * 0.012 * sin(uv.y * 70.0 + uTime * 30.0);
-          vec4 tex = texture2D(uMap, uv);
-          float scan = 0.7 + 0.3 * sin(vUv.y * 140.0 - uTime * 5.0);
-          float flicker = 0.88 + 0.12 * sin(uTime * 37.0) * sin(uTime * 13.0);
-          float edge = exp(-pow((uReveal - vUv.x) / 0.015, 2.0)) * step(uReveal, 0.999);
-          float a = (tex.a * scan * flicker + edge * 0.8) * uOpacity;
-          vec3 col = tex.rgb + vec3(edge);
-          gl_FragColor = vec4(col * a, a);
-        }
-      `,
-    });
-  }
-}
 
 /** Draw the construction sign: hazard-striped frame, lettering, on a clear ground. */
 function constructionSignTexture() {
@@ -1278,8 +801,13 @@ const LEAVING = { shipStagger: 0.4, shipTakes: 3.5, bypassFrom: 1, bypassTo: 6, 
 const BLAST = { shock: 3.5, echo: 2.6, fireball: 1.3, embers: 4.5 };
 const EMBERS = 60;
 
+const CHUNK_DUMMY = new THREE.Object3D();
+
+
 interface Chunk {
-  mesh: THREE.Mesh;
+  /** Which instanced mesh holds it, and its slot there. */
+  mesh: THREE.InstancedMesh;
+  slot: number;
   size: number;
   /** Stretch, so pieces are shards and slabs rather than balls. */
   shape: THREE.Vector3;
@@ -1380,6 +908,14 @@ interface Chunk {
 class Demolition {
   readonly group = new THREE.Group();
   readonly body: Body;
+  /**
+   * Set once per occurrence when the fleet arrives: the owner should compile
+   * the whole scene's shaders now, so the explosion's first frame (flash,
+   * fireball, shockwaves, pieces, embers, all drawn for the first time)
+   * doesn't stall.
+   */
+  warmupDue = false;
+  private warmedFor = -1;
   /** The bypass has its own card. */
   readonly bypassBody: Body;
   private bypassFocus = new THREE.Group();
@@ -1400,7 +936,11 @@ class Demolition {
   /** The ships themselves can be hovered ("Vogon Constructor Fleet") and clicked for the scene's card. */
   readonly fleetBody: Body;
   private chunks: Chunk[] = [];
-  private embers: { sprite: THREE.Sprite; dir: THREE.Vector3; speed: number }[] = [];
+  /** The chunks, drawn as two instanced meshes (Earth's surface, molten rock). */
+  private chunkMeshes: THREE.InstancedMesh[] = [];
+  private embers: { dir: THREE.Vector3; speed: number }[] = [];
+  /** The embers, one point cloud. */
+  private emberCloud: ReturnType<typeof emberCloud>;
   private flash = glow(0xfff3d0);
   private shock = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new ShockwaveMaterial(1.7));
   private echo = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new ShockwaveMaterial(5.3));
@@ -1422,7 +962,7 @@ class Demolition {
   /** The construction site: Earth's ghost, the sign, the survey line, and the ships' projector rays. */
   private ghost = new THREE.Mesh(new THREE.SphereGeometry(0.34, 48, 32), new HoloGlobeMaterial());
   private sign = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.43), new HoloSignMaterial(constructionSignTexture()));
-  private survey = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1, 6, 1, true), new SurveyLineMaterial());
+  private survey = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1, 6, 1, true), new SurveyLineMaterial(TABLE_RADIUS));
 
   private lane: THREE.Mesh<THREE.CylinderGeometry, LaneMaterial>;
   private traffic: THREE.Sprite[] = [];
@@ -1465,27 +1005,41 @@ class Demolition {
     new ProgressiveTexture('earth', (t) => ((surface.map = t), (surface.needsUpdate = true))).start('2k');
     sunlit(surface);
     const molten = new THREE.MeshStandardMaterial({ color: 0x5a1e0a, emissive: 0xff5a14, emissiveIntensity: 0.8, roughness: 1, flatShading: true });
+    // One draw call per material rather than one per chunk (they all move by hand,
+    // so their bounds are never up to date: no culling).
     const chunkGeo = new THREE.IcosahedronGeometry(1, 0);
+    const hotCount = Math.ceil(CHUNKS / 5);
+    const [cold, hotMesh] = [new THREE.InstancedMesh(chunkGeo, surface, CHUNKS - hotCount), new THREE.InstancedMesh(chunkGeo, molten, hotCount)];
+    this.chunkMeshes = [cold, hotMesh];
+    for (const m of this.chunkMeshes) {
+      m.visible = false;
+      m.frustumCulled = false;
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.group.add(m);
+    }
+    let coldSlot = 0,
+      hotSlot = 0;
     for (let i = 0; i < CHUNKS; i++) {
       const hot = i % 5 === 0;
-      const mesh = new THREE.Mesh(chunkGeo, hot ? molten : surface);
-      mesh.visible = false;
       const r = () => 0.45 + Math.random() * 0.9;
       this.chunks.push({
-        mesh,
+        mesh: hot ? hotMesh : cold,
+        slot: hot ? hotSlot++ : coldSlot++,
         size: (hot ? 0.015 : 0.02) + Math.random() * 0.04,
         shape: new THREE.Vector3(r(), r() * 0.6, r()),
         dir: new THREE.Vector3().randomDirection(),
         speed: 0.5 + Math.random() * 0.9,
         spin: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(4),
       });
-      this.group.add(mesh);
     }
+    const emberColors = new Float32Array(EMBERS * 3);
+    const c = new THREE.Color();
     for (let i = 0; i < EMBERS; i++) {
-      const sprite = glow(i % 3 ? 0xff8a30 : 0xffe0a0, 0);
-      this.embers.push({ sprite, dir: new THREE.Vector3().randomDirection(), speed: 1 + Math.random() * 2 });
-      this.group.add(sprite);
+      this.embers.push({ dir: new THREE.Vector3().randomDirection(), speed: 1 + Math.random() * 2 });
+      c.set(i % 3 ? 0xff8a30 : 0xffe0a0).toArray(emberColors, i * 3);
     }
+    this.emberCloud = emberCloud(emberColors);
+    this.group.add(this.emberCloud.sprite);
 
     // Shockwaves lie a little off the plane, at different tilts, for depth.
     this.shock.rotation.set(-Math.PI / 2 + 0.28, 0, 0.2);
@@ -1494,7 +1048,7 @@ class Demolition {
     this.cracks.renderOrder = 2;
 
     // The hyperspace bypass, with traffic already using it.
-    this.lane = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 1, 10, 1, true), new LaneMaterial());
+    this.lane = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 1, 10, 1, true), new LaneMaterial(TABLE_RADIUS));
     this.lane.frustumCulled = false;
     for (let i = 0; i < 14; i++) {
       const car = glow(0xd8f0ff, 0);
@@ -1632,6 +1186,11 @@ class Demolition {
       return;
     }
 
+    if (show && toBlast < 0 && this.warmedFor !== start) {
+      this.warmedFor = start;
+      this.warmupDue = true;
+    }
+
     this.bodies.positionOf('earth', this.earth);
     this.focus.position.copy(this.earth);
     const spot = new THREE.Vector3();
@@ -1664,7 +1223,8 @@ class Demolition {
       if (moving > 0.02) {
         streak.visible = true;
         streak.position.copy(ship.position);
-        streak.quaternion.setFromUnitVectors(DOWN, UP);
+        // The trail streams behind the ship: above it coming down, below it going up.
+        streak.quaternion.setFromUnitVectors(DOWN, leave > 0 ? DOWN : UP);
         const len = 0.3 + 2.5 * moving;
         streak.scale.set(0.06, len, 0.06);
         streak.material.uniforms.uOpacity.value = 1.6 * moving;
@@ -1785,12 +1345,18 @@ class Demolition {
       mesh.material.uniforms.uFront.value = 1 - (1 - u) ** 3;
     }
     const e = age / BLAST.embers;
-    for (const em of this.embers) {
-      em.sprite.visible = e < 1;
-      if (e >= 1) continue;
-      em.sprite.position.copy(this.earth).addScaledVector(em.dir, 0.3 + em.speed * (1 - Math.exp(-age * 1.3)) * 1.1);
-      em.sprite.scale.setScalar(0.05 * (1 - e) + 0.01);
-      em.sprite.material.opacity = (1 - e) ** 1.5;
+    this.emberCloud.sprite.visible = e < 1;
+    if (e < 1) {
+      const pos = this.emberCloud.positions;
+      const p = new THREE.Vector3();
+      this.embers.forEach((em, i) => {
+        p.copy(this.earth).addScaledVector(em.dir, 0.3 + em.speed * (1 - Math.exp(-age * 1.3)) * 1.1);
+        pos.setXYZ(i, p.x, p.y, p.z);
+      });
+      pos.needsUpdate = true;
+      const u = this.emberCloud.uniforms;
+      u.uSize.value = 0.05 * (1 - e) + 0.01;
+      u.uOpacity.value = (1 - e) ** 1.5;
     }
 
     // The pieces: a fast burst (real time, if it was seen), then a slow drift and fade (sim time).
@@ -1798,14 +1364,20 @@ class Demolition {
     const scatter = toBlast >= 0 && this.active;
     const burst = 1 - Math.exp(-(seen ? age : 99) * 0.9);
     const fade = 1 - ramp(hoursSince, 1.2, VOGON.end - VOGON.demolish);
-    for (const c of this.chunks) {
-      c.mesh.visible = scatter && fade > 0.02;
-      if (!c.mesh.visible) continue;
-      const out = 0.22 + c.speed * (1.1 * burst + 0.12 * hoursSince);
-      c.mesh.position.copy(this.earth).addScaledVector(c.dir, out);
-      const turn = Math.min(seen ? age : 30, 30) * 0.4 + hoursSince * 3;
-      c.mesh.rotation.set(c.spin.x * turn, c.spin.y * turn, c.spin.z * turn);
-      c.mesh.scale.copy(c.shape).multiplyScalar(c.size * fade);
+    const scattering = scatter && fade > 0.02;
+    for (const m of this.chunkMeshes) m.visible = scattering;
+    if (scattering) {
+      const o = CHUNK_DUMMY;
+      for (const c of this.chunks) {
+        const out = 0.22 + c.speed * (1.1 * burst + 0.12 * hoursSince);
+        o.position.copy(this.earth).addScaledVector(c.dir, out);
+        const turn = Math.min(seen ? age : 30, 30) * 0.4 + hoursSince * 3;
+        o.rotation.set(c.spin.x * turn, c.spin.y * turn, c.spin.z * turn);
+        o.scale.copy(c.shape).multiplyScalar(c.size * fade);
+        o.updateMatrix();
+        c.mesh.setMatrixAt(c.slot, o.matrix);
+      }
+      for (const m of this.chunkMeshes) m.instanceMatrix.needsUpdate = true;
     }
 
     // The construction site, while the fleet waits: Earth's ghost drawn in,
@@ -1983,59 +1555,11 @@ class Demolition {
 
 const ASTROPHAGE = 600;
 
-/**
- * Astrophage in transit: points flowing between two ends, half outbound and
- * half returning, fanning out toward Venus. Positions are worked out in the
- * shader from the two ends, so the stream follows Venus round its orbit.
- */
-class AstrophageMaterial extends THREE.ShaderMaterial {
-  constructor() {
-    super({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      uniforms: {
-        uFrom: { value: new THREE.Vector3() },
-        uTo: { value: new THREE.Vector3() },
-        uTime: { value: 0 },
-        uScale: { value: 110 },
-        uColor: { value: new THREE.Color(0xff3b2e) },
-      },
-      vertexShader: /* glsl */ `
-        attribute float aT;
-        attribute float aDir;
-        attribute vec3 aSeed;
-        uniform vec3 uFrom;
-        uniform vec3 uTo;
-        uniform float uTime;
-        uniform float uScale;
-        varying float vA;
-        void main() {
-          float t = fract(aT + uTime * 0.035 * aDir);
-          vec3 p = uFrom + (uTo - uFrom) * t + aSeed * (0.03 + 0.22 * t * t);
-          vec4 mv = modelViewMatrix * vec4(p, 1.0);
-          gl_Position = projectionMatrix * mv;
-          gl_PointSize = uScale * (0.6 + 0.4 * fract(aT * 7.31)) / -mv.z;
-          vA = smoothstep(0.0, 0.06, t) * smoothstep(1.0, 0.9, t);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform vec3 uColor;
-        varying float vA;
-        void main() {
-          float d = length(gl_PointCoord - 0.5);
-          float a = pow(smoothstep(0.5, 0.0, d), 1.5) * vA * 0.6;
-          gl_FragColor = vec4(uColor * a, a);
-        }
-      `,
-    });
-  }
-}
 
 class PetrovaLine {
   readonly object = new THREE.Group();
   readonly body: Body;
-  private mat = new AstrophageMaterial();
+  private stream: ReturnType<typeof astrophageStream>;
   private haze = glow(0xff4a35, 0.2);
   private sleeve: THREE.Mesh;
   /** A faint continuous glow along the line, under the particles. */
@@ -2049,7 +1573,6 @@ class PetrovaLine {
 
   constructor(private bodies: Bodies) {
     this.object.name = PETROVA_LINE.id;
-    const geo = new THREE.BufferGeometry();
     const t = new Float32Array(ASTROPHAGE);
     const dir = new Float32Array(ASTROPHAGE);
     const seed = new Float32Array(ASTROPHAGE * 3);
@@ -2061,13 +1584,8 @@ class PetrovaLine {
       v.y += dir[i] * 0.15;
       seed.set([v.x, v.y, v.z], i * 3);
     }
-    geo.setAttribute('aT', new THREE.BufferAttribute(t, 1));
-    geo.setAttribute('aDir', new THREE.BufferAttribute(dir, 1));
-    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ASTROPHAGE * 3), 3));
-    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e4);
-    const points = new THREE.Points(geo, this.mat);
-    points.frustumCulled = false;
+    this.stream = astrophageStream(ASTROPHAGE, t, dir, seed);
+    const points = this.stream.sprite;
 
     // An invisible sleeve along the line for hovering and clicking.
     this.sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1, 8, 1, true), new THREE.MeshBasicMaterial({ visible: false }));
@@ -2100,9 +1618,9 @@ class PetrovaLine {
     axis.divideScalar(len);
     // Leave from the Sun's surface, not its centre.
     this.from.copy(SUN).addScaledVector(axis, SUN_RADIUS * 1.02);
-    this.mat.uniforms.uFrom.value.copy(this.from);
-    this.mat.uniforms.uTo.value.copy(this.venus);
-    this.mat.uniforms.uTime.value = elapsed;
+    this.stream.uniforms.uFrom.value.copy(this.from);
+    this.stream.uniforms.uTo.value.copy(this.venus);
+    this.stream.uniforms.uTime.value = elapsed;
     const span = len - SUN_RADIUS;
     this.mid.position.copy(this.from).addScaledVector(axis, span / 2);
     this.sleeve.position.copy(this.mid.position);
@@ -2324,38 +1842,6 @@ class TychoStationPlace extends ExpansePlace {
   }
 }
 
-/** The slow zone seen through the Ring: deep blue, rippling outward, brighter toward the rim. */
-class SlowZoneMaterial extends THREE.ShaderMaterial {
-  constructor() {
-    super({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      uniforms: { uTime: { value: 0 } },
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform float uTime;
-        varying vec2 vUv;
-        void main() {
-          vec2 p = vUv * 2.0 - 1.0;
-          float r = length(p);
-          float ripple = 0.5 + 0.5 * sin(r * 28.0 - uTime * 1.2);
-          float swirl = (0.5 + 0.5 * sin(atan(p.y, p.x) * 6.0 + r * 10.0 - uTime * 0.3)) * smoothstep(0.0, 0.4, r);
-          // (Linear colour: the output pass brightens these a lot.)
-          vec3 col = mix(vec3(0.001, 0.002, 0.007), vec3(0.015, 0.045, 0.16), pow(ripple, 3.0) * 0.6 + swirl * 0.25);
-          col += vec3(0.15, 0.3, 0.7) * pow(r, 10.0) * 0.5;
-          gl_FragColor = vec4(col, 0.9);
-        }
-      `,
-    });
-  }
-}
 
 /** The Ring: dark alien metal round a shimmering disc, facing the Sun, beyond Uranus. */
 class RingGatePlace extends ExpansePlace {
@@ -2476,22 +1962,40 @@ export class Fiction {
     this.refresh();
   }
 
+  /** Recurring events skipped at the clock's current speed (they'd come round too often to be anything but noise). */
+  private skipped = new Set<string>();
+
   private refresh() {
     const inScene = (id: string) => this.playing === null || this.playing === id;
+    // An event shows when no other scene is playing and, unless it's the one playing, it isn't skipped for coming round too often.
+    const shows = (id: string) => inScene(id) && (this.playing === id || !this.skipped.has(id));
     for (const p of this.places) p.object.visible = this.on && this.placeShown(p.id) && inScene(p.id);
-    this.wotw.suppressed = !inScene(WAR_OF_THE_WORLDS.id);
-    this.breakaway.suppressed = !inScene(SPACE_1999.id);
-    this.demolition.suppressed = !inScene(VOGON_DEMOLITION.id);
+    this.wotw.suppressed = !shows(WAR_OF_THE_WORLDS.id);
+    this.breakaway.suppressed = !shows(SPACE_1999.id);
+    this.demolition.suppressed = !shows(VOGON_DEMOLITION.id);
     // Suppressed scenes stop updating, so give the real Earth and Moon back now.
     if (this.demolition.suppressed) this.demolition.release();
     if (this.breakaway.suppressed) this.breakaway.release();
   }
 
-  update(simMs: number, dt: number, elapsed: number, jumped: boolean, camera: THREE.Camera) {
+  /** `speed`: the clock's speed (sim seconds per second), for skipping events that would come round too often. */
+  update(simMs: number, dt: number, elapsed: number, jumped: boolean, camera: THREE.Camera, speed = 1) {
+    const skipped = [WAR_OF_THE_WORLDS, SPACE_1999, VOGON_DEMOLITION].filter((e) => tooFrequent(e, speed)).map((e) => e.id);
+    if (skipped.length !== this.skipped.size || skipped.some((id) => !this.skipped.has(id))) {
+      this.skipped = new Set(skipped);
+      this.refresh();
+    }
     this.wotw.update(simMs, dt, jumped);
     this.breakaway.update(simMs, dt, jumped);
     this.demolition.update(simMs, dt, jumped, camera);
     for (const p of this.places) if (p.object.visible) p.update(simMs, elapsed);
+  }
+
+  /** Scene parts whose shaders should be compiled now (once, ahead of first use), or null. */
+  takeWarmup(): THREE.Object3D | null {
+    if (!this.demolition.warmupDue) return null;
+    this.demolition.warmupDue = false;
+    return this.demolition.group;
   }
 
   /** Camera shake from fiction (the planet exploding), 0..1. */

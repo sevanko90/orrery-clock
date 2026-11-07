@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>XR Ceiling Bench</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #111; color: #eee; font: 18px/1.5 system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; }
+  main { max-width: 40em; padding: 16px; }
+  button { font-size: 28px; padding: 0.6em 1.4em; border-radius: 12px; border: 0; background: #c8a050; color: #111; cursor: pointer; }
+  pre { white-space: pre-wrap; font-size: 14px; color: #aaa; }
+</style>
+</head>
+<body>
+<main>
+  <h1>XR ceiling bench</h1>
+  <p>Raw WebGL 2 + WebXR, no three.js. Enter VR and keep still for about two minutes: it steps through a fixed sweep on its own and logs every step to the dev-server telemetry. The colour changes at each step; it goes grey when done.</p>
+  <button id="go" disabled>Checking…</button>
+  <pre id="out"></pre>
+</main>
+<script type="module">
+// Sweep: each step runs `secs` seconds; the first second is dropped (settling).
+//   hz:   requested refresh rate ('max' = highest supported)
+//   n:    cubes, one drawElements call each per eye (raw per-draw cost)
+//   busy: extra synthetic JS work per frame (ms), to find how much JS time
+//         a frame can hold before the rate drops
+const STEPS = [
+  { hz: 'max', n: 1, busy: 0 },
+  { hz: 90, n: 1, busy: 0 },
+  { hz: 72, n: 1, busy: 0 },
+  { hz: 72, n: 1, busy: 4 },
+  { hz: 72, n: 1, busy: 6 },
+  { hz: 72, n: 1, busy: 8 },
+  { hz: 72, n: 1, busy: 10 },
+  { hz: 72, n: 1, busy: 11 },
+  { hz: 72, n: 1, busy: 12 },
+  { hz: 72, n: 1, busy: 13 },
+  { hz: 72, n: 100, busy: 0 },
+  { hz: 72, n: 300, busy: 0 },
+  { hz: 72, n: 1000, busy: 0 },
+  { hz: 72, n: 3000, busy: 0 },
+];
+const SECS = 7;
+
+const out = document.getElementById('out');
+const go = document.getElementById('go');
+const log = (o) => {
+  out.textContent += JSON.stringify(o) + '\n';
+  fetch('/__telemetry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'bench', ua: navigator.userAgent, ...o }) }).catch(() => {});
+};
+
+// A fixed CPU micro-benchmark: compare desktop and headset JS speed.
+function jsBench() {
+  const a = new Float32Array(16).map((_, i) => i * 0.01 + 1), b = new Float32Array(16).map((_, i) => 1 - i * 0.01), c = new Float32Array(16);
+  const t0 = performance.now();
+  for (let k = 0; k < 400000; k++) {
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+      c[i * 4 + j] = a[i * 4] * b[j] + a[i * 4 + 1] * b[4 + j] + a[i * 4 + 2] * b[8 + j] + a[i * 4 + 3] * b[12 + j];
+    }
+    a[k & 15] = c[(k * 7) & 15] * 0.5 + 0.75;
+  }
+  const matMs = performance.now() - t0;
+  // Object-heavy work, closer to a scene graph's update: allocate, walk, sum.
+  const t1 = performance.now();
+  let sum = 0;
+  for (let k = 0; k < 40; k++) {
+    const nodes = [];
+    for (let i = 0; i < 5000; i++) nodes.push({ x: i, y: k, children: [], m: [1, 0, 0, 1] });
+    for (const n of nodes) sum += n.x * n.m[0] + n.y * n.m[3];
+  }
+  const objMs = performance.now() - t1;
+  return { matMs: +matMs.toFixed(1), objMs: +objMs.toFixed(1), sum: sum > 0 };
+}
+log({ step: 'jsbench', ...jsBench() });
+
+const VS = `#version 300 es
+in vec3 p; in vec3 nrm;
+uniform mat4 vp; uniform vec4 at; // xyz offset, w spin
+out vec3 vn;
+void main() {
+  float c = cos(at.w), s = sin(at.w);
+  vec3 q = vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
+  vn = vec3(c * nrm.x + s * nrm.z, nrm.y, -s * nrm.x + c * nrm.z);
+  gl_Position = vp * vec4(q * 0.08 + at.xyz, 1.0);
+}`;
+const FS = `#version 300 es
+precision mediump float;
+in vec3 vn; uniform vec3 tint; out vec4 o;
+void main() { o = vec4(tint * (0.35 + 0.65 * max(dot(normalize(vn), normalize(vec3(0.4, 0.8, 0.5))), 0.0)), 1.0); }`;
+
+function cube() {
+  const P = [], N = [], I = [];
+  const faces = [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]];
+  for (const n of faces) {
+    const u = n[1] !== 0 ? [1, 0, 0] : [0, 1, 0];
+    const v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+    const base = P.length / 3;
+    for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      P.push(n[0] + a * u[0] + b * v[0], n[1] + a * u[1] + b * v[1], n[2] + a * u[2] + b * v[2]);
+      N.push(...n);
+    }
+    I.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  return { P: new Float32Array(P), N: new Float32Array(N), I: new Uint16Array(I) };
+}
+
+if (!navigator.xr || !(await navigator.xr.isSessionSupported('immersive-vr'))) {
+  go.textContent = 'No immersive VR here';
+} else {
+  go.disabled = false;
+  go.textContent = 'Enter VR';
+  go.onclick = start;
+}
+
+async function start() {
+  go.disabled = true;
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl2', { xrCompatible: true, antialias: false, alpha: false });
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const g = cube();
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  for (const [name, data] of [['p', g.P], ['nrm', g.N]]) {
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, name);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+  }
+  const ib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.I, gl.STATIC_DRAW);
+  const uVp = gl.getUniformLocation(prog, 'vp'), uAt = gl.getUniformLocation(prog, 'at'), uTint = gl.getUniformLocation(prog, 'tint');
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+
+  const session = await navigator.xr.requestSession('immersive-vr');
+  session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl, { antialias: false }) });
+  const space = await session.requestReferenceSpace('local');
+  const rates = session.supportedFrameRates ? [...session.supportedFrameRates] : [];
+  log({ step: 'session', rates, frameRate: session.frameRate ?? null });
+
+  // Cube positions: a grid in front of the viewer, out to 3000.
+  const pos = new Float32Array(3000 * 3);
+  for (let i = 0; i < 3000; i++) {
+    const col = i % 60, row = Math.floor(i / 60) % 25, layer = Math.floor(i / 1500);
+    pos.set([(col - 29.5) * 0.12, (row - 12) * 0.12 + 1.4, -2.5 - layer * 0.6], i * 3);
+  }
+
+  let stepIx = -1, stepStart = 0, prevT = 0;
+  let dts = [], jss = [];
+  const tints = [[0.9, 0.6, 0.2], [0.3, 0.7, 0.9], [0.6, 0.9, 0.3], [0.9, 0.3, 0.6]];
+
+  async function nextStep(t) {
+    if (stepIx >= 0 && dts.length) {
+      const s = STEPS[stepIx];
+      const sorted = [...dts].sort((a, b) => a - b);
+      const pct = (q) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+      const mean = dts.reduce((a, b) => a + b, 0) / dts.length;
+      log({ step: stepIx, ...s, frameRate: session.frameRate ?? null, fps: +(1000 / mean).toFixed(1), dtP50: +pct(0.5).toFixed(2), dtP95: +pct(0.95).toFixed(2), jsMs: +(jss.reduce((a, b) => a + b, 0) / jss.length).toFixed(2), frames: dts.length });
+    }
+    stepIx++;
+    dts = [];
+    jss = [];
+    stepStart = t;
+    if (stepIx >= STEPS.length) {
+      log({ step: 'done' });
+      return;
+    }
+    const s = STEPS[stepIx];
+    if (session.updateTargetFrameRate && rates.length) {
+      const want = s.hz === 'max' ? Math.max(...rates) : rates.reduce((best, r) => (Math.abs(r - s.hz) < Math.abs(best - s.hz) ? r : best), rates[0]);
+      try { await session.updateTargetFrameRate(want); } catch (e) { log({ step: stepIx, error: String(e) }); }
+    }
+  }
+
+  function onFrame(t, frame) {
+    const t0 = performance.now();
+    session.requestAnimationFrame(onFrame);
+    if (stepIx < STEPS.length && (stepIx < 0 || t - stepStart > SECS * 1000)) nextStep(t);
+    const s = STEPS[Math.min(stepIx, STEPS.length - 1)];
+    const done = stepIx >= STEPS.length;
+    if (prevT && t - stepStart > 1000 && !done) dts.push(t - prevT);
+    prevT = t;
+
+    const pose = frame.getViewerPose(space);
+    const layer = session.renderState.baseLayer;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+    const tint = done ? [0.4, 0.4, 0.4] : tints[stepIx % tints.length];
+    gl.clearColor(tint[0] * 0.15, tint[1] * 0.15, tint[2] * 0.15, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if (pose) {
+      gl.uniform3fv(uTint, tint);
+      const n = done ? 1 : s.n;
+      const spin = t * 0.002;
+      for (const view of pose.views) {
+        const vp = layer.getViewport(view);
+        gl.viewport(vp.x, vp.y, vp.width, vp.height);
+        const m = mul(view.projectionMatrix, view.transform.inverse.matrix);
+        gl.uniformMatrix4fv(uVp, false, m);
+        for (let i = 0; i < n; i++) {
+          gl.uniform4f(uAt, pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2], spin + i);
+          gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0);
+        }
+      }
+    }
+    if (!done && s.busy) {
+      let x = 0;
+      while (performance.now() - t0 < s.busy) x += Math.sqrt(x + 1);
+    }
+    if (t - stepStart > 1000 && !done) jss.push(performance.now() - t0);
+  }
+  session.requestAnimationFrame(onFrame);
+  session.addEventListener('end', () => { go.disabled = false; go.textContent = 'Enter VR again'; });
+}
+
+function mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+  }
+  return o;
+}
+</script>
+</body>
+</html>

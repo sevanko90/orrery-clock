@@ -20,6 +20,12 @@ export interface FictionEntry {
   leadMs?: number;
   /** Dated events: replay speed, simulated seconds per second (default a day a second). */
   playSpeed?: number;
+  /**
+   * Recurring events: how often they come round (ms). An event that would
+   * come round more often than once a minute of the viewer's time at the
+   * clock's speed is skipped (see MIN_REAL_GAP_S); a replay always plays.
+   */
+  periodMs?: number;
   /** Entries sharing a group are listed together under its name in the catalogue. */
   group?: string;
 }
@@ -47,6 +53,7 @@ export function wotwOccurrence(ms: number): number {
 
 export const WAR_OF_THE_WORLDS: FictionEntry = {
   id: 'wotw',
+  periodMs: 365.2425 * DAY,
   title: 'The War of the Worlds',
   source: 'H. G. Wells · 1898',
   kind: 'event',
@@ -140,6 +147,7 @@ export function vogonOccurrence(ms: number): number {
 
 export const VOGON_DEMOLITION: FictionEntry = {
   id: 'vogons',
+  periodMs: 7 * DAY,
   title: 'The Demolition of Earth',
   source: 'The Hitchhiker’s Guide to the Galaxy · Douglas Adams',
   kind: 'event',
@@ -234,6 +242,19 @@ export const FICTION: FictionEntry[] = [
   TYCHO_STATION,
   RING_GATE,
 ];
+
+/**
+ * Fewest real seconds between showings of a recurring event: at a clock speed
+ * that would bring it round more often (the Demolition every 7 s at a day a
+ * second), it's skipped as noise. Each event's own period sets where it
+ * drops out, so no event needs special handling.
+ */
+export const MIN_REAL_GAP_S = 60;
+
+/** Would a recurring event come round too often to show at `speed` (sim seconds per second)? */
+export function tooFrequent(entry: FictionEntry, speed: number) {
+  return !!entry.periodMs && speed !== 0 && entry.periodMs / 1000 / Math.abs(speed) < MIN_REAL_GAP_S;
+}
 
 /** Start of the dated event at or after `ms`, or the one-off date (null for places). */
 export function nextOccurrence(entry: FictionEntry, ms: number): number | null {

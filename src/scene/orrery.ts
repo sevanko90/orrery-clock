@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { ARMS, PLANE_Y, TABLE_RADIUS, TABLE_TOP, type ArmSpec } from './layout';
 import { GLASS_Y, WINDOW_RADIUS, CENTRAL_HOLE, stage2Y, GEAR_T, BOTTOM_PLATE, PLATE_T } from '../mechanism/heights';
 
@@ -142,6 +142,7 @@ export function buildOrrery(mats: Materials): Orrery {
   // A slim walnut table; the movement stands in a central glass drum (glass
   // sides between brass mullions, glass top) so it can be seen from any angle.
   const cabinet = new THREE.Group();
+  cabinet.name = 'cabinet';
   const H = TABLE_TOP; // top of the drum, where the planet tubes emerge
   const S = TABLE_SURFACE;
 
@@ -167,6 +168,14 @@ export function buildOrrery(mats: Materials): Orrery {
   const cornice = new THREE.Mesh(new THREE.CylinderGeometry(drumR + 0.3, drumR + 0.18, 0.14, 128, 1, true), mats.brass);
 
   cornice.position.y = H - 0.05;
+  // Close both bands into solid brass rings: with the drum open (VR has no
+  // glass) the footing read as a stray sloped wall, and the cornice as a ring
+  // floating over its posts (its top face can't be seen from below).
+  const footingTop = flatRing(drumR - 0.02, drumR + 0.18, S + 0.16, true, mats.brassDark);
+  const footingInner = innerWall(drumR - 0.02, 0.16, S + 0.08, mats.brassDark);
+  const corniceUnder = flatRing(drumR - 0.02, drumR + 0.18, H - 0.12, false, mats.brass);
+  const corniceInner = innerWall(drumR - 0.02, 0.14, H - 0.05, mats.brass);
+  cabinet.add(footingTop, footingInner, corniceUnder, corniceInner);
   const corniceCap = new THREE.Mesh(new THREE.RingGeometry(drumR - 0.02, drumR + 0.3, 128), mats.brass);
   corniceCap.rotation.x = -Math.PI / 2;
   corniceCap.position.y = H + 0.02;
@@ -201,6 +210,7 @@ export function buildOrrery(mats: Materials): Orrery {
   const sideGlass = new THREE.Mesh(new THREE.CylinderGeometry(drumR, drumR, H - S - 0.2, 128, 1, true), glassMat);
   sideGlass.position.y = S + 0.13 + (H - S - 0.2) / 2;
   sideGlass.renderOrder = 2;
+  sideGlass.name = 'glass';
 
   // Glass top, with a brass bush where the tubes rise and one for the crank.
   const glassShape = new THREE.Shape();
@@ -215,6 +225,7 @@ export function buildOrrery(mats: Materials): Orrery {
   const glassGeo = new THREE.ShapeGeometry(glassShape, 96);
   glassGeo.rotateX(-Math.PI / 2);
   const glass = new THREE.Mesh(glassGeo, glassMat);
+  glass.name = 'glass';
   glass.position.y = GLASS_Y;
   glass.renderOrder = 2;
   const bush = new THREE.Mesh(new THREE.TorusGeometry(CENTRAL_HOLE + 0.05, 0.05, 10, 48), mats.brass);
@@ -276,6 +287,7 @@ export function buildOrrery(mats: Materials): Orrery {
   // Warm work-lamp glow inside the cabinet so the gears read through the glass.
   const lamp = new THREE.PointLight(0xffc98a, 0.9, 10, 1.2);
   lamp.position.set(0, GLASS_Y - 0.05, 3.5);
+  lamp.name = 'lamp';
   root.add(lamp);
 
   // ---- Planet arms -------------------------------------------------------
@@ -338,4 +350,24 @@ export function buildOrrery(mats: Materials): Orrery {
       }
     },
   };
+}
+
+/** A flat ring (annulus) at height `y`, facing up or down. */
+function flatRing(r0: number, r1: number, y: number, up: boolean, mat: THREE.Material) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 128), mat);
+  m.rotation.x = up ? -Math.PI / 2 : Math.PI / 2;
+  m.position.y = y;
+  return m;
+}
+
+/** The inside wall of a band: an open cylinder of radius `r` and height `h`, centred at `y`, facing its axis. */
+function innerWall(r: number, h: number, y: number, mat: THREE.Material) {
+  const g = new THREE.CylinderGeometry(r, r, h, 128, 1, true);
+  // Mirror to turn the faces inward, then point the normals inward too.
+  g.scale(-1, 1, 1);
+  const n = g.attributes.normal as THREE.BufferAttribute;
+  for (let i = 0; i < n.count; i++) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
+  const m = new THREE.Mesh(g, mat);
+  m.position.y = y;
+  return m;
 }
