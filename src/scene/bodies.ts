@@ -555,6 +555,11 @@ export class Bodies {
     else this.hiddenMoons.delete(id);
   }
 
+  /** Have the moons been built yet (they are on first show)? */
+  get moonsBuilt() {
+    return this.moonSystems !== null;
+  }
+
   get moonsVisible() {
     return this.moonsOn;
   }

@@ -28,10 +28,13 @@ import { Batcher, raycastLayers } from './scene/batch';
 import { Telemetry, type Command } from './xr/telemetry';
 import { XR } from './xr/config';
 import { TABLE_RADIUS } from './scene/layout';
-import { scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
+import { QUEST_PX_PER_RAD, SCRUNCH_SKIP, scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
 import { ScrunchDebug } from './xr/scrunchDebug';
 import { MeshLods, beltRock } from './scene/meshLod';
 import { SpriteBatch } from './scene/spriteBatch';
+import { LineBatch } from './scene/lineBatch';
+import { singlePass } from './scene/singlePass';
+import { TextureLayers } from './scene/textureLayers';
 import { viewpoints, yawFacing } from './xr/vrScene';
 import { POINT_UNIFORMS } from './scene/pointSize';
 import type { PanelRow } from './xr/controlPanel';
@@ -90,7 +93,8 @@ const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
 // Draw the instrument's hundreds of parts as a few batches (one per material).
-const orreryBatch = new Batcher(orrery.root, stage.scene, { lod: scrunch });
+// (Scrunched: one batcher over the whole scene instead, built by rebatch() once the bodies exist.)
+let orreryBatch = new Batcher(scrunch ? [] : orrery.root, stage.scene, { lod: scrunch });
 // World matrices are brought up to date once a frame, just before the batches copy them.
 stage.scene.matrixWorldAutoUpdate = false;
 reseed('bodies');
@@ -103,6 +107,50 @@ if (scrunch) {
   const belt = bodies.root.getObjectByName('belt') as THREE.InstancedMesh | undefined;
   if (belt) belt.geometry = beltRock();
 }
+/** Scrunched: the batches were rebuilt, so the detail culler must list its meshes afresh. */
+let cullerStale = false;
+/**
+ * Scrunched: batch the whole scene (instrument, bodies, Discworld, fiction)
+ * by shading model, rebuilt whenever a part is first built (see Batcher's
+ * `uber` option). Cheap: the geometry and its LODs are shared, not copied.
+ */
+let rebatchDue = scrunch;
+function rebatch() {
+  if (scrunch) rebatchDue = true;
+}
+function rebuildBatches() {
+  rebatchDue = false;
+  meshLods?.reset();
+  orreryBatch.dispose();
+  discBatch?.dispose();
+  discBatch = null;
+  const roots = [orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])];
+  const on = (part: string) => !SCRUNCH_SKIP.has(part);
+  // The globes' surface maps go into layers of one array texture, so they batch together.
+  if (on('layers')) {
+    globeLayers ??= new TextureLayers(512, 256, 32);
+    bodies.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      const mat = m.material as THREE.MeshStandardMaterial;
+      if (m.isMesh && m.geometry.type === 'SphereGeometry' && (m.geometry as THREE.SphereGeometry).parameters.widthSegments > 16 && mat.isMeshStandardMaterial && mat.userData.sunlit && !mat.transparent) globeLayers!.track(mat);
+    });
+    globeLayers.update();
+  }
+  // (Every batch is drawn on its first frames, shown or not, so its shader is built
+  // then, not on first use. Warming them through compileAsync() instead leaves the
+  // WebGL backend drawing black.)
+  orreryBatch = new Batcher(roots, stage.scene, { lod: true, uber: on('uber'), noShadows: !quality.shadows, pxPerRad: QUEST_PX_PER_RAD });
+  fictionSprites?.dispose();
+  fictionSprites = new SpriteBatch(on('sprites') ? [...roots, ...trueMarkers.values()] : fiction ? [fiction.root] : [], stage.scene);
+  lineBatch?.dispose();
+  lineBatch = null;
+  if (on('lines')) {
+    lineBatch = new LineBatch(roots, stage.scene);
+  }
+  if (on('single')) singlePass(roots);
+  cullerStale = true;
+}
+let globeLayers: TextureLayers | null = null;
 
 const clock = new SimClock();
 const kinematics = new Kinematics(design);
@@ -214,8 +262,9 @@ function setDiscworld(on: boolean, persist = true) {
   if (on && !discworld) {
     reseed('discworld');
     discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio });
-    discBatch = new Batcher(discworld.root, stage.scene);
     stage.scene.add(discworld.root);
+    if (scrunch) rebatch();
+    else discBatch = new Batcher(discworld.root, stage.scene);
   }
   discworld?.setEnabled(on);
   discButton.setAttribute('aria-pressed', String(on));
@@ -249,7 +298,9 @@ addEventListener('keydown', (e) => {
 const moonButton = document.getElementById('c-moons') as HTMLButtonElement;
 function setMoons(on: boolean) {
   if (on && !bodies.moonsVisible) reseed('moons');
+  const built = bodies.moonsBuilt;
   bodies.setMoonsVisible(on);
+  if (!built && bodies.moonsBuilt) rebatch();
   moonButton.setAttribute('aria-pressed', String(on));
   moonButton.title = on ? 'Hide moons (M)' : 'Show moons (M)';
   // Don't leave the camera following a moon that has just vanished.
@@ -280,7 +331,9 @@ addEventListener('keydown', (e) => {
 // Thursday, the Martians every August) play whenever the clock reaches them.
 let fiction: Fiction | null = null;
 /** Scrunched: fiction's ~130 additive glow sprites drawn as one. */
+/** Scrunched: additive glow sprites and faint lines, drawn a few at a time (see rebuildBatches()). */
 let fictionSprites: SpriteBatch | null = null;
+let lineBatch: LineBatch | null = null;
 /** Entry whose show was just started: frame it once the jump has landed. */
 let pendingFrame: string | null = null;
 /**
@@ -416,7 +469,7 @@ function setFiction(on: boolean) {
     fiction = new Fiction(bodies, mats);
     hiddenPlaces.forEach((id) => fiction!.setPlaceShown(id, false));
     stage.scene.add(fiction.root);
-    if (scrunch) fictionSprites = new SpriteBatch([fiction.root], stage.scene);
+    rebatch();
   }
   if (!on && playing) finishScene();
   fiction?.setEnabled(on);
@@ -633,6 +686,10 @@ function viewFrom(head: THREE.Vector3 | null) {
   // From under the Disc its opaque underside hides the whole movement (115 draw calls): skip it.
   // (Only under it: out past the rim, below table height, the drum shows over the edge.)
   orrery.mechanism.root.visible = head.y > orreryBox.min.y || Math.hypot(head.x, head.z) > TABLE_RADIUS;
+  if (cullerStale) {
+    culler.reset();
+    cullerStale = false;
+  }
   culler.setRoots([orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
   culler.update(head, cullAngle);
   xrHead = head;
@@ -819,6 +876,7 @@ function step(now: number) {
   prev = now;
   elapsed += dt;
 
+  if (rebatchDue) rebuildBatches();
   const simMs = clock.nowMs();
   const jumped = clock.jumps !== seenJumps;
   kinematics.update(simMs, clock.speed === 1, jumped, dt);
@@ -883,6 +941,7 @@ function step(now: number) {
       pendingFrame = null;
     }
   }
+  // New batches' shaders, built now rather than on their first draw.
   vrFlyToFocus();
   fictionPanel.update(simMs);
   focus.update(dt);
@@ -922,6 +981,8 @@ function step(now: number) {
   // Scrunched: pick LOD levels by distance from the head (or the desktop camera).
   const lodEye = scrunch ? (xr.presenting ? (xrHead ?? undefined) : stage.camera.position) : undefined;
   fictionSprites?.sync();
+  lineBatch?.sync();
+  globeLayers?.update();
   if (meshLods && lodEye) meshLods.update(lodEye, [bodies.root, ...(fiction ? [fiction.root] : [])]);
   orreryBatch.sync(eye, cullAngle, lodEye);
   discBatch?.sync(eye, cullAngle);
@@ -990,4 +1051,4 @@ const vrPreview = {
 stage.renderer.setAnimationLoop(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, culler, fictionSprites: () => fictionSprites }, vr: vrPreview } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, culler, fictionSprites: () => fictionSprites, lineBatch: () => lineBatch, batch: () => orreryBatch }, vr: vrPreview } });

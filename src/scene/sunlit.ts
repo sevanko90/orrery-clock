@@ -72,6 +72,8 @@ export function sunlit(mat: THREE.MeshStandardMaterial, fill = NIGHT_FILL, mirro
   m.lightsNode = SUN_LIGHTS;
   m.setupEnvironment = () => null;
   m.setupLightingModel = () => new SunlitLightingModel(night);
+  // (Tells a VR uber batch which sunlit materials shade alike.)
+  mat.userData.sunlit = `${fill}|${mirrorSouth}`;
   if (mirrorSouth) mirrorUnmappedSouth(mat);
 }
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LOD_HYSTERESIS, switchDistance } from '../xr/scrunch';
+import { batchedMeshes } from './batch';
 
 /**
  * Distance LODs for meshes drawn on their own (the planets, the Sun, moons):
@@ -93,6 +94,8 @@ export class MeshLods {
   update(eye: THREE.Vector3, roots: THREE.Object3D[]) {
     if (this.frame++ % 60 === 0) this.scan(roots);
     for (const it of this.items) {
+      // Batched spheres take their level from the batch.
+      if (batchedMeshes.has(it.mesh)) continue;
       const e = it.mesh.matrixWorld.elements;
       const scale = Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10]));
       const r = (it.levels[0].geometry as THREE.SphereGeometry).parameters.radius * scale;
@@ -104,6 +107,14 @@ export class MeshLods {
         it.level = l;
         it.mesh.geometry = it.levels[l].geometry;
       }
+    }
+  }
+
+  /** Put every sphere back to its full geometry (before batching them). */
+  reset() {
+    for (const it of this.items) {
+      it.level = 0;
+      it.mesh.geometry = it.levels[0].geometry;
     }
   }
 

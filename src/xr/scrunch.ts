@@ -21,6 +21,11 @@ const params = new URLSearchParams(typeof location === 'undefined' ? '' : locati
 export const SCRUNCH_FLAG: boolean | null = params.get('scrunch') === '1' ? true : params.get('scrunch') === '0' ? false : null;
 export const HEADSET_FLAG = params.get('headset') === '1';
 export const VRVIEW_FLAG = params.get('vrview') === '1';
+/**
+ * `?scrunchskip=uber,layers,lines,sprites,single,occlude` leaves those parts of the scrunch
+ * out (to measure what each buys, or to rule one out).
+ */
+export const SCRUNCH_SKIP = new Set((params.get('scrunchskip') ?? '').split(',').filter(Boolean));
 
 /** Is the scrunched scene in use, for this device? */
 export function scrunchOn(headset: boolean): boolean {
