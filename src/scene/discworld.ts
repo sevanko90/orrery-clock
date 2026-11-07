@@ -758,6 +758,7 @@ export class Discworld {
     const sphere = new THREE.SphereGeometry(1, opts.lowQuality ? 20 : 32, opts.lowQuality ? 14 : 20);
 
     this.stack.rotation.y = HEADING;
+    this.stack.name = 'stack';
     this.root.add(this.stack);
 
     this.turtle = buildTurtle(m, sphere, opts.lowQuality);
@@ -785,6 +786,7 @@ export class Discworld {
     const pixelScale = (innerHeight * opts.pixelRatio) / (2 * Math.tan(THREE.MathUtils.degToRad(20)));
     this.rimfall = buildRimfall(opts.lowQuality ? 3000 : 9000, pixelScale);
     this.dust = buildDust(opts.lowQuality ? 500 : 1400, pixelScale);
+    this.rimfall.points.name = 'rimfall';
     this.root.add(this.rimfall.points);
     this.stack.add(this.dust.points);
 

@@ -14,7 +14,13 @@ export type Command =
   | { type: 'note'; text: string }
   | { type: 'view'; name: string }
   | { type: 'fiction'; id: string }
-  | { type: 'return' };
+  | { type: 'return' }
+  /** Force an object (found by name in the scene) hidden, or let it be again: live cost-by-elimination. */
+  | { type: 'hide'; name: string; on: boolean }
+  /** Log the scene's named groups (two levels), to know what can be hidden. */
+  | { type: 'list' }
+  /** Heavier probes (GPU timer, three's render split) on or off. */
+  | { type: 'probe'; on: boolean };
 
 export class Telemetry {
   readonly enabled = import.meta.env.DEV;

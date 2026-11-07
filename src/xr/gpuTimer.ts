@@ -2,8 +2,11 @@
  * GPU time of each frame's render, for the headset telemetry: a WebGL 2
  * TIME_ELAPSED query around the render, read back a few frames later (they
  * never stall). Needs EXT_disjoint_timer_query_webgl2; null where missing
- * (or on the WebGPU backend).
+ * (or on the WebGPU backend). Runs only while `probes.on` (its read-backs
+ * are synchronous calls to the GPU process, so it may cost time itself).
  */
+import { probes } from '../perfMarks';
+
 type TimerExt = { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number };
 
 export class GpuTimer {
@@ -24,7 +27,7 @@ export class GpuTimer {
 
   begin() {
     const gl = this.gl;
-    if (!gl || !this.ext || this.active || this.pending.length > 8) return;
+    if (!probes.on || !gl || !this.ext || this.active || this.pending.length > 8) return;
     this.active = this.free.pop() ?? gl.createQuery();
     if (this.active) gl.beginQuery(this.ext.TIME_ELAPSED_EXT, this.active);
   }

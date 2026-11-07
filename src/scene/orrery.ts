@@ -142,6 +142,7 @@ export function buildOrrery(mats: Materials): Orrery {
   // A slim walnut table; the movement stands in a central glass drum (glass
   // sides between brass mullions, glass top) so it can be seen from any angle.
   const cabinet = new THREE.Group();
+  cabinet.name = 'cabinet';
   const H = TABLE_TOP; // top of the drum, where the planet tubes emerge
   const S = TABLE_SURFACE;
 
@@ -201,6 +202,7 @@ export function buildOrrery(mats: Materials): Orrery {
   const sideGlass = new THREE.Mesh(new THREE.CylinderGeometry(drumR, drumR, H - S - 0.2, 128, 1, true), glassMat);
   sideGlass.position.y = S + 0.13 + (H - S - 0.2) / 2;
   sideGlass.renderOrder = 2;
+  sideGlass.name = 'glass';
 
   // Glass top, with a brass bush where the tubes rise and one for the crank.
   const glassShape = new THREE.Shape();
@@ -215,6 +217,7 @@ export function buildOrrery(mats: Materials): Orrery {
   const glassGeo = new THREE.ShapeGeometry(glassShape, 96);
   glassGeo.rotateX(-Math.PI / 2);
   const glass = new THREE.Mesh(glassGeo, glassMat);
+  glass.name = 'glass';
   glass.position.y = GLASS_Y;
   glass.renderOrder = 2;
   const bush = new THREE.Mesh(new THREE.TorusGeometry(CENTRAL_HOLE + 0.05, 0.05, 10, 48), mats.brass);

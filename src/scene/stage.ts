@@ -130,6 +130,7 @@ export class Stage {
     );
     sky.rotation.x = (-23.44 * Math.PI) / 180;
     sky.material.visible = false;
+    sky.name = 'sky';
     this.scene.add(sky);
     this.sky.push(sky);
     loadOnce('stars', this.quality.low ? '256' : '2k')
@@ -161,6 +162,7 @@ export class Stage {
     const stars = new THREE.Sprite(mat);
     stars.count = n;
     stars.frustumCulled = false;
+    stars.name = 'stars';
     this.scene.add(stars);
     this.sky.push(stars);
   }

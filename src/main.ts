@@ -1,6 +1,6 @@
 // First: a seeded Math.random (?seed=N) must be in place before anything draws one.
 import { reseed } from './xr/seed';
-import { mark, startFrame, takeCpuParts } from './perfMarks';
+import { frameBegin, frameEnd, mark, probeRenderer, probes, startFrame, takeCpuParts, takeFrameStats } from './perfMarks';
 import { GpuTimer } from './xr/gpuTimer';
 import './style.css';
 import * as THREE from 'three/webgpu';
@@ -746,6 +746,9 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
       nonFinite: countNonFinite(),
       cpuParts: takeCpuParts(),
       gpuMs: gpuTimer.take(),
+      frame: takeFrameStats(1000 / ((stage.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate || 72)),
+      hidden: [...forcedHidden.keys()],
+      probes: probes.on,
       // Scene graph size: every object, and those the renderer walks (visible chain).
       objects: sceneCounts(),
       scrunch,
@@ -824,6 +827,32 @@ const telemetry = new Telemetry((c: Command) => {
     case 'return':
       if (playing) dropScene();
       return vrReturnHome();
+    case 'hide': {
+      if (!c.on) {
+        for (const o of forcedHidden.get(c.name) ?? []) {
+          o.visible = hiddenWas.get(o) ?? true;
+          hiddenWas.delete(o);
+        }
+        forcedHidden.delete(c.name);
+        return;
+      }
+      const found = findHideable(c.name);
+      if (!found.length) telemetry.send({ kind: 'hide-missing', name: c.name });
+      else if (!forcedHidden.has(c.name)) {
+        for (const o of found) if (!hiddenWas.has(o)) hiddenWas.set(o, o.visible);
+        forcedHidden.set(c.name, found);
+      }
+      return;
+    }
+    case 'probe':
+      probes.on = c.on;
+      return;
+    case 'list': {
+      const groups: Record<string, string[]> = {};
+      for (const o of stage.scene.children) groups[o.name || o.type] = o.children.filter((k) => k.name).map((k) => k.name);
+      telemetry.send({ kind: 'scene-list', groups });
+      return;
+    }
   }
 });
 
@@ -856,10 +885,24 @@ let cpuMs = 0;
 /** What the last frame drew (read straight after it, for telemetry). */
 const lastRender = { drawCalls: 0, triangles: 0 };
 /** GPU time of the render (WebGL backend with the timer extension only). */
+if (telemetry.enabled) probeRenderer(stage.renderer);
+/** Objects the workstation has forced hidden (telemetry `hide`), re-applied every frame before drawing. */
+const forcedHidden = new Map<string, THREE.Object3D[]>();
+const hiddenWas = new Map<THREE.Object3D, boolean>();
+/** Objects for a `hide` name: every object with that name, or every top-level object of that type ("type:Sprite"). */
+function findHideable(name: string): THREE.Object3D[] {
+  if (name.startsWith('type:')) return stage.scene.children.filter((o) => o.type === name.slice(5));
+  const found: THREE.Object3D[] = [];
+  stage.scene.traverse((o) => {
+    if (o.name === name) found.push(o);
+  });
+  return found;
+}
 const gpuTimer = new GpuTimer((stage.renderer.backend as { gl?: WebGL2RenderingContext }).gl ?? null);
 function frame(now: number) {
   const t0 = performance.now();
   startFrame(t0);
+  frameBegin(now, t0);
   try {
     step(now);
   } catch (err) {
@@ -874,6 +917,7 @@ function frame(now: number) {
   cpuMs = performance.now() - t0;
   telemetry.tick(t0);
   mark('uiTelemetry');
+  frameEnd(t0);
 }
 
 /**
@@ -1025,6 +1069,8 @@ function step(now: number) {
   const eye = xr.presenting || VRVIEW_FLAG ? (xrHead ?? undefined) : undefined;
   // Scrunched: pick LOD levels by distance from the head (or the desktop camera).
   const lodEye = scrunch ? (xr.presenting ? (xrHead ?? undefined) : stage.camera.position) : undefined;
+  // (Before the batches sync, so batched parts follow their hidden originals.)
+  for (const list of forcedHidden.values()) for (const o of list) o.visible = false;
   fictionSprites?.sync();
   lineBatch?.sync();
   globeLayers?.update();

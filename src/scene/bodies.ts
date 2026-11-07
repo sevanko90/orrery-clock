@@ -333,7 +333,7 @@ export interface BodiesOptions {
 const NIGHT_FILL_BOOST: Record<string, number> = { pluto: 1.2, mercury: 0.9, belt: 1.0 };
 
 export class Bodies {
-  readonly root = new THREE.Group();
+  readonly root = Object.assign(new THREE.Group(), { name: 'bodies' });
   readonly bodies: Body[] = [];
   readonly sunLight: THREE.PointLight;
   private planets: PlanetVisual[] = [];
