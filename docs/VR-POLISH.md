@@ -3,7 +3,12 @@
 Work queued for after perf (perf is done: see `docs/VR-PERFORMANCE.md`).
 Not ordered unless noted.
 
-## 1. Point and click for info cards
+## 1. Point and click for info cards (done)
+
+Done 2026-11-07: trigger on a body or Discworld figure opens its card in
+front of the player (`src/xr/infoPanel.ts`); another object switches it,
+empty space or the close mark closes it.
+
 
 Pointing at an object and pulling the trigger should open its info card,
 as clicking does on desktop (planets, moons, fiction bodies, Discworld lore:
@@ -39,7 +44,7 @@ app is a PWA) and adds a third-party request. Bundle the Quest 3 controller
 model (`meta-quest-touch-plus` profile) and point the factory at it with
 `setPath`, keeping the CDN as a fallback for other headsets.
 
-## 4. Dev telemetry: hardening (small)
+## 4. Dev telemetry: hardening (done: capture uploads capped at 16 MB)
 
 Checked 2026-11-07. The release build is safe:
 - The telemetry client is off in production (`enabled = import.meta.env.DEV`,
