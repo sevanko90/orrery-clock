@@ -60,7 +60,9 @@ already capped at 1 MB) so it can't fill the disk.
 
 ## Also open
 
-- World scale: revisit (the user's scale experiments on 2026-11-07, markers
-  dropped then are to be ignored).
+- World scale: the user likes the default (1.5 m per unit), maybe a touch
+  bigger; they'll experiment (ignore the markers dropped on 2026-11-07).
+  Sprites (glows, markers, labels) now keep their proportion at any scale
+  (2d4fe76); before, the Sun's glow swamped the tabletop view.
 - Scrunch round 2's rebuild hitch (~0.5 s when moons or fiction are first
   turned on mid-session).
