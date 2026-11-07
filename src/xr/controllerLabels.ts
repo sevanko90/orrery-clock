@@ -36,20 +36,21 @@ const TEXT: Record<Hand, Record<string, string[]>> = {
 
 /**
  * Where each control's plate stands, from the control (metres, in the
- * controller's space): `side` away from the body (outward), `up`, and
- * `forward` along the pointing direction. Set per control so they fan out
- * round the controller instead of stacking: the face buttons at different
- * heights to the side, the stick's above, the trigger's ahead, the grip's
- * out to the side.
+ * controller's space): `side` away from the body (outward; negative is the
+ * inside, toward the other hand), `up`, and `forward` along the pointing
+ * direction. Spread round the controller so plates don't hide each other
+ * and leader lines don't cross: the stick's outside, the lower face button's
+ * and the grip's inside (well apart in height), the upper face button's on
+ * top toward the inside, the trigger's on top out ahead.
  */
 const LAYOUT: Record<string, { side: number; up: number; forward: number }> = {
-  'xr-standard-thumbstick': { side: -0.015, up: 0.05, forward: 0 },
-  'x-button': { side: 0.05, up: 0.015, forward: 0.01 },
-  'a-button': { side: 0.05, up: 0.015, forward: 0.01 },
-  'y-button': { side: 0.05, up: 0.05, forward: -0.005 },
-  'b-button': { side: 0.05, up: 0.05, forward: -0.005 },
-  'xr-standard-trigger': { side: 0, up: -0.005, forward: 0.065 },
-  'xr-standard-squeeze': { side: 0.065, up: -0.02, forward: 0 },
+  'xr-standard-thumbstick': { side: 0.06, up: 0.03, forward: 0 },
+  'x-button': { side: -0.055, up: 0.035, forward: 0.01 },
+  'a-button': { side: -0.055, up: 0.035, forward: 0.01 },
+  'y-button': { side: -0.03, up: 0.09, forward: 0 },
+  'b-button': { side: -0.03, up: 0.09, forward: 0 },
+  'xr-standard-trigger': { side: 0, up: 0.065, forward: 0.075 },
+  'xr-standard-squeeze': { side: -0.06, up: -0.03, forward: 0 },
 };
 
 /** Plate height (metres); its width follows the text. */
