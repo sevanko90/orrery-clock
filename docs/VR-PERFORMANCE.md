@@ -17,7 +17,7 @@ scene.
 | Our JavaScript per frame (everything inside the animation-loop callback) | **≈ 11 ms** | bench: synthetic 11 ms/frame holds 72.0 fps, 12 ms → 69.1, 13 ms → 64.9 |
 | Raw WebGL draw calls | almost free | bench: 6000 `drawElements` per frame (3000 cubes × 2 eyes) cost 1.15 ms and held 72 |
 | three.js per-object work (culling, sorting, state, uniforms) | the real cost behind "draw calls" | scene render 4–5.5 ms for ~60 draws but ~1035 visible objects walked |
-| GPU | not yet isolated at hub | `gpuMs` telemetry added (5db1852); `?xrscale=` test pending |
+| GPU | limits hub (glass drum + movement behind it) | Quest has no GPU timer; priced by hiding parts live (sweep S1) |
 
 Run-to-run noise is about ±4 fps. Over a long session the headset warms
 up and slows down: the same render call crept from 4.1 to 5.5 ms over an
@@ -43,6 +43,36 @@ JS is now under the 11 ms budget at every viewpoint, yet hub runs at ~50.
 So hub's remaining limit is outside our JavaScript: the GPU (looking
 through the glass drum, layers of transparency) or heat. That is the next
 thing to settle.
+
+## One-session sweep (2026-11-07, `scripts/headset-sweep.mjs`, label S1)
+
+Each line hides one part live (telemetry `hide`) and re-measures. The Quest
+has no GPU timer extension, so GPU cost shows up as "outside" time: the
+gap between the end of our frame's work and the start of the next.
+
+| view | base fps | our JS ms | outside ms | three render (walk / draw loop) |
+|---|---|---|---|---|
+| spawn | 68.6 | 8.1 | 6.6 | 4.6 (0.4 / 4.2) |
+| rim | 58.7 | 10.4 | 7.3 | 6.2 (0.4 / 5.5) |
+| hub | 52.3 | 8.1 | **11.5** | 4.8 (0.4 / 4.4) |
+| far | 63.6 | 9.2 | 7.2 | 5.6 (0.4 / 4.9) |
+
+- **The frame is our JS + outside time.** Even at spawn the outside time is
+  ~6.6 ms (three's XR setup, the browser's submit, GPU waits), against
+  ~2.9 ms in the trivial bench. So our JS must stay near **7 ms**, not 11,
+  while the GPU load stays as it is.
+- **Hub is GPU-bound**: outside time 11.5 ms. Hiding the glass drum gives
+  61 fps (outside 7.6), hiding the movement 65.5 (outside 6.6), the cabinet
+  60.8. Looking through a double-sided transparent PBR cylinder at lit brass
+  gears is the expensive pixel work.
+- **Rim is CPU-bound** (JS 10.4 ms). What it gains when hidden: the
+  Discworld stack +6 fps (−1.0 ms JS), planets and moons +4.7, fiction +4.5,
+  the lift +4.2 (4 draws), orbit lines +2.6, cabinet/glass +2.
+- **three's draw loop costs ~80 µs per draw** on Quest (rim: 5.5 ms for 78
+  draws), while its scene walk is only 0.3–0.4 ms. So draws do cost CPU;
+  halving them didn't raise fps at hub because hub is GPU-bound, and at rim
+  the gain was lost in noise and other costs.
+- No garbage-collection pauses. The probes' own cost is within noise.
 
 ## Ledger: what we did, why, what it bought
 
@@ -97,6 +127,10 @@ thing to settle.
   budget section before another round.
 
 ## Open
+
+0. From the sweep: (a) hub's GPU cost, the glass drum (cheaper VR material:
+   single pass, no PBR) and the movement's shading (light count, material);
+   (b) rim's CPU, fewer three draws (~80 µs each) and the lift's 4 draws.
 
 1. Hub at ~50 fps with JS under budget: check `gpuMs` and `?xrscale=0.7` at
    hub; if GPU-bound, look at the glass drum and stacked transparent layers.
