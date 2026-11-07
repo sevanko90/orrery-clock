@@ -861,7 +861,8 @@ export class XrMode {
     if (this.selected) {
       const at = this.selected.group.getWorldPosition(new THREE.Vector3());
       this.halo.position.copy(at);
-      this.halo.scale.setScalar(this.selected.radius * 3.2);
+      // (The globe's size, not Saturn's ring-wide radius, or the halo swells into a second Sun.)
+      this.halo.scale.setScalar((this.selected.globeRadius ?? this.selected.radius) * 3.2);
       this.pinLabel.plate.set(this.selected.name, this.selected.kind ? [this.selected.kind] : []);
       this.pinLabel.place(at.clone().addScaledVector(UP, this.selected.radius), eye, XR.labelAngular * 1.2, 0.9);
     }
