@@ -87,6 +87,35 @@ async function measure(view, step) {
   return row;
 }
 
+// `--lights`: at hub, price each light and the environment map by switching it off
+// (each switch recompiles the lit shaders: a hitch, so it settles longer).
+if (process.argv.includes('--lights')) {
+  await command({ type: 'view', name: 'hub' });
+  await command({ type: 'probe', on: false });
+  await measure('hub', 'base');
+  for (const light of ['lamp', 'sun-light', 'fill', 'disc-key', 'disc-under']) {
+    await command({ type: 'hide', name: light, on: true });
+    await sleep(3000);
+    await measure('hub', `-${light}`);
+    await command({ type: 'hide', name: light, on: false });
+    await sleep(3000);
+  }
+  await command({ type: 'env', on: false });
+  await sleep(3000);
+  await measure('hub', '-env');
+  await command({ type: 'hide', name: 'lamp', on: true });
+  await command({ type: 'hide', name: 'fill', on: true });
+  await sleep(3000);
+  await measure('hub', '-env -lamp -fill');
+  await command({ type: 'hide', name: 'lamp', on: false });
+  await command({ type: 'hide', name: 'fill', on: false });
+  await command({ type: 'env', on: true });
+  await sleep(3000);
+  await measure('hub', 'base again');
+  console.log(`done: ${OUT} (label ${label})`);
+  process.exit(0);
+}
+
 // `--toggle glass`: at rim and hub only, alternate no glass (VR) and the desktop glass, twice each.
 if (process.argv.includes('--toggle')) {
   for (const view of ['hub', 'rim']) {

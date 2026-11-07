@@ -92,6 +92,7 @@ export class Stage {
 
     // A soft warm fill so the woodwork reads even on the Sun's far side.
     const fill = new THREE.HemisphereLight(0xffe2b8, 0x1a1008, 0.35);
+    fill.name = 'fill';
     this.scene.add(fill);
 
     this.addStarfield();

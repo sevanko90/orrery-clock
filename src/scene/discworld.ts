@@ -792,6 +792,8 @@ export class Discworld {
     under.position.set(-30, -60, 25);
     const key = new THREE.DirectionalLight(0xffcf96, 0);
     key.position.set(60, -8, 45);
+    under.name = 'disc-under';
+    key.name = 'disc-key';
     this.lights.push({ light: under, base: 1.4 }, { light: key, base: 1.1 });
     this.root.add(under, key);
   }

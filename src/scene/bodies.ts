@@ -381,6 +381,7 @@ export class Bodies {
 
     this.sunLight = new THREE.PointLight(SUN_COLOR, 2.2, 0, 0);
     this.sunLight.position.copy(this.sunMesh.position);
+    this.sunLight.name = 'sun-light';
     SUN_LIGHTS.setLights([this.sunLight]);
     this.sunLight.castShadow = !opts.lowQuality;
     this.sunLight.shadow.mapSize.set(1024, 1024);

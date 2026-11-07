@@ -100,6 +100,8 @@ const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
 // Scrunched (the headset): no glass in the drum, the mechanism open in its frame (telemetry `glass` switches it live).
 const vrGlass = new VrGlass(orrery.root);
+/** The environment map, kept so telemetry `env` can take it away and give it back. */
+const sceneEnv = stage.scene.environment;
 if (scrunch) vrGlass.set(true);
 // Draw the instrument's hundreds of parts as a few batches (one per material).
 // (Scrunched: one batcher over the whole scene instead, built by rebatch() once the bodies exist.)
@@ -851,6 +853,10 @@ const telemetry = new Telemetry((c: Command) => {
     }
     case 'probe':
       probes.on = c.on;
+      return;
+    case 'env':
+      // (Every lit material recompiles: expect a hitch.)
+      stage.scene.environment = c.on ? sceneEnv : null;
       return;
     case 'glass':
       vrGlass.set(!c.on);

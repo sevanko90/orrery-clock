@@ -279,6 +279,7 @@ export function buildOrrery(mats: Materials): Orrery {
   // Warm work-lamp glow inside the cabinet so the gears read through the glass.
   const lamp = new THREE.PointLight(0xffc98a, 0.9, 10, 1.2);
   lamp.position.set(0, GLASS_Y - 0.05, 3.5);
+  lamp.name = 'lamp';
   root.add(lamp);
 
   // ---- Planet arms -------------------------------------------------------
