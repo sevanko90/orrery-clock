@@ -772,8 +772,6 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
     return lore ? () => loreCard(lore) : null;
   },
   view: viewFrom,
-  faster: () => clock.setStep(clock.step + 1),
-  slower: () => clock.setStep(clock.step - 1),
   now: () => clock.resetToNow(),
   status: () => [new Date(clock.nowMs()).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), SPEED_STEPS[clock.step].label],
   quake: () => Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0),

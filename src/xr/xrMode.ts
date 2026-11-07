@@ -34,8 +34,6 @@ export interface XrHit {
 /** What VR needs from the rest of the app. */
 export interface XrHooks {
   pick(ray: THREE.Raycaster): XrHit | null;
-  faster(): void;
-  slower(): void;
   now(): void;
   /** Called each frame in VR with the head's world position (to skip drawing what it can't see); null on leaving VR. */
   view?(head: THREE.Vector3 | null): void;
@@ -128,7 +126,7 @@ export class XrMode {
   private vignette: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicNodeMaterial>;
   private vignetteStrength = uniform(0);
   /** Which wrist panel is out: X toggles the time panel, Y the scene panel (one at a time). */
-  private open: 'time' | 'scene' | null = 'time';
+  private open: 'time' | 'scene' | null = null;
   /** The debug panel shown beside the scene panel (its Debug row toggles it). */
   private debugShown = false;
   /** The debug panel's readout lines. */
@@ -606,8 +604,6 @@ export class XrMode {
       this.input.rumble(0.6, 80);
       this.markShownUntil = performance.now() + 2500;
     }
-    if (a.faster) this.hooks.faster();
-    if (a.slower) this.hooks.slower();
     if (a.now) this.hooks.now();
 
     // Arriving through the wormhole, or being carried somewhere: no locomotion.

@@ -29,9 +29,25 @@ const TEXT: Record<Hand, Record<string, string[]>> = {
     'xr-standard-thumbstick': ['Turn · rise / sink', 'click: now'],
     'xr-standard-trigger': ['Select'],
     'xr-standard-squeeze': ['Hold + stick: scale'],
-    'a-button': ['Faster'],
-    'b-button': ['Slower'],
   },
+};
+
+/**
+ * Where each control's plate stands, from the control (metres, in the
+ * controller's space): `side` away from the body (outward), `up`, and
+ * `forward` along the pointing direction. Set per control so they fan out
+ * round the controller instead of stacking: the face buttons at different
+ * heights to the side, the stick's above, the trigger's ahead, the grip's
+ * out to the side.
+ */
+const LAYOUT: Record<string, { side: number; up: number; forward: number }> = {
+  'xr-standard-thumbstick': { side: -0.015, up: 0.05, forward: 0 },
+  'x-button': { side: 0.05, up: 0.015, forward: 0.01 },
+  'a-button': { side: 0.05, up: 0.015, forward: 0.01 },
+  'y-button': { side: 0.05, up: 0.05, forward: -0.005 },
+  'b-button': { side: 0.05, up: 0.05, forward: -0.005 },
+  'xr-standard-trigger': { side: 0, up: -0.005, forward: 0.065 },
+  'xr-standard-squeeze': { side: 0.065, up: -0.02, forward: 0 },
 };
 
 /** Plate height (metres); its width follows the text. */
@@ -114,7 +130,8 @@ export class ControllerLabels {
       const want = this.showing > 0 || (dist < 0.6 && facing > 0.2) ? 1 : 0;
       Object.assign(this.state[b.hand] as object, { dist: +dist.toFixed(2), facing: +facing.toFixed(2), opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2) });
       const o0 = this.opacity.get(b.group) ?? 0;
-      const o = o0 + THREE.MathUtils.clamp(want - o0, -dt * 4, dt * 4);
+      // A gentle fade (~0.8 s), not a pop.
+      const o = o0 + THREE.MathUtils.clamp(want - o0, -dt * 1.25, dt * 1.25);
       this.opacity.set(b.group, o);
       b.group.visible = o > 0.01;
       for (const m of b.materials) m.opacity = o;
@@ -128,20 +145,16 @@ export class ControllerLabels {
     const materials: Built['materials'] = [];
     model.updateWorldMatrix(true, true);
     const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
-    // The controller's centre (model space), to push plates outward from it.
-    const box = new THREE.Box3().setFromObject(model).applyMatrix4(inv);
-    const centre = box.getCenter(new THREE.Vector3());
+    // Outward is −x for the left hand, +x for the right.
+    const outward = hand === 'left' ? -1 : 1;
     let any = false;
     for (const [id, lines] of Object.entries(TEXT[hand])) {
       const node = anchorOf(model, comps[id]);
       if (!node) continue;
       any = true;
       const p = node.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
-      // Out from the controller's centre, sideways and up, so plates fan out round it.
-      const out = p.clone().sub(centre).setY(0);
-      if (out.lengthSq() < 1e-8) out.set(hand === 'left' ? -1 : 1, 0, 0);
-      out.normalize();
-      const at = p.clone().addScaledVector(out, STAND_OFF).add(new THREE.Vector3(0, 0.018, 0));
+      const l = LAYOUT[id] ?? { side: STAND_OFF, up: 0.02, forward: 0 };
+      const at = p.clone().add(new THREE.Vector3(l.side * outward, l.up, -l.forward));
 
       const tex = plateTexture(lines);
       const mat = new THREE.MeshBasicMaterial({ map: tex.texture, transparent: true, depthTest: false, depthWrite: false, opacity: 0 });
