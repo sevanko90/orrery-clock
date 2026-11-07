@@ -215,9 +215,10 @@ export class XrMode {
     this.rayDot = new THREE.Sprite(
       new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffe2a8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
-    this.halo = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffc070, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }),
-    );
+    // The selection mark: a thin brass ring round the selected object (a glow read as light from it).
+    // Drawn over everything, like the labels: it also finds the selection behind other things.
+    this.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), color: 0xe0b464, transparent: true, depthTest: false, depthWrite: false }));
+    this.halo.renderOrder = 19;
     this.halo.visible = false;
     scene.add(this.rayDot, this.halo, this.hoverLabel.sprite, this.pinLabel.sprite);
     (this.pivotDot.material as THREE.SpriteMaterial).map = glowTexture();
@@ -854,15 +855,16 @@ export class XrMode {
     }
     this.info.update();
 
-    // The selected body: a warm halo and its name pinned above it.
+    // The selected body: a brass ring round it and its name pinned above it.
     const sel = this.selected;
     if (sel && !(sel.available?.() ?? true)) this.selected = null;
     this.halo.visible = this.pinLabel.sprite.visible = !!this.selected;
     if (this.selected) {
       const at = this.selected.group.getWorldPosition(new THREE.Vector3());
       this.halo.position.copy(at);
-      // (The globe's size, not Saturn's ring-wide radius, or the halo swells into a second Sun.)
-      this.halo.scale.setScalar((this.selected.globeRadius ?? this.selected.radius) * 3.2);
+      // Just clear of the globe (not Saturn's ring-wide radius), and never smaller than ~2.5° so a far moon's ring still shows.
+      const ring = Math.max((this.selected.globeRadius ?? this.selected.radius) * 2.8, at.distanceTo(eye) * 0.045);
+      this.halo.scale.setScalar(ring);
       this.pinLabel.plate.set(this.selected.name, this.selected.kind ? [this.selected.kind] : []);
       this.pinLabel.place(at.clone().addScaledVector(UP, this.selected.radius), eye, XR.labelAngular * 1.2, 0.9);
     }
@@ -1010,6 +1012,28 @@ export class XrMode {
 }
 
 let glow: THREE.Texture | null = null;
+let ring: THREE.CanvasTexture | null = null;
+/** A thin ring with a fine inner line, like an engraved bezel. */
+function ringTexture() {
+  if (ring) return ring;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d')!;
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = 7;
+  g.beginPath();
+  g.arc(128, 128, 118, 0, Math.PI * 2);
+  g.stroke();
+  g.globalAlpha = 0.5;
+  g.lineWidth = 2;
+  g.beginPath();
+  g.arc(128, 128, 106, 0, Math.PI * 2);
+  g.stroke();
+  ring = new THREE.CanvasTexture(c);
+  ring.colorSpace = THREE.SRGBColorSpace;
+  return ring;
+}
+
 function glowTexture() {
   if (glow) return glow;
   const c = document.createElement('canvas');
