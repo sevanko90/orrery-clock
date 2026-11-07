@@ -100,6 +100,20 @@ if (th > 0) {
   process.exit(0);
 }
 
+// `--base`: just the plain cost at each viewpoint, twice round (an A/B between builds).
+if (process.argv.includes('--base')) {
+  await command({ type: 'date', iso: '2027-08-20T12:00:00Z' });
+  await command({ type: 'speed', step: 8 });
+  await command({ type: 'probe', on: false });
+  for (const round of [1, 2])
+    for (const view of VIEWS) {
+      await command({ type: 'view', name: view });
+      await measure(view, `base ${round}`);
+    }
+  console.log(`done: ${OUT} (label ${label})`);
+  process.exit(0);
+}
+
 await command({ type: 'list' });
 await command({ type: 'date', iso: '2027-08-20T12:00:00Z' });
 await command({ type: 'speed', step: 8 });

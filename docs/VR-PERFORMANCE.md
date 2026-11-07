@@ -29,7 +29,7 @@ favour of polish; the renderer stays WebGPURenderer.
 |---|---|
 | Batching the orrery and Discworld (720 → 284 draws) | fps unchanged (~48 at the marker 1 view) |
 | Scrunch round 1: distance LODs for gears, plates, spheres; triangles halved | fps unchanged |
-| Scrunch round 2: one batch per shading model, merged lines and sprites, globe texture array (draws halved again, 150 → 65) | fps unchanged; kept, but costs a ~0.5 s rebuild hitch and ~22 MB GPU memory |
+| Scrunch round 2: one batch per shading model, merged lines and sprites, globe texture array (draws halved again, 150 → 65) | fps unchanged at the time. Re-tested after the glass and picking fixes (same session, two passes each): +3 fps at rim only (65 → 68; render 6.2 → 4.8 ms), nothing elsewhere. Taken out (8b79252, tag before-unscrunch has it): not worth ~1000 lines, ~22 MB GPU memory and a ~0.5 s rebuild hitch |
 | Lower eye-buffer resolution (`xrscale` 0.6, 0.8) | no change, and it looked worse |
 | MSAA off | no change; full MSAA kept |
 | 90 vs 72 Hz at the heavy views | same fps either way |
