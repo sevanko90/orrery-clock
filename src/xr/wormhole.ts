@@ -1,23 +1,34 @@
 import * as THREE from 'three/webgpu';
-import { atan, clamp, cos, float, max, mix, mx_fractal_noise_float, mx_noise_float, normalize, positionLocal, pow, sin, smoothstep, uniform, vec3 } from 'three/tsl';
+import { abs, clamp, cos, float, fract, mix, mx_fractal_noise_float, pow, sin, smoothstep, uniform, uv, vec3 } from 'three/tsl';
 
 /**
- * The VR arrival: about three seconds inside a streaming tunnel of brass and
- * gold light and slow gas, opening out onto the scene.
+ * The VR arrival: about three seconds down a tunnel of brass and light,
+ * opening out onto the scene.
  *
- * It's an inside-out sphere around the player's head, fixed in the world (so
- * looking around is free and nothing is locked to the head), drawn over the
- * scene. Its shader treats every view direction as a ray down an endless
- * cylinder along the arrival heading: depth along the tunnel is cot θ from
- * the axis, so streaks of light and wisps of gas, moving along that depth,
- * stream past on all sides while the player stands still. Far ahead a warm
- * glow gathers; at the end the tunnel brightens into it and fades away,
- * leaving the scene.
+ * Real geometry, in metres around the player's head (it's parented to the
+ * rig), so both eyes see true depth: a long tube with brass ribs every few
+ * metres, two gold filaments spiralling along its walls and slow gas
+ * between them. The pattern streams toward the player at a steady pace
+ * (comfort: speed is eased in and out, never jerked, and the vignette is
+ * on), the far end glows with the destination, and at the end the glow
+ * floods the tube and fades, leaving the scene. Two draws.
  */
+
 export const ARRIVAL_SECONDS = 3;
 
+/** Tube radius and length (metres). */
+const RADIUS = 2.2;
+const LENGTH = 120;
+/** How far behind the head the tube starts (metres). */
+const BEHIND = 3;
+/** Rib spacing (metres). */
+const RIB = 3.5;
+/** Cruising speed (metres a second). */
+const CRUISE = 10;
+
 export class Wormhole {
-  readonly mesh: THREE.Mesh;
+  /** The tunnel (tube and the glowing far end), placed at the head on start. */
+  readonly mesh = new THREE.Group();
   private time = uniform(0);
   private travel = uniform(0);
   private fade = uniform(0);
@@ -26,50 +37,64 @@ export class Wormhole {
   private travelled = 0;
 
   constructor() {
-    const dir = normalize(positionLocal);
-    // Tunnel axis: local −z (the way the player faces on arrival).
-    const along = dir.z.negate();
-    const across = max(float(1).sub(along.mul(along)).sqrt(), 0.04);
-    const depth = along.div(across); // cot θ: distance down a unit cylinder
-    const phi = atan(dir.y, dir.x);
-    const ring = vec3(cos(phi), sin(phi), 0);
-    const z = depth.add(this.travel);
+    const u = uv();
+    // Distance ahead of the head along the tube (metres) and the pattern coordinate, streaming toward the player.
+    const ahead = u.y.mul(LENGTH).sub(BEHIND);
+    const s = ahead.add(this.travel);
+    const around = u.x.mul(Math.PI * 2);
 
-    // Long streaks of light: thin in angle, stretched along the tunnel.
-    const streak = mx_noise_float(vec3(ring.x.mul(9), ring.y.mul(9), z.mul(0.12))).mul(0.5).add(0.5);
-    const streaks = pow(smoothstep(0.55, 0.95, streak), float(3));
-    // Slow gas: soft billows drifting with the flow.
-    const gas = mx_fractal_noise_float(vec3(ring.x.mul(2.2), ring.y.mul(2.2), z.mul(0.35).sub(this.time.mul(0.2))), 3, 2, 0.5).mul(0.5).add(0.5);
-    // The destination: a glow gathering dead ahead.
-    const core = pow(clamp(along, 0, 1), float(10));
-    // Behind the player the tunnel dims away.
-    const behind = smoothstep(-0.9, 0.2, along);
+    // Brass ribs: thin bright bands, a softer shoulder either side.
+    const ribPhase = abs(fract(s.div(RIB)).sub(0.5)).mul(2);
+    const rib = pow(ribPhase, float(40)).add(pow(ribPhase, float(8)).mul(0.25));
+    // Two gold filaments spiralling opposite ways.
+    const line = (turns: number, pitch: number) => pow(float(1).sub(abs(fract(u.x.mul(turns).add(s.mul(pitch))).sub(0.5)).mul(2)), float(28));
+    const filament = line(3, 0.045).add(line(-2, 0.03).mul(0.7));
+    // Slow gas drifting along the walls.
+    const gas = mx_fractal_noise_float(vec3(cos(around).mul(1.4), sin(around).mul(1.4), s.mul(0.12).sub(this.time.mul(0.25))), 3, 2, 0.5).mul(0.5).add(0.5);
 
-    const bronze = vec3(0.3, 0.16, 0.05);
-    const gold = vec3(1.0, 0.72, 0.32);
+    const bronze = vec3(0.14, 0.075, 0.03);
+    const brass = vec3(0.95, 0.68, 0.3);
+    const gold = vec3(1.0, 0.78, 0.38);
     const cream = vec3(1.0, 0.93, 0.78);
-    // (Fading the pattern into the glow where the tunnel's depth runs to infinity.)
-    const glow = gas.mul(0.55).add(streaks.mul(1.6)).mul(behind.mul(0.7).add(0.3)).mul(float(1).sub(core));
-    let col = mix(bronze, gold, clamp(glow, 0, 1));
-    col = mix(col, cream, clamp(streaks.mul(0.8).add(core), 0, 1));
-    col = col.mul(glow.add(0.25)).add(cream.mul(core.mul(1.5)));
-    col = mix(col, cream.mul(1.4), this.flash);
+    let col = bronze.mul(gas.mul(0.9).add(0.2)).add(brass.mul(rib.mul(1.3))).add(gold.mul(filament.mul(1.1)));
+    // The destination's glow fills the distance (and, at the end, the whole tube).
+    const glowFrom = mix(float(30), float(-BEHIND), this.flash);
+    const toward = smoothstep(glowFrom, float(LENGTH * 0.85), ahead);
+    col = mix(col, cream.mul(1.1), clamp(toward.mul(0.85).add(this.flash.mul(0.6)), 0, 1));
+    // Behind the head it dims away.
+    col = col.mul(smoothstep(-BEHIND, 0.5, ahead).mul(0.8).add(0.2));
 
-    const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false, side: THREE.BackSide });
-    mat.colorNode = col;
-    mat.opacityNode = this.fade;
-    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(2.5, 48, 32), mat);
-    this.mesh.renderOrder = 29;
-    this.mesh.frustumCulled = false;
+    const tubeMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false, side: THREE.BackSide });
+    tubeMat.colorNode = col;
+    tubeMat.opacityNode = this.fade;
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(RADIUS, RADIUS, LENGTH, 64, 1, true), tubeMat);
+    // Cylinder +y (uv.y = 1) points down −z, ahead of the player.
+    tube.rotation.x = -Math.PI / 2;
+    tube.position.z = -(LENGTH / 2 - BEHIND);
+    tube.renderOrder = 29;
+
+    // The far end: a disc of the destination's light.
+    const endMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false });
+    endMat.colorNode = cream.mul(1.3);
+    endMat.opacityNode = this.fade;
+    const end = new THREE.Mesh(new THREE.CircleGeometry(RADIUS, 48), endMat);
+    end.position.z = -(LENGTH - BEHIND);
+    end.renderOrder = 29;
+
+    for (const m of [tube, end]) {
+      m.frustumCulled = false;
+      m.raycast = () => undefined;
+      this.mesh.add(m);
+    }
+    this.mesh.name = 'arrival-tunnel';
     this.mesh.visible = false;
-    this.mesh.raycast = () => undefined;
   }
 
   get active() {
     return this.t >= 0;
   }
 
-  /** Start around `parent`-local point `at`, the tunnel running along `yaw` (radians, about +Y). */
+  /** Start around `parent`-local point `at` (metres in the rig), the tunnel running along `yaw` (radians, about +Y). */
   start(parent: THREE.Object3D, at: THREE.Vector3, yaw: number) {
     parent.add(this.mesh);
     this.mesh.position.copy(at);
@@ -85,9 +110,7 @@ export class Wormhole {
     if (this.t < 0) return 0;
     this.t += dt;
     if (this.t >= ARRIVAL_SECONDS) {
-      this.t = -1;
-      this.mesh.visible = false;
-      this.mesh.removeFromParent();
+      this.stop();
       return 0;
     }
     this.apply(dt);
@@ -105,19 +128,19 @@ export class Wormhole {
   preview(parent: THREE.Object3D, at: THREE.Vector3, yaw: number, t: number) {
     this.start(parent, at, yaw);
     this.t = t;
-    this.travelled = t * 6;
+    this.travelled = t * CRUISE * 0.8;
     this.apply();
   }
 
   private apply(dt = 0) {
     const t = this.t;
-    // Speed builds, then eases off as the tunnel opens onto the scene.
-    const speed = 4 + 10 * smooth(0, 1.6, t) - 8 * smooth(2.0, 2.8, t);
+    // Eases up to cruising pace, holds it, eases off as the tunnel opens onto the scene.
+    const speed = CRUISE * (0.3 + 0.7 * smooth(0, 1.0, t)) * (1 - 0.7 * smooth(2.0, 2.8, t));
     this.travelled += speed * dt;
     this.travel.value = this.travelled;
     this.time.value = t;
-    this.fade.value = smooth(0, 0.35, t) * (1 - smooth(2.45, ARRIVAL_SECONDS, t));
-    this.flash.value = smooth(2.0, 2.5, t) * (1 - smooth(2.5, ARRIVAL_SECONDS, t)) * 0.85;
+    this.fade.value = smooth(0, 0.3, t) * (1 - smooth(2.5, ARRIVAL_SECONDS, t));
+    this.flash.value = smooth(1.9, 2.5, t);
   }
 }
 
