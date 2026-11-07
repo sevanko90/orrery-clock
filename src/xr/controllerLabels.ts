@@ -76,6 +76,18 @@ function anchorOf(model: THREE.Object3D, c: Component | undefined): THREE.Object
   for (const r of Object.values(c.visualResponses ?? {})) if (r.valueNode) return r.valueNode;
   return null;
 }
+
+const box = new THREE.Box3();
+/**
+ * The control's position (world): a touch point is a point; otherwise the
+ * centre of the control's geometry (a root node sits at the model's origin,
+ * its mesh offset from it, so its own position is the controller's centre).
+ */
+function anchorPosition(node: THREE.Object3D, isTouchPoint: boolean, out: THREE.Vector3) {
+  if (isTouchPoint) return node.getWorldPosition(out);
+  box.setFromObject(node);
+  return box.isEmpty() ? node.getWorldPosition(out) : box.getCenter(out);
+}
 interface ModelLike extends THREE.Object3D {
   motionController?: { components: Record<string, Component> } | null;
 }
@@ -158,7 +170,7 @@ export class ControllerLabels {
       const node = anchorOf(model, comps[id]);
       if (!node) continue;
       any = true;
-      const p = node.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
+      const p = anchorPosition(node, node === comps[id]?.touchPointNode, new THREE.Vector3()).applyMatrix4(inv);
       const l = LAYOUT[id] ?? { side: STAND_OFF, up: 0.02, forward: 0 };
       const at = p.clone().add(new THREE.Vector3(l.side * outward, l.up, -l.forward));
 
