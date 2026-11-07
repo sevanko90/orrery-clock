@@ -26,8 +26,6 @@ export interface Body {
   pickProxy: THREE.Mesh;
   /** Size for framing and picking (Saturn's includes its rings). */
   radius: number;
-  /** The globe's own radius, where it differs from `radius` (Saturn): for the selection halo. */
-  globeRadius?: number;
   /** Load the highest resolution texture (on focus). */
   upgrade(): void;
   /** Extra info for comets. */
@@ -423,7 +421,6 @@ export class Bodies {
         group: pv.group,
         pickProxy: proxy,
         radius: spec.id === 'saturn' ? spec.size * 2.3 : spec.size,
-        globeRadius: spec.size,
         upgrade: () => pv.textures.forEach((t) => t.upgrade()),
       });
     }
