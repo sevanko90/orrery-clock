@@ -30,7 +30,13 @@ above it. Combine the clock and the scene (fiction) controls into one
 panel. Move the debug readouts (fps, CPU, backend) and in-VR toggles to a
 separate debug panel, opened from a button.
 
-## 3. Controller labels
+## 3. Controller labels (first pass in; headset check pending)
+
+First pass 2026-11-07 (`src/xr/controllerLabels.ts`): engraved brass
+plates anchored to each control's touch point with a leader line, fading in
+when a controller is raised near the face with its top toward the eyes.
+Still to do: bundle the Quest 3 controller model (below).
+
 
 An overlay on the controllers: arrows and short text for each control
 (walk/fly, snap turn, rise/sink, jetpack, select, world scale, time

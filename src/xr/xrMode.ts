@@ -10,6 +10,7 @@ import { CAPTURE_RADIUS, Lift } from './lift';
 import { shellTopAt, type Lore } from '../scene/discworld';
 import type { CardContent } from '../ui/infocard';
 import { InfoPanel } from './infoPanel';
+import { ControllerLabels } from './controllerLabels';
 import { TABLE_RADIUS } from '../scene/layout';
 import { Wormhole } from './wormhole';
 import { ControlPanel, type PanelRow } from './controlPanel';
@@ -155,6 +156,10 @@ export class XrMode {
   private scenePanel: ControlPanel;
   /** Frame rate, renderer and scale, beside the wrist panel. */
   private debugPanel: ControlPanel;
+  /** Each controller's model (loaded from its input profile), for the labels. */
+  private controllerModels: { slot: { grip: THREE.XRGripSpace; source: XRInputSource | null }; model: THREE.Object3D }[];
+  /** Engraved control labels that show when a controller is raised to be read. */
+  private controllerLabels = new ControllerLabels();
   /** The info card, opened with the trigger on a body or a Discworld figure. */
   readonly info = new InfoPanel();
   private panelAt = 0;
@@ -211,7 +216,11 @@ export class XrMode {
     this.input = new XrInput(renderer, this.rig);
 
     const models = new XRControllerModelFactory();
-    for (const s of this.input.all) s.grip.add(models.createControllerModel(s.grip));
+    this.controllerModels = this.input.all.map((slot) => {
+      const model = models.createControllerModel(slot.grip);
+      slot.grip.add(model);
+      return { slot, model };
+    });
 
     // The pointer: a thin gold line and a bead where it lands, on whichever controller is the right hand.
     this.rayLine = new THREE.Line(
@@ -766,6 +775,12 @@ export class XrMode {
     this.updatePointer(a.select);
     mark('xr.pointer');
     this.updateWrist(dt, cpuMs);
+    this.controllerLabels.update(
+      dt,
+      this.controllerModels.map(({ slot, model }) => ({ grip: slot.grip, model, hand: (slot.source?.handedness as 'left' | 'right' | undefined) ?? null })),
+      this.head(),
+      this.metresPerUnit,
+    );
     mark('xr.wrist');
 
     const quake = this.hooks.quake();
