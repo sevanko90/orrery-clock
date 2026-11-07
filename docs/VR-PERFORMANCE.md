@@ -89,6 +89,7 @@ gap between the end of our frame's work and the start of the next.
 | 9 | Demolition-of-Earth shader warm-up (`compileAsync` when the fleet arrives) | visible hitch at the blast | one-off stall | desktop worst frame 83 → ≤ 34 ms | 3484a4a |
 | 10 | Movement hidden only while under the Disc (not "below table height") | gears popped in past the rim | correctness | pop gone; small extra draw cost outside the rim | 3484a4a |
 | 11 | BVH (three-mesh-bvh) for Discworld lore picking | VR picks every frame; the plain test walked ~92k triangles of 199 parts | our JS | VR pointer 3.0 ms → 0.33 ms per frame (headset); desktop pick 1.77 → 0.09 ms, identical hits | bbe9eb5 |
+| 12 | Cheap VR glass drum: unlit additive Fresnel sheen, one pass, instead of lit double-sided transparent PBR | sweep S1: hiding the glass took hub 52 → 61 fps (GPU) | GPU (outside time) | live A/B at hub, alternating twice: cheap 63.4 / 64.2 vs full 57.3 / 62.1 fps (outside 7.0 vs 7.2–9.2 ms); rim unchanged (~61) | 3f009a1, telemetry `glass` |
 
 ## Models that turned out wrong
 
