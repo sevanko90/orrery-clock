@@ -130,7 +130,7 @@ export class ControllerLabels {
       const dist = toEye.length() * metresPerUnit;
       this.up.set(0, 1, 0).transformDirection(c.grip.matrixWorld);
       const facing = toEye.normalize().dot(this.up);
-      const want = this.showing > 0 || (dist < 0.6 && facing > 0.2) ? 1 : 0;
+      const want = this.showing > 0 || (dist < 0.35 && facing > 0.2) ? 1 : 0;
       Object.assign(this.state[b.hand] as object, { dist: +dist.toFixed(2), facing: +facing.toFixed(2), opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2) });
       const o0 = this.opacity.get(b.group) ?? 0;
       // A gentle fade (~0.8 s), not a pop.
