@@ -979,18 +979,49 @@ function warmShaders(root: THREE.Object3D) {
     o.visible = true;
     o.frustumCulled = false;
   });
+  // In VR the WebGL backend waits for the compile by polling with
+  // window.requestAnimationFrame, which the Quest Browser doesn't run during a
+  // session: stand a timer in for it (from before the first poll) until the
+  // compile is done, 10 s at most.
+  const settle = xr.presenting ? standInFrameTimer() : () => undefined;
   let p: Promise<unknown> | undefined;
   try {
     // In VR, against the headset's camera, so the two-eye shader variants are the ones built.
     const camera = xr.presenting ? stage.renderer.xr.getCamera() : stage.camera;
     p = stage.renderer.compileAsync(root, camera, stage.scene);
+  } catch (e) {
+    settle();
+    throw e;
   } finally {
     for (const [o, visible, culled] of restore) {
       o.visible = visible;
       o.frustumCulled = culled;
     }
   }
-  p?.catch(() => undefined);
+  if (!p) return settle();
+  const t0 = performance.now();
+  const name = root.name || root.type;
+  telemetry.send({ kind: 'warmup', stage: 'start', name, vr: xr.presenting });
+  const limit = setTimeout(settle, 10_000);
+  p.then(
+    () => telemetry.send({ kind: 'warmup', stage: 'done', name, ms: Math.round(performance.now() - t0) }),
+    (e) => telemetry.send({ kind: 'warmup', stage: 'failed', name, error: String(e) }),
+  ).finally(() => {
+    clearTimeout(limit);
+    settle();
+  });
+}
+
+/** Replace window.requestAnimationFrame with a short timer; returns the undo (safe to call twice). */
+function standInFrameTimer() {
+  const raf = window.requestAnimationFrame;
+  window.requestAnimationFrame = (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 4);
+  let undone = false;
+  return () => {
+    if (undone) return;
+    undone = true;
+    window.requestAnimationFrame = raf;
+  };
 }
 
 function step(now: number) {
