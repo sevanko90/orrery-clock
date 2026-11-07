@@ -961,7 +961,7 @@ class Demolition {
   private arrival = glow(0xffffff, 0);
   /** The construction site: Earth's ghost, the sign, the survey line, and the ships' projector rays. */
   private ghost = new THREE.Mesh(new THREE.SphereGeometry(0.34, 48, 32), new HoloGlobeMaterial());
-  /** Smallest the construction hologram may look (radians across): bigger in VR and the tabletop, to be read. */
+  /** Smallest the construction hologram may look (radians across): bigger in the tabletop, to be read. */
   minSignAngle = 0.078;
   private parentQ = new THREE.Quaternion();
   private sign = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.43), new HoloSignMaterial(constructionSignTexture()));
@@ -2002,7 +2002,7 @@ export class Fiction {
   }
 
   /** Scene parts whose shaders should be compiled now (once, ahead of first use), or null. */
-  /** Smallest apparent size of on-screen signs (radians across): bigger in VR and the tabletop, where they're read at a distance. */
+  /** Smallest apparent size of on-screen signs (radians across): bigger in the tabletop, where the solar system is small. */
   set minSignAngle(a: number) {
     this.demolition.minSignAngle = a;
   }
