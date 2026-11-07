@@ -58,7 +58,7 @@ export interface XrHooks {
   timeRows?(): PanelRow[];
   timePress?(index: number, part: number): void;
   /** The panel's scene controls, and a press on one. */
-  panelRows?(): PanelRow[];
+  panelRows?(mode: XrSessionMode): PanelRow[];
   panelPress?(index: number, part: number): void;
   /** The info card for a pointed-at object (its content, called again for live figures), or null if it has none. */
   card?(hit: XrHit): (() => CardContent) | null;
@@ -313,9 +313,9 @@ export class XrMode {
       },
     );
     this.scenePanel = new ControlPanel(
-      () => [...(this.hooks.panelRows?.() ?? []), { label: 'Debug', on: this.debugShown }],
+      () => [...(this.hooks.panelRows?.(this.mode) ?? []), { label: 'Debug', on: this.debugShown }],
       (i, part) => {
-        if (i < (this.hooks.panelRows?.().length ?? 0)) this.hooks.panelPress?.(i, part);
+        if (i < (this.hooks.panelRows?.(this.mode).length ?? 0)) this.hooks.panelPress?.(i, part);
         else this.debugShown = !this.debugShown;
       },
       () => ['ORRERY'],
@@ -412,6 +412,60 @@ export class XrMode {
     this.placePending = true;
   }
 
+  /** Tabletop: an easing turn of the orrery about its centre (radians to go, and how far it has come). */
+  private turn: { angle: number; done: number; t: number } | null = null;
+
+  /**
+   * Tabletop: turn the orrery about its centre so that world point `at` comes
+   * round to the player's side (the player never moves: they're looking down
+   * on it in their own room). Done by turning the rig the other way about the
+   * same axis, over ~1.5 s.
+   */
+  turnToward(at: THREE.Vector3) {
+    if (this.mode !== 'ar') return;
+    const c = this.orreryCentre();
+    const head = this.head();
+    const toHead = Math.atan2(head.x - c.x, head.z - c.z);
+    const toAt = Math.atan2(at.x - c.x, at.z - c.z);
+    // The world turns by (toHead − toAt); the rig turns the opposite way. Shortest way round.
+    let angle = toAt - toHead;
+    angle = Math.atan2(Math.sin(angle), Math.cos(angle));
+    this.turn = { angle, done: 0, t: 0 };
+  }
+
+  /** Tabletop: put the orrery back in front of the player (on the next posed frame). */
+  placeInFront() {
+    if (this.mode !== 'ar') return;
+    this.turn = null;
+    this.placePending = true;
+  }
+
+  private orreryCentre() {
+    const b = this.orreryBox;
+    return new THREE.Vector3((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2);
+  }
+
+  /** Per frame: advance the tabletop turn. */
+  private stepTurn(dt: number) {
+    const t = this.turn;
+    if (!t) return;
+    t.t = Math.min(1, t.t + dt / 1.5);
+    const eased = t.t * t.t * (3 - 2 * t.t);
+    const step = t.angle * eased - t.done;
+    t.done += step;
+    // Rotate the rig about the orrery's vertical axis by `step`.
+    const c = this.orreryCentre();
+    const p = this.rig.position;
+    const dx = p.x - c.x,
+      dz = p.z - c.z;
+    const cs = Math.cos(step),
+      sn = Math.sin(step);
+    p.x = c.x + dx * cs + dz * sn;
+    p.z = c.z - dx * sn + dz * cs;
+    this.rig.rotation.y += step;
+    if (t.t >= 1) this.turn = null;
+  }
+
   /** Put back what the tabletop hid or cleared. */
   private endTabletop() {
     const saved = this.arSaved;
@@ -421,6 +475,7 @@ export class XrMode {
     this.renderer.setClearColor(saved.clear, saved.alpha);
     this.arSaved = null;
     this.placePending = false;
+    this.turn = null;
   }
 
   /**
@@ -694,6 +749,7 @@ export class XrMode {
       this.placePending = false;
       this.placeTabletop();
     }
+    this.stepTurn(dt);
     mark('xr.input');
     const a = this.input.actions;
     const M = this.metresPerUnit;

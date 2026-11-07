@@ -25,7 +25,7 @@ import { detectGpu, warnIfNoGpu } from './ui/gpuCheck';
 import { Fiction } from './scene/fiction';
 import { FictionPanel } from './ui/fictionPanel';
 import { nextOccurrence, type FictionEntry } from './fiction/catalog';
-import { XrMode, type XrHit } from './xr/xrMode';
+import { XrMode, type XrHit, type XrSessionMode } from './xr/xrMode';
 import { DetailCuller } from './xr/detailCull';
 import { Batcher, raycastLayers } from './scene/batch';
 import { Telemetry, type Command } from './xr/telemetry';
@@ -364,7 +364,8 @@ let vrFictionAt: string | null = null;
  * flies to (approached from the player's own direction of view).
  */
 function vrFiction(entry: FictionEntry) {
-  if (!vrReturn) vrReturn = xr.pose();
+  // (The tabletop never carries the player off, so there's nowhere to return to.)
+  if (!vrReturn && xr.mode !== 'ar') vrReturn = xr.pose();
   if (!fiction?.enabled) setFiction(true);
   const p = xr.pose();
   const fwd = new THREE.Vector3(-Math.sin(THREE.MathUtils.degToRad(p.yawDeg)), 0, -Math.cos(THREE.MathUtils.degToRad(p.yawDeg)));
@@ -390,6 +391,8 @@ function vrFlyToFocus() {
   vrFlyPending = null;
   const d = focus.destination();
   if (!d || !xr.presenting) return;
+  // Tabletop: the player stays put (looking down on it in their room); the orrery turns the action toward them.
+  if (xr.mode === 'ar') return xr.turnToward(d.target);
   xr.moveTo(d.camera, yawFacing(d.target.clone().sub(d.camera).setY(0)));
 }
 
@@ -432,13 +435,13 @@ function timePress(i: number, part: number) {
   }
 }
 
-function panelRows(): PanelRow[] {
+function panelRows(mode: XrSessionMode = 'vr'): PanelRow[] {
   return [
     { label: 'Show', heading: true },
     { label: 'Moons', on: bodies.moonsVisible },
     { label: 'Fiction', heading: true },
     ...FICTION.map((e) => ({ label: e.title, active: vrFictionAt === e.id })),
-    { label: vrReturn ? 'Return' : 'Return to the Disc' },
+    { label: mode === 'ar' ? 'Place in front of me' : vrReturn ? 'Return' : 'Return to the Disc' },
   ];
 }
 function panelPress(i: number) {
@@ -447,7 +450,8 @@ function panelPress(i: number) {
   if (entry) return vrFiction(entry);
   if (i === FICTION.length + 3) {
     if (playing) dropScene();
-    if (vrReturn) vrReturnHome();
+    if (xr.mode === 'ar') xr.placeInFront();
+    else if (vrReturn) vrReturnHome();
     else xr.goTo(viewpoints().spawn);
   }
 }
@@ -974,6 +978,20 @@ function standInFrameTimer() {
   };
 }
 
+/**
+ * Whoever is looking: the desktop camera, or in VR a stand-in posed from the
+ * headset camera's matrix (its own position and quaternion fields aren't kept
+ * up to date). For scene parts that turn to face the viewer: the Demolition's
+ * hologram faced the desktop camera in VR, edge-on or from behind.
+ */
+const eyes = new THREE.PerspectiveCamera();
+const eyesScale = new THREE.Vector3();
+function viewer(): THREE.Camera {
+  if (!xr.presenting) return stage.camera;
+  stage.renderer.xr.getCamera().matrixWorld.decompose(eyes.position, eyes.quaternion, eyesScale);
+  return eyes;
+}
+
 function step(now: number) {
   // (Frozen by the scrunch debug tools: every animation holds still for frame diffs.)
   // three's animation loop calls once with no timestamp when it (re)starts,
@@ -1042,7 +1060,7 @@ function step(now: number) {
     }
   }
   if (fiction) {
-    fiction.update(simMs, dt, elapsed, jumped, stage.camera, clock.speed);
+    fiction.update(simMs, dt, elapsed, jumped, viewer(), clock.speed);
     const warm = fiction.takeWarmup();
     if (warm) warmShaders(warm);
     if (pendingFrame) {
@@ -1056,7 +1074,7 @@ function step(now: number) {
   fictionPanel.update(simMs);
   focus.update(dt);
   if (discworld) {
-    discworld.update(dt, clock.speed, stage.camera);
+    discworld.update(dt, clock.speed, viewer());
     if (!discworld.enabled && !focus.flying && stage.controls.maxPolarAngle !== NORMAL_LIMITS.maxPolar) {
       stage.controls.maxPolarAngle = NORMAL_LIMITS.maxPolar;
       stage.controls.maxDistance = NORMAL_LIMITS.maxDistance;

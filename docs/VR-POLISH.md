@@ -106,4 +106,11 @@ at ~60 cm across, base at 72 cm, 80 cm ahead. To work through:
 - Lighting: the orrery's own warm light (no real-world light estimation on
   the web).
 - Panels, labels and cards at tabletop distances; leaving and re-placing.
+- (Done) Scenes don't move the player: the orrery turns the action round to
+  the player's side; Return becomes "Place in front of me".
+- (Done) The Demolition's hologram faces the real viewer in VR (it faced the
+  desktop camera) and keeps a minimum apparent size (~4.5°).
+- Discworld from mid-air: on a table it's the flat Disc; picked up or placed
+  in the air, with room below for the whole stack clear of the floor and
+  table, the Discworld entrance plays.
 

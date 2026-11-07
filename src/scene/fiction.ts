@@ -1408,7 +1408,11 @@ class Demolition {
       this.ghost.material.uniforms.uTime.value = this.time;
     }
     if (this.sign.visible) {
-      this.sign.position.copy(this.earth).addScaledVector(UP, 0.72);
+      // Never smaller than ~4.5° across (1.3 units wide): seen from far off, or with the
+      // world at tabletop size, it would shrink to a few pixels. It grows, lifted clear of Earth to match.
+      const boost = Math.max(1, (camera.position.distanceTo(this.earth) * 0.078) / 1.3);
+      this.sign.scale.setScalar(boost);
+      this.sign.position.copy(this.earth).addScaledVector(UP, 0.72 * boost);
       this.sign.quaternion.copy(camera.quaternion);
       this.sign.material.uniforms.uReveal.value = signIn;
       this.sign.material.uniforms.uOpacity.value = site;
