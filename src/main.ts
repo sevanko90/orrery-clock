@@ -267,13 +267,14 @@ function setMoons(on: boolean) {
   }
 }
 {
-  let saved = false;
+  // Moons are on unless the viewer has turned them off.
+  let on = true;
   try {
-    saved = localStorage.getItem('moons') === '1';
+    on = localStorage.getItem('moons') !== '0';
   } catch {
     /* ignore */
   }
-  if (saved) setMoons(true);
+  if (on) setMoons(true);
 }
 moonButton.addEventListener('click', () => setMoons(!bodies.moonsVisible));
 addEventListener('keydown', (e) => {
