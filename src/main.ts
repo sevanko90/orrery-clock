@@ -35,6 +35,7 @@ import { SpriteBatch } from './scene/spriteBatch';
 import { LineBatch } from './scene/lineBatch';
 import { singlePass } from './scene/singlePass';
 import { TextureLayers } from './scene/textureLayers';
+import { discCapsOf, hiddenByDisc } from './scene/discOcclusion';
 import { ownSunlitProgram } from './scene/sunlit';
 import { viewpoints, yawFacing } from './xr/vrScene';
 import { POINT_UNIFORMS } from './scene/pointSize';
@@ -154,6 +155,19 @@ function rebuildBatches() {
   cullerStale = true;
 }
 let globeLayers: TextureLayers | null = null;
+/**
+ * Scrunched: the walnut table at the Disc's core (a closed, opaque cylinder)
+ * as two occluding caps: parts wholly behind it from the head aren't drawn
+ * (the elephants and A'Tuin from the deck, the instrument from under the
+ * Disc). Only while the table is on show.
+ */
+const discCaps = scrunch ? discCapsOf(orrery.root) : null;
+function discHides(eye: THREE.Vector3, c: THREE.Vector3, r: number) {
+  if (!discCaps) return false;
+  for (let o: THREE.Object3D | null = discCaps.table; o; o = o.parent) if (!o.visible) return false;
+  // (0.1 in from the rim: the cylinder's facets, and the eyes either side of the head.)
+  return hiddenByDisc(discCaps.caps, eye, c, r, 0.1);
+}
 
 const clock = new SimClock();
 const kinematics = new Kinematics(design);
@@ -989,7 +1003,7 @@ function step(now: number) {
   lineBatch?.sync();
   globeLayers?.update();
   if (meshLods && lodEye) meshLods.update(lodEye, [bodies.root, ...(fiction ? [fiction.root] : [])]);
-  orreryBatch.sync(eye, cullAngle, lodEye);
+  orreryBatch.sync(eye, cullAngle, lodEye, scrunch && eye && SCRUNCH_SKIP.has('occlude') === false ? (c, r) => discHides(eye, c, r) : undefined);
   discBatch?.sync(eye, cullAngle);
   stage.render(xr.camera);
   {

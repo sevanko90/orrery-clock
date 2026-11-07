@@ -332,7 +332,7 @@ export class Batcher {
    * also skip instances smaller than that angle from the eye. With `lodEye`,
    * draw each instance that has LODs at the level its distance from there allows.
    */
-  sync(eye?: THREE.Vector3, minAngle = 0, lodEye?: THREE.Vector3) {
+  sync(eye?: THREE.Vector3, minAngle = 0, lodEye?: THREE.Vector3, occluded?: (centre: THREE.Vector3, radius: number) => boolean) {
     const cull = !!eye && minAngle > 0;
     for (const e of this.entries) {
       let visible = true;
@@ -371,12 +371,14 @@ export class Batcher {
       for (let o: THREE.Object3D | null = e.mesh; visible && o && o !== this.parent; o = o.parent) {
         if (!o.visible) visible = false;
       }
-      if (visible && (cull || (lodEye && e.lods))) {
+      if (visible && (cull || occluded || (lodEye && e.lods))) {
         const m = e.mesh.matrixWorld.elements;
         const scale = Math.sqrt(Math.max(m[0] * m[0] + m[1] * m[1] + m[2] * m[2], m[4] * m[4] + m[5] * m[5] + m[6] * m[6], m[8] * m[8] + m[9] * m[9] + m[10] * m[10]));
         const at = this.tmp.copy(e.centre).applyMatrix4(e.mesh.matrixWorld);
         const r = e.radius * scale;
         if (cull) visible = r > at.distanceTo(eye!) * minAngle;
+        // Wholly behind something solid (VR scrunch: the Disc).
+        if (visible && occluded && occluded(at, r)) visible = false;
         if (visible && lodEye && e.lods) {
           // Nearest point of the bounds, in the mesh's own units (errors are measured there).
           const d = Math.max(0, at.distanceTo(lodEye) - r) / scale;
