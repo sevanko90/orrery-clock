@@ -26,6 +26,9 @@ your own measurements agree.
 
 ## What to measure
 
+Read `docs/VR-PERFORMANCE.md` first: the draw-count budget below predates
+the headset findings there (draws halved without an fps change).
+
 **Performance (proxy; real fps needs the headset):**
 - Draw calls and triangles per frame at the VR viewpoints `spawn`, `rim`,
   `hub`, `far` (`viewpoints()` in `src/xr/vrScene.ts`). Count what the renderer would actually submit

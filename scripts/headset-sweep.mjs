@@ -5,20 +5,20 @@
 // Enter VR (fiction, Discworld and moons on), then run this. It never needs
 // you to leave VR: at each viewpoint it measures
 //   base   probes off (the plain cost)
-//   probe  probes on (GPU time, three's render split; and their own overhead)
+//   probe  probes on (three's render split; and their own overhead)
 // and at the heavy viewpoints it hides one part of the scene at a time
-// (telemetry `hide`) to price each part in fps, JS and GPU time.
+// (telemetry `hide`) to price each part in fps, JS and outside time (GPU waits land there).
 // Results: .telemetry/sweep.jsonl, and a table at the end.
 import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 
 const LOG = '.telemetry/log.jsonl';
 const CMDS = '.telemetry/commands.jsonl';
 const OUT = '.telemetry/sweep.jsonl';
-const label = process.argv.slice(2).find((a, i, all) => !a.startsWith('--') && a !== 'glass' && all[i - 1] !== '--toggle-hide') ?? `sweep-${new Date().toISOString().slice(11, 16)}`;
+const label = process.argv.slice(2).find((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--toggle-hide') ?? `sweep-${new Date().toISOString().slice(11, 16)}`;
 const VIEWS = ['spawn', 'rim', 'hub', 'far'];
 const HEAVY = new Set(['rim', 'hub']);
 // Scene parts to price by hiding (names in the scene, or "type:X" for top-level objects of a type).
-const PARTS = ['glass', 'cabinet', 'movement', 'bodies', 'stack', 'rimfall', 'fiction', 'stars', 'type:Sprite', 'sprite-batch', 'line-batch', 'lift'];
+const PARTS = ['cabinet', 'movement', 'bodies', 'stack', 'rimfall', 'fiction', 'stars', 'type:Sprite', 'sprite-batch', 'line-batch', 'lift'];
 const SETTLE = 3, MEASURE = 6;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -68,7 +68,6 @@ async function measure(view, step) {
     n: s.length,
     fps: median(s.map((r) => r.fps)),
     jsMs: +js.toFixed(2),
-    gpuMs: median(s.map((r) => r.gpuMs)),
     outsideMs: median(s.map((r) => r.frame?.outsideMs)),
     missed: median(s.map((r) => r.frame?.missed)),
     intervalP95: median(s.map((r) => r.frame?.intervalP95)),
@@ -81,7 +80,7 @@ async function measure(view, step) {
   appendFileSync(OUT, JSON.stringify(row) + '\n');
   const f = (x, d = 1) => (x == null ? '  -  ' : x.toFixed(d).padStart(5));
   console.log(
-    `${view.padEnd(6)} ${step.padEnd(18)} fps ${f(row.fps)}  js ${f(row.jsMs, 2)}  gpu ${f(row.gpuMs, 2)}  outside ${f(row.outsideMs, 2)}  ` +
+    `${view.padEnd(6)} ${step.padEnd(18)} fps ${f(row.fps)}  js ${f(row.jsMs, 2)}  outside ${f(row.outsideMs, 2)}  ` +
       `render ${f(cpu.render, 2)} (walk ${f(cpu['render>project'], 2)} draw ${f(cpu['render>draw'], 2)})  missed/s ${f(row.missed, 0)}  gc ${row.gcs}  draws ${row.draws}`,
   );
   return row;
@@ -97,49 +96,6 @@ if (th > 0) {
     await sleep(5000);
     await measure('hub', on ? `-${name}` : `+${name}`);
   }
-  console.log(`done: ${OUT} (label ${label})`);
-  process.exit(0);
-}
-
-// `--lights`: at hub, price each light and the environment map by switching it off
-// (each switch recompiles the lit shaders: a hitch, so it settles longer).
-if (process.argv.includes('--lights')) {
-  await command({ type: 'view', name: 'hub' });
-  await command({ type: 'probe', on: false });
-  await measure('hub', 'base');
-  for (const light of ['lamp', 'sun-light', 'fill', 'disc-key', 'disc-under']) {
-    await command({ type: 'hide', name: light, on: true });
-    await sleep(3000);
-    await measure('hub', `-${light}`);
-    await command({ type: 'hide', name: light, on: false });
-    await sleep(3000);
-  }
-  await command({ type: 'env', on: false });
-  await sleep(3000);
-  await measure('hub', '-env');
-  await command({ type: 'hide', name: 'lamp', on: true });
-  await command({ type: 'hide', name: 'fill', on: true });
-  await sleep(3000);
-  await measure('hub', '-env -lamp -fill');
-  await command({ type: 'hide', name: 'lamp', on: false });
-  await command({ type: 'hide', name: 'fill', on: false });
-  await command({ type: 'env', on: true });
-  await sleep(3000);
-  await measure('hub', 'base again');
-  console.log(`done: ${OUT} (label ${label})`);
-  process.exit(0);
-}
-
-// `--toggle glass`: at rim and hub only, alternate no glass (VR) and the desktop glass, twice each.
-if (process.argv.includes('--toggle')) {
-  for (const view of ['hub', 'rim']) {
-    await command({ type: 'view', name: view });
-    for (const on of [false, true, false, true]) {
-      await command({ type: 'glass', on });
-      await measure(view, on ? 'glass' : 'no glass');
-    }
-  }
-  await command({ type: 'glass', on: false });
   console.log(`done: ${OUT} (label ${label})`);
   process.exit(0);
 }

@@ -20,7 +20,7 @@ minimum loss. Numbers, not adjectives.
    (default 1 in VR, 0 on desktop; `?scrunch=1` forces it on desktop) so the
    original and optimised scenes can be A/B'd in the same build, on desktop
    and on the headset via telemetry.
-   Read existing flag patterns (`?xrscale=`, `?webgl=`, `?bloom=`) and match.
+   Read existing flag patterns (`?webgl=`, `?bloom=`) and match.
 3. **Docker only.** Run npm/node/npx inside the `app` container:
    `docker compose exec app <cmd>` (start with `docker compose up -d` if it is
    not running). Never run host npm/node.
@@ -38,6 +38,12 @@ minimum loss. Numbers, not adjectives.
 7. `npm run typecheck` and `npm test` must pass before you report.
 
 ## Context you start with
+
+**Read `docs/VR-PERFORMANCE.md` first.** Later headset work (2026-11-07)
+overturned parts of the context below: halving draws did not raise fps; the
+frame is our JS plus ~7 ms outside it; three's draw loop costs ~80 µs per
+draw; GPU limits showed up only behind the (now removed) VR glass. Profile
+with `scripts/headset-sweep.mjs` before optimising.
 
 - Quest 3 findings, 2026-11-07 (WebGL 2 multiview, Quest Browser, VR scene
   on the Disc, 72 Hz): VR viewpoints `spawn`, `rim`, `hub`, `far`

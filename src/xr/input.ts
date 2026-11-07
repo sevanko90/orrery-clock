@@ -11,7 +11,7 @@ import { XR } from './config';
  *  Left trigger  jetpack thrust,      Right stick Y  rise / sink
  *                along the left aim   Right trigger  select (pointer ray)
  *  Y             back to the start    Right grip + stick Y  world scale
- *  Left stick click  bloom on/off      Left grip  telemetry marker
+ *                                     Left grip  telemetry marker
  *  X             wrist readout on/off A / B          faster / slower time
  *                                     Right stick click  back to now
  */
@@ -32,7 +32,6 @@ export interface Actions {
   select: boolean;
   reset: boolean;
   toggleHud: boolean;
-  toggleBloom: boolean;
   /** Left grip: drop a telemetry marker here. */
   mark: boolean;
   faster: boolean;
@@ -63,7 +62,6 @@ export class XrInput {
     select: false,
     reset: false,
     toggleHud: false,
-    toggleBloom: false,
     mark: false,
     faster: false,
     slower: false,
@@ -107,7 +105,7 @@ export class XrInput {
     const a = this.actions;
     a.move.set(0, 0);
     a.thrust = a.lift = a.snapTurn = a.scale = 0;
-    a.scaling = a.select = a.reset = a.toggleHud = a.toggleBloom = a.mark = a.faster = a.slower = a.now = false;
+    a.scaling = a.select = a.reset = a.toggleHud = a.mark = a.faster = a.slower = a.now = false;
 
     for (const s of this.slots) {
       const pad = s.source?.gamepad;
@@ -124,7 +122,6 @@ export class XrInput {
         a.thrustDir.set(0, 0, -1).transformDirection(s.ray.matrixWorld);
         a.reset = edge(5);
         a.toggleHud = edge(4);
-        a.toggleBloom = edge(3);
         a.mark = edge(1);
       } else if (hand === 'right') {
         a.scaling = down(1);

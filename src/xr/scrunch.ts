@@ -21,14 +21,6 @@ const params = new URLSearchParams(typeof location === 'undefined' ? '' : locati
 export const SCRUNCH_FLAG: boolean | null = params.get('scrunch') === '1' ? true : params.get('scrunch') === '0' ? false : null;
 export const HEADSET_FLAG = params.get('headset') === '1';
 export const VRVIEW_FLAG = params.get('vrview') === '1';
-/**
- * `?scrunchskip=uber,layers,lines,sprites,single,occlude` leaves those parts of the scrunch
- * out (to measure what each buys, or to rule one out).
- */
-const SKIPPABLE = ['uber', 'layers', 'lines', 'sprites', 'single', 'occlude'];
-/** (`?sskip=` is short for it, and `all` skips every part: round 1's scrunch only, handy to type on a headset.) */
-const skipList = (params.get('scrunchskip') ?? params.get('sskip') ?? '').split(',').filter(Boolean);
-export const SCRUNCH_SKIP = new Set(skipList.includes('all') ? SKIPPABLE : skipList);
 
 /** Is the scrunched scene in use, for this device? */
 export function scrunchOn(headset: boolean): boolean {
@@ -61,14 +53,5 @@ export const LOD_HYSTERESIS = 0.06;
 /**
  * Largest texel of a globe's shared texture layer allowed on screen (pixels
  * on the eye buffer): nearer than that the globe draws alone with its own map.
- * (`?layerpx=` overrides, for measuring.)
  */
-export const LAYER_TEXEL_PX = Number(params.get('layerpx')) || 0.5;
-
-/**
- * `?sunlitkey=1`: give each night fill its own shader program on the desktop
- * too (see ownSunlitProgram in sunlit.ts). For measuring only: the desktop
- * otherwise shades every body with whichever fill compiled first, which the
- * scrunched scene doesn't, so A/B frames differ on the globes' night sides.
- */
-export const SUNLIT_KEY_FLAG = params.get('sunlitkey') === '1';
+export const LAYER_TEXEL_PX = 0.5;

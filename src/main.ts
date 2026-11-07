@@ -1,7 +1,6 @@
 // First: a seeded Math.random (?seed=N) must be in place before anything draws one.
 import { reseed } from './xr/seed';
 import { frameBegin, frameEnd, mark, probeRenderer, probes, startFrame, takeCpuParts, takeFrameStats } from './perfMarks';
-import { GpuTimer } from './xr/gpuTimer';
 import { VrGlass } from './xr/vrGlass';
 import './style.css';
 import * as THREE from 'three/webgpu';
@@ -31,7 +30,7 @@ import { Batcher, raycastLayers } from './scene/batch';
 import { Telemetry, type Command } from './xr/telemetry';
 import { XR } from './xr/config';
 import { TABLE_RADIUS } from './scene/layout';
-import { LAYER_TEXEL_PX, QUEST_PX_PER_RAD, SCRUNCH_SKIP, SUNLIT_KEY_FLAG, scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
+import { LAYER_TEXEL_PX, QUEST_PX_PER_RAD, scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
 import { ScrunchDebug } from './xr/scrunchDebug';
 import { MeshLods, beltRock } from './scene/meshLod';
 import { SpriteBatch } from './scene/spriteBatch';
@@ -94,14 +93,12 @@ const scrunch = scrunchOn(quality.headset);
 boot.sendNow({ kind: 'boot', stage: 'renderer' });
 await stage.init();
 const multiDraw = (stage.renderer.backend as { extensions?: { has(name: string): boolean } }).extensions?.has('WEBGL_multi_draw') ?? null;
-boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend, multiDraw, gpuTimer: !!(stage.renderer.backend as { gl?: WebGL2RenderingContext }).gl?.getExtension('EXT_disjoint_timer_query_webgl2') });
+boot.sendNow({ kind: 'boot', stage: 'renderer ready', backend: stage.backend, multiDraw });
 const mats = createMaterials(quality.low);
 const orrery = buildOrrery(mats);
 stage.scene.add(orrery.root);
-// Scrunched (the headset): no glass in the drum, the mechanism open in its frame (telemetry `glass` switches it live).
+// Scrunched (the headset): no glass in the drum, the mechanism open in its frame.
 const vrGlass = new VrGlass(orrery.root);
-/** The environment map, kept so telemetry `env` can take it away and give it back. */
-const sceneEnv = stage.scene.environment;
 if (scrunch) vrGlass.set(true);
 // Draw the instrument's hundreds of parts as a few batches (one per material).
 // (Scrunched: one batcher over the whole scene instead, built by rebatch() once the bodies exist.)
@@ -136,31 +133,25 @@ function rebuildBatches() {
   discBatch?.dispose();
   discBatch = null;
   const roots = [orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])];
-  const on = (part: string) => !SCRUNCH_SKIP.has(part);
   // Each night fill its own shader program (see ownSunlitProgram).
   for (const root of roots) root.traverse((o) => { const m = (o as THREE.Mesh).material; if (m && !Array.isArray(m)) ownSunlitProgram(m as THREE.Material); });
   // The globes' surface maps go into layers of one array texture, so they batch together.
-  if (on('layers')) {
-    globeLayers ??= new TextureLayers(512, 256, 32);
-    bodies.root.traverse((o) => {
-      const m = o as THREE.Mesh;
-      const mat = m.material as THREE.MeshStandardMaterial;
-      if (m.isMesh && m.geometry.type === 'SphereGeometry' && (m.geometry as THREE.SphereGeometry).parameters.widthSegments > 16 && mat.isMeshStandardMaterial && mat.userData.sunlit && !mat.transparent) globeLayers!.track(mat);
-    });
-    globeLayers.update();
-  }
+  globeLayers ??= new TextureLayers(512, 256, 32);
+  bodies.root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    const mat = m.material as THREE.MeshStandardMaterial;
+    if (m.isMesh && m.geometry.type === 'SphereGeometry' && (m.geometry as THREE.SphereGeometry).parameters.widthSegments > 16 && mat.isMeshStandardMaterial && mat.userData.sunlit && !mat.transparent) globeLayers!.track(mat);
+  });
+  globeLayers.update();
   // (Every batch is drawn on its first frames, shown or not, so its shader is built
   // then, not on first use. Warming them through compileAsync() instead leaves the
   // WebGL backend drawing black.)
-  orreryBatch = new Batcher(roots, stage.scene, { lod: true, uber: on('uber'), noShadows: !quality.shadows, pxPerRad: QUEST_PX_PER_RAD / LAYER_TEXEL_PX });
+  orreryBatch = new Batcher(roots, stage.scene, { lod: true, uber: true, noShadows: !quality.shadows, pxPerRad: QUEST_PX_PER_RAD / LAYER_TEXEL_PX });
   fictionSprites?.dispose();
-  fictionSprites = new SpriteBatch(on('sprites') ? [...roots, ...trueMarkers.values()] : fiction ? [fiction.root] : [], stage.scene);
+  fictionSprites = new SpriteBatch([...roots, ...trueMarkers.values()], stage.scene);
   lineBatch?.dispose();
-  lineBatch = null;
-  if (on('lines')) {
-    lineBatch = new LineBatch(roots, stage.scene);
-  }
-  if (on('single')) singlePass(roots);
+  lineBatch = new LineBatch(roots, stage.scene);
+  singlePass(roots);
   cullerStale = true;
 }
 let globeLayers: TextureLayers | null = null;
@@ -751,7 +742,6 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
       // Objects with a non-finite world matrix (NaN state hides them and makes picking crawl).
       nonFinite: countNonFinite(),
       cpuParts: takeCpuParts(),
-      gpuMs: gpuTimer.take(),
       frame: takeFrameStats(1000 / ((stage.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate || 72)),
       hidden: [...forcedHidden.keys()],
       probes: probes.on,
@@ -770,7 +760,6 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
       carried: xr.moving,
     });
   },
-  toggleBloom: () => (stage.xrBloom = !stage.multiview && !stage.xrBloom),
   backend: () => stage.backend,
   discOn: () => !!discworld?.enabled,
   // The VR scene: Discworld on (assembled), without touching the saved setting.
@@ -854,13 +843,6 @@ const telemetry = new Telemetry((c: Command) => {
     case 'probe':
       probes.on = c.on;
       return;
-    case 'env':
-      // (Every lit material recompiles: expect a hitch.)
-      stage.scene.environment = c.on ? sceneEnv : null;
-      return;
-    case 'glass':
-      vrGlass.set(!c.on);
-      return;
     case 'list': {
       const groups: Record<string, string[]> = {};
       for (const o of stage.scene.children) groups[o.name || o.type] = o.children.filter((k) => k.name).map((k) => k.name);
@@ -898,7 +880,6 @@ let frameFailed = false;
 let cpuMs = 0;
 /** What the last frame drew (read straight after it, for telemetry). */
 const lastRender = { drawCalls: 0, triangles: 0 };
-/** GPU time of the render (WebGL backend with the timer extension only). */
 if (telemetry.enabled) probeRenderer(stage.renderer);
 /** Objects the workstation has forced hidden (telemetry `hide`), re-applied every frame before drawing. */
 const forcedHidden = new Map<string, THREE.Object3D[]>();
@@ -912,7 +893,6 @@ function findHideable(name: string): THREE.Object3D[] {
   });
   return found;
 }
-const gpuTimer = new GpuTimer((stage.renderer.backend as { gl?: WebGL2RenderingContext }).gl ?? null);
 function frame(now: number) {
   const t0 = performance.now();
   startFrame(t0);
@@ -973,7 +953,6 @@ function step(now: number) {
   elapsed += dt;
 
   if (rebatchDue) rebuildBatches();
-  if (SUNLIT_KEY_FLAG && frames % 30 === 0) bodies.root.traverse((o) => { const m = (o as THREE.Mesh).material; if (m && !Array.isArray(m)) ownSunlitProgram(m as THREE.Material); });
   const simMs = clock.nowMs();
   const jumped = clock.jumps !== seenJumps;
   kinematics.update(simMs, clock.speed === 1, jumped, dt);
@@ -1089,12 +1068,10 @@ function step(now: number) {
   lineBatch?.sync();
   globeLayers?.update();
   if (meshLods && lodEye) meshLods.update(lodEye, [bodies.root, ...(fiction ? [fiction.root] : [])]);
-  orreryBatch.sync(eye, cullAngle, lodEye, scrunch && eye && SCRUNCH_SKIP.has('occlude') === false ? (c, r) => discHides(eye, c, r) : undefined);
+  orreryBatch.sync(eye, cullAngle, lodEye, scrunch && eye ? (c, r) => discHides(eye, c, r) : undefined);
   discBatch?.sync(eye, cullAngle);
   mark('sync');
-  gpuTimer.begin();
   stage.render(xr.camera);
-  gpuTimer.end();
   mark('render');
   {
     const r = stage.renderer.info.render as unknown as { drawCalls: number; triangles: number };

@@ -36,7 +36,6 @@ export interface XrHooks {
   /** Lines for the wrist readout: the date shown and the speed. */
   status(): string[];
   /** Bloom on or off in VR (left stick click), for comparing look against frame rate. */
-  toggleBloom(): boolean;
   /** Telemetry: a sample each second and markers on the left grip (with app state merged in). */
   report?(entry: Record<string, unknown>): void;
   /** Which GPU backend is drawing, for the readout. */
@@ -84,6 +83,9 @@ const DISC_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), -GROUND_Y);
  * centre. The player's rig is scaled by 1 / metresPerUnit (see config.ts),
  * so the world itself is untouched.
  */
+/** Display refresh rate asked for in VR (Hz). */
+const TARGET_HZ = 72;
+
 export class XrMode {
   readonly rig = new THREE.Group();
   readonly camera = new THREE.PerspectiveCamera(70, 1, 0.1, 2000);
@@ -130,7 +132,6 @@ export class XrMode {
   private frames = 0;
   private fpsAt = 0;
   private cpuMs = 0;
-  private bloomOn = false;
   private marks = 0;
   private markShownUntil = 0;
   private sampleAt = 0;
@@ -273,31 +274,18 @@ export class XrMode {
   async enter() {
     const xr = navigator.xr;
     if (!xr) return;
-    this.renderer.xr.setFramebufferScaleFactor(this.resolutionScale);
     const session = await xr.requestSession('immersive-vr', {
       // 'layers' lets the renderer draw both eyes in one pass (multiview).
       optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'],
     });
     await this.renderer.xr.setSession(session);
     // Quest runs at 90 Hz by default; 72 Hz gives each frame 13.9 ms instead
-    // of 11.1 ms (?xrhz=90 or 120 to compare). Only rates the headset offers.
+    // of 11.1 ms. Only rates the headset offers.
     const rates = session.supportedFrameRates;
-    if (rates?.includes(this.targetHz) && session.updateTargetFrameRate) {
-      await session.updateTargetFrameRate(this.targetHz).catch(() => undefined);
+    if (rates?.includes(TARGET_HZ) && session.updateTargetFrameRate) {
+      await session.updateTargetFrameRate(TARGET_HZ).catch(() => undefined);
     }
   }
-
-  /** Display refresh rate asked for in VR (?xrhz=, default 72). */
-  private readonly targetHz = (() => {
-    const v = Number(new URLSearchParams(location.search).get('xrhz'));
-    return v > 0 ? v : 72;
-  })();
-
-  /** Eye-buffer resolution relative to the headset's default (?xrscale=0.7 for a test); set before a session starts. */
-  private readonly resolutionScale = (() => {
-    const v = Number(new URLSearchParams(location.search).get('xrscale'));
-    return v > 0.2 && v <= 1.5 ? v : 1;
-  })();
 
   private begin() {
     // The desktop view the particle sizes were tuned against (40° field of view).
@@ -581,7 +569,6 @@ export class XrMode {
 
     if (a.reset) this.resetPosition();
     if (a.toggleHud) this.wristShown = !this.wristShown;
-    if (a.toggleBloom) this.bloomOn = this.hooks.toggleBloom();
     if (a.mark) {
       this.marks++;
       this.hooks.report?.({ kind: 'mark', n: this.marks, ...this.snapshot() });
@@ -893,14 +880,14 @@ export class XrMode {
       speed,
       `${this.fps.toFixed(0)} fps · cpu ${this.cpuMs.toFixed(1)} ms`,
       `${hall}`,
-      `${this.backendText()}${this.resolutionScale !== 1 ? ` · res ×${this.resolutionScale}` : ''}`,
+      this.backendText(),
     ]);
     this.cpuMs = cpuMs;
   }
 
   private backendText() {
     const multiview = (this.renderer.xr as unknown as { useMultiview(): boolean }).useMultiview();
-    return `${this.hooks.backend()}${multiview ? ' multiview · no bloom' : ` · bloom ${this.bloomOn ? 'on' : 'off'}`}`;
+    return `${this.hooks.backend()}${multiview ? ' multiview' : ''}`;
   }
 
   /** Where the player is and how it's running, for telemetry. */
@@ -916,7 +903,6 @@ export class XrMode {
       yawDeg: Math.round(THREE.MathUtils.radToDeg(this.rig.rotation.y)),
       metresPerUnit: r(this.metresPerUnit),
       grounded: this.grounded,
-      resolutionScale: this.resolutionScale,
       hz: (this.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate ?? null,
       renderer: this.backendText(),
     };

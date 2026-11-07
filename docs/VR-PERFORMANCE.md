@@ -108,40 +108,45 @@ gap between the end of our frame's work and the start of the next.
 
 ## Tools
 
+(The A/B switches used along the way, `?sskip=`, `?xrhz=`, `?xrscale=`,
+`?msaa=0`, `?sunlitkey=`, `?layerpx=`, the GPU timer and the old
+`scripts/scrunch/` measuring scripts, were removed in the cleanup after the
+renderer decision. Check out tag `vr-scene-good-2` to get them back.)
+
 - **`bench.html`** (dev server, `/bench.html`): raw WebGL 2 + WebXR, no
   three.js. Enter VR and keep still ~2 min; it sweeps refresh rate,
   synthetic JS load per frame and raw draw count, logging each step to
   telemetry (`kind: "bench"`), plus a JS micro-benchmark at load (open it on
   desktop too to compare JS speed).
-- **Telemetry samples** (`.telemetry/log.jsonl`, 1 per second): `fps`,
-  `cpuMs`, `cpuParts` (ms per frame by part: mechanism, bodies, fiction,
-  discworld, xr.input/move/lift/sky/view/pointer/wrist, matrices, sync,
-  render, uiTelemetry), `gpuMs`, `objects` ([all, visible]), `drawCalls`,
+- **Telemetry samples** (`.telemetry/log.jsonl`, 1 per second, dev server
+  only): `fps`, `cpuMs`, `cpuParts` (ms per frame by part: mechanism, bodies,
+  fiction, discworld, xr.input/move/lift/sky/view/pointer/wrist, matrices,
+  sync, render, uiTelemetry; with probes on also render>project and
+  render>draw), `frame` (interval p50/p95/max, missed frames, outside time,
+  long frames, GCs, heap), `objects` ([all, visible]), `drawCalls`,
   `triangles`, `multiDraw`, `nonFinite`, `hz`, modes.
-- **Commands** (`.telemetry/commands.jsonl`): `{"type":"view","name":"spawn|rim|hub|far"}`,
-  teleport, mode, date, speed, cull, etc.
-- **`scripts/scrunch/headset-ab.mjs <label> [secs] [speedStep]`**: steps
-  through the four viewpoints and records medians; `--compare` prints
-  the table.
-- **URL flags:** `?scrunch=0|1`, `?sskip=all` (or a list: uber, layers,
-  lines, sprites, single, occlude), `?xrhz=`, `?xrscale=`, `?msaa=0`,
-  `?webgl=1`, `?headset=1&vrview=1` (desktop stands in for the headset).
+- **Commands** (`.telemetry/commands.jsonl`): `view` (spawn, rim, hub,
+  far), `hide` (a scene part by name, or `type:X`), `probe`, `list`,
+  teleport, scale, mode, date, speed, cull, fiction, return.
+- **`scripts/headset-sweep.mjs [label]`**: one VR session; base and probed
+  runs at each viewpoint, then at rim and hub prices each scene part by
+  hiding it. `--toggle-hide <name>` alternates one part at hub.
+- **URL flags:** `?scrunch=0|1` (the headset's cheaper scene; on by default
+  in VR), `?webgl=1`, `?headset=1&vrview=1` (desktop stands in for the
+  headset), `?seed=1` (repeatable scene for image comparisons).
 - **Scrunch agents** (`.claude/agents/`): scruncher optimises, scrunch-reviewer
-  scores independently. They assume draws are the lever; revisit their
-  budget section before another round.
+  scores independently. Their budget assumed draws were the main lever; read
+  this log before another round.
 
 ## Open
 
-0. From the sweep: (a) hub's GPU cost, the glass drum (cheaper VR material:
-   single pass, no PBR) and the movement's shading (light count, material);
-   (b) rim's CPU, fewer three draws (~80 µs each) and the lift's 4 draws.
+Decided 2026-11-07: perf is good enough (≈ 60–69 fps); stay on
+WebGPURenderer; the work moves to polish. If perf work resumes:
 
-1. Hub at ~50 fps with JS under budget: check `gpuMs` and `?xrscale=0.7` at
-   hub; if GPU-bound, look at the glass drum and stacked transparent layers.
-2. three's render call (4–5.5 ms): ~1035 visible objects walked per frame
-   for ~60 draws. Hide the originals of batched parts from the graph walk
-   (not just by layer), drop empty batches (6–11 per view).
+1. Our JS needs to be near 7 ms (outside time ~6.6–7.3 ms at every view).
+   Biggest JS cost: three's draw loop, ~80 µs per draw.
+2. three's render call: ~1035 visible objects walked per frame (walk is only
+   0.3–0.4 ms; the draw loop dominates).
 3. Thermal drift over long sessions: test cool, keep runs short.
-4. Scrunch round 2: neutral for fps; decide whether to keep once the real
-   limit is fixed (it may then pay off). Rebuild hitch fix if kept.
-5. Native port question (Unity etc.) parked until the above numbers are in.
+4. Scrunch round 2's rebuild hitch (~0.5 s when moons or fiction are first
+   turned on mid-session): reuse the batch materials across rebuilds.

@@ -8,8 +8,7 @@ import type * as THREE from 'three/webgpu';
  * mechanism stands open in its brass frame instead. (A cheap unlit glass
  * was tried first: +4 fps at hub, 3f009a1.)
  *
- * Hides the meshes named 'glass'; `set(false)` shows them again
- * (telemetry `glass` switches it live).
+ * Hides the meshes named 'glass'; `set(false)` shows them again.
  */
 export class VrGlass {
   on = false;

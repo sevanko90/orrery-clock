@@ -20,11 +20,7 @@ export type Command =
   /** Log the scene's named groups (two levels), to know what can be hidden. */
   | { type: 'list' }
   /** Heavier probes (GPU timer, three's render split) on or off. */
-  | { type: 'probe'; on: boolean }
-  /** The drum's glass shown (the desktop's) or hidden (VR default). */
-  | { type: 'glass'; on: boolean }
-  /** The scene's environment (reflection) map on or off. */
-  | { type: 'env'; on: boolean };
+  | { type: 'probe'; on: boolean };
 
 export class Telemetry {
   readonly enabled = import.meta.env.DEV;

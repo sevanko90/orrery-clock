@@ -46,8 +46,6 @@ export class Stage {
   bloomNode: ReturnType<typeof bloom> | null = null;
   /** The star sphere and the sparkling stars (VR keeps them inside its far plane). */
   readonly sky: THREE.Object3D[] = [];
-  /** Whether VR frames go through the bloom pipeline (only possible without multiview). */
-  xrBloom = false;
 
   constructor(
     private container: HTMLElement,
@@ -57,8 +55,7 @@ export class Stage {
     // WebGL 2: it's the backend three can drive VR with, drawing both eyes in
     // one pass (multiview).
     this.renderer = new THREE.WebGPURenderer({
-      // (?msaa=0 turns multisampling off, to measure its cost on the headset.)
-      antialias: new URLSearchParams(location.search).get('msaa') !== '0',
+      antialias: true,
       powerPreference: 'high-performance',
       // (?webgl=1 forces it on the desktop, to check what the headset gets.)
       forceWebGL: quality.headset || new URLSearchParams(location.search).get('webgl') === '1',
@@ -176,19 +173,10 @@ export class Stage {
     this.renderer.setSize(w, h);
   }
 
-  /** Is VR drawing both eyes in one pass? */
-  get multiview() {
-    return this.renderer.xr.isPresenting && (this.renderer.xr as unknown as { useMultiview(): boolean }).useMultiview();
-  }
-
   /**
    * Draw a frame; in VR, from `xrCamera`, the player's camera inside its rig.
-   *
-   * VR goes straight to the headset unless bloom is asked for. The bloom
-   * pipeline's scene pass can't render multiview (both eyes come out as
-   * garbage), so bloom in VR needs multiview off; and the pass takes the
-   * headset camera without its parent rig, so its pose update is pointed back
-   * at the rigged camera here.
+   * VR goes straight to the headset, without bloom: the bloom pipeline's
+   * scene pass can't render multiview, which the Quest always uses.
    */
   render(xrCamera?: THREE.Camera) {
     const xr = this.renderer.xr;
@@ -197,17 +185,6 @@ export class Stage {
       else this.renderer.render(this.scene, this.camera);
       return;
     }
-    if (!this.pipeline || !this.xrBloom || this.multiview) {
-      this.renderer.render(this.scene, xrCamera);
-      return;
-    }
-    const headset = xr.getCamera();
-    const update = xr.updateCamera;
-    xr.updateCamera = (cam: THREE.PerspectiveCamera) => update.call(xr, cam === (headset as unknown) ? (xrCamera as THREE.PerspectiveCamera) : cam);
-    try {
-      this.pipeline.render();
-    } finally {
-      xr.updateCamera = update;
-    }
+    this.renderer.render(this.scene, xrCamera);
   }
 }

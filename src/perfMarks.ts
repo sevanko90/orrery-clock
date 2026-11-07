@@ -95,8 +95,8 @@ export function takeFrameStats(targetMs: number) {
 }
 
 /**
- * The heavier probes (three's render split here, the GPU timer in
- * gpuTimer.ts) run only while this is on: telemetry `probe` switches it
+ * The heavier probes (three's render split)
+ * run only while this is on: telemetry `probe` switches it
  * live, so their own cost can be measured in the same session.
  */
 export const probes = { on: false };
