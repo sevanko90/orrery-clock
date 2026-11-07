@@ -8,9 +8,10 @@ import * as THREE from 'three/webgpu';
  * teach the controls without cluttering the view. They also show for the
  * first half minute in VR, so the player finds out they're there.
  *
- * Anchored to the controller model's touch points (each profile's model names
- * one per component), so they sit on the real buttons of whatever controller
- * the headset reports.
+ * Anchored to each control's node on the controller model (its touch point
+ * where the profile has one; the Quest 3 model doesn't, so else the
+ * control's root or moving part), so they sit on the real buttons of
+ * whatever controller the headset reports.
  */
 
 type Hand = 'left' | 'right';
@@ -40,6 +41,18 @@ const STAND_OFF = 0.035;
 
 interface Component {
   touchPointNode?: THREE.Object3D;
+  rootNodeName?: string;
+  visualResponses?: Record<string, { valueNode?: THREE.Object3D }>;
+}
+
+/** Where a control is on the model: its touch point, else its root node, else a moving part of it. */
+function anchorOf(model: THREE.Object3D, c: Component | undefined): THREE.Object3D | null {
+  if (!c) return null;
+  if (c.touchPointNode) return c.touchPointNode;
+  const root = c.rootNodeName ? model.getObjectByName(c.rootNodeName) : undefined;
+  if (root) return root;
+  for (const r of Object.values(c.visualResponses ?? {})) if (r.valueNode) return r.valueNode;
+  return null;
 }
 interface ModelLike extends THREE.Object3D {
   motionController?: { components: Record<string, Component> } | null;
@@ -87,7 +100,7 @@ export class ControllerLabels {
         this.state[c.hand] = {
           controller: !!c.model.motionController,
           components: comps ? Object.keys(comps) : null,
-          touchPoints: comps ? Object.entries(comps).filter(([, v]) => v.touchPointNode).map(([k]) => k) : null,
+          anchors: comps ? Object.entries(comps).filter(([, v]) => anchorOf(c.model, v)).map(([k]) => k) : null,
           built: !!b,
         };
       }
@@ -120,7 +133,7 @@ export class ControllerLabels {
     const centre = box.getCenter(new THREE.Vector3());
     let any = false;
     for (const [id, lines] of Object.entries(TEXT[hand])) {
-      const node = comps[id]?.touchPointNode;
+      const node = anchorOf(model, comps[id]);
       if (!node) continue;
       any = true;
       const p = node.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
