@@ -17,7 +17,13 @@ A'Tuin, the elephants' nameplates). The pointer already picks every frame
 Discworld) and selection already pins a label; this is about showing the
 full card in VR.
 
-## 2. One clock + scene panel; debug on its own
+## 2. Wrist panels (done)
+
+Done 2026-11-07: X opens the time panel (date, speed slider, slower /
+pause / faster / now, day / month / year steps), Y the scene panel (moons,
+fiction, return, Debug); the debug panel opens beside the scene panel.
+One at a time. (`src/xr/controlPanel.ts`.)
+
 
 Today the clock panel shows debug readouts, and the fiction panel sits
 above it. Combine the clock and the scene (fiction) controls into one

@@ -10,9 +10,9 @@ import { XR } from './config';
  *  Left stick    walk / fly           Right stick X  snap turn
  *  Left trigger  jetpack thrust,      Right stick Y  rise / sink
  *                along the left aim   Right trigger  select (pointer ray)
- *  Y             back to the start    Right grip + stick Y  world scale
+ *  Y             scene panel on/off   Right grip + stick Y  world scale
  *                                     Left grip  telemetry marker
- *  X             wrist panel on/off   A / B          faster / slower time
+ *  X             time panel on/off    A / B          faster / slower time
  *                                     Right stick click  back to now
  */
 export interface Actions {
@@ -30,8 +30,10 @@ export interface Actions {
   scaling: boolean;
   /** Edges (true for the one frame they're pressed). */
   select: boolean;
-  reset: boolean;
-  toggleHud: boolean;
+  /** X: the time panel out or away. */
+  timePanel: boolean;
+  /** Y: the scene panel out or away. */
+  scenePanel: boolean;
   /** Left grip: drop a telemetry marker here. */
   mark: boolean;
   faster: boolean;
@@ -60,8 +62,8 @@ export class XrInput {
     scale: 0,
     scaling: false,
     select: false,
-    reset: false,
-    toggleHud: false,
+    timePanel: false,
+    scenePanel: false,
     mark: false,
     faster: false,
     slower: false,
@@ -105,7 +107,7 @@ export class XrInput {
     const a = this.actions;
     a.move.set(0, 0);
     a.thrust = a.lift = a.snapTurn = a.scale = 0;
-    a.scaling = a.select = a.reset = a.toggleHud = a.mark = a.faster = a.slower = a.now = false;
+    a.scaling = a.select = a.timePanel = a.scenePanel = a.mark = a.faster = a.slower = a.now = false;
 
     for (const s of this.slots) {
       const pad = s.source?.gamepad;
@@ -120,8 +122,8 @@ export class XrInput {
         a.move.set(sx, sy);
         a.thrust = pad.buttons[0]?.value ?? 0;
         a.thrustDir.set(0, 0, -1).transformDirection(s.ray.matrixWorld);
-        a.reset = edge(5);
-        a.toggleHud = edge(4);
+        a.scenePanel = edge(5);
+        a.timePanel = edge(4);
         a.mark = edge(1);
       } else if (hand === 'right') {
         a.scaling = down(1);

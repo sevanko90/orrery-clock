@@ -1169,8 +1169,8 @@ const vrPreview = {
     const cam = stage.camera;
     xr.previewArrival(stage.scene, cam.position, cam.rotation.y, t);
   },
-  panel(on = true) {
-    xr.previewPanel(on ? stage.camera : null, panelRows().length);
+  panel(on = true, which: 'time' | 'scene' = 'scene') {
+    xr.previewPanel(on ? stage.camera : null, which);
   },
   /** The lift, hatches open by `open` (0..1), or hidden with null. */
   lift(open: number | null = 1) {
