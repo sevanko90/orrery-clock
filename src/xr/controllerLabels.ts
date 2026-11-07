@@ -37,24 +37,27 @@ const TEXT: Record<Hand, Record<string, string[]>> = {
 /**
  * Where each control's plate stands, from the control (metres, in the
  * controller's space): `side` away from the body (outward; negative is the
- * inside, toward the other hand), `up`, and `forward` along the pointing
- * direction. Spread round the controller so plates don't hide each other
- * and leader lines don't cross: the stick's outside, the lower face button's
- * and the grip's inside (well apart in height), the upper face button's on
- * top toward the inside, the trigger's on top out ahead.
+ * inside, toward the other hand), `up` off the controller's top face, and
+ * `forward` along the pointing direction.
+ *
+ * Held up to be read, a controller's top faces the eyes, so `forward` is
+ * what reads as up and down: plates are spaced along it (the upper face
+ * button's and the trigger's high, the lower button's middling, the grip's
+ * low) and lifted only a little off the face. The stick's stands outside,
+ * the buttons' and the grip's inside, so leader lines don't cross.
  */
 const LAYOUT: Record<string, { side: number; up: number; forward: number }> = {
-  'xr-standard-thumbstick': { side: 0.06, up: 0.03, forward: 0 },
-  'x-button': { side: -0.055, up: 0.035, forward: 0.01 },
-  'a-button': { side: -0.055, up: 0.035, forward: 0.01 },
-  'y-button': { side: -0.03, up: 0.09, forward: 0 },
-  'b-button': { side: -0.03, up: 0.09, forward: 0 },
-  'xr-standard-trigger': { side: 0, up: 0.065, forward: 0.075 },
-  'xr-standard-squeeze': { side: -0.06, up: -0.03, forward: 0 },
+  'xr-standard-thumbstick': { side: 0.065, up: 0.015, forward: 0 },
+  'x-button': { side: -0.06, up: 0.015, forward: -0.005 },
+  'a-button': { side: -0.06, up: 0.015, forward: -0.005 },
+  'y-button': { side: -0.045, up: 0.015, forward: 0.04 },
+  'b-button': { side: -0.045, up: 0.015, forward: 0.04 },
+  'xr-standard-trigger': { side: 0.015, up: 0.02, forward: 0.09 },
+  'xr-standard-squeeze': { side: -0.06, up: 0, forward: -0.055 },
 };
 
 /** Plate height (metres); its width follows the text. */
-const PLATE_H = 0.011;
+const PLATE_H = 0.013;
 /** How far a plate stands off its control (metres). */
 const STAND_OFF = 0.035;
 
