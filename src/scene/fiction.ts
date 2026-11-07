@@ -964,6 +964,11 @@ class Demolition {
   /** Smallest the construction hologram may look (radians across): bigger in the tabletop, to be read. */
   minSignAngle = 0.078;
   private parentQ = new THREE.Quaternion();
+  private scrim = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.5, 0.6),
+    new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: softPanelTexture(), transparent: true, opacity: 0, depthWrite: false }),
+  );
+  private sun = new THREE.Vector3();
   private sign = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.43), new HoloSignMaterial(constructionSignTexture()));
   private survey = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1, 6, 1, true), new SurveyLineMaterial(TABLE_RADIUS));
 
@@ -1071,6 +1076,13 @@ class Demolition {
     this.group.add(this.teleGlow, this.teleCore, ...this.hitchhikers, this.arrival);
     for (const m of [this.ghost, this.sign, this.survey]) m.frustumCulled = false;
     this.group.add(this.ghost, this.survey, this.sign);
+    // Smoked glass behind the hologram, faded in when the Sun is behind it from
+    // the viewer (the glare washed the lettering out). Just behind the sign, so
+    // it sorts between the Sun's glow and the sign.
+    this.scrim.position.z = -0.02;
+    this.scrim.frustumCulled = false;
+    this.scrim.visible = false;
+    this.sign.add(this.scrim);
     this.group.add(this.flash, this.shock, this.echo, this.fireball, this.cracks, this.lane, this.focus, this.bypassFocus);
 
     // A generous invisible sleeve along the lane, so it can be hovered and clicked anywhere.
@@ -1422,6 +1434,13 @@ class Demolition {
       this.sign.quaternion.copy(this.parentQ);
       this.sign.material.uniforms.uReveal.value = signIn;
       this.sign.material.uniforms.uOpacity.value = site;
+      // Darken behind it while the Sun is within ~12–25° of it as seen from the viewer.
+      this.bodies.positionOf('sun', this.sun);
+      const toSign = this.sign.position.clone().sub(camera.position).normalize();
+      const toSun = this.sun.clone().sub(camera.position).normalize();
+      const glare = THREE.MathUtils.smoothstep(toSign.dot(toSun), Math.cos(THREE.MathUtils.degToRad(25)), Math.cos(THREE.MathUtils.degToRad(12)));
+      this.scrim.material.opacity = 0.6 * glare * site * signIn;
+      this.scrim.visible = this.scrim.material.opacity > 0.01;
       this.sign.material.uniforms.uTime.value = this.time;
     }
     if (this.survey.visible) {
@@ -2048,4 +2067,23 @@ export class Fiction {
     if (id === VOGON_DEMOLITION.id) return this.demolition.framePoints();
     return [];
   }
+}
+
+let softPanel: THREE.CanvasTexture | null = null;
+/** A rounded panel with soft edges, as an alpha map (white opaque, fading to black at the rim). */
+function softPanelTexture() {
+  if (softPanel) return softPanel;
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 104;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, c.width, c.height);
+  g.filter = 'blur(10px)';
+  g.fillStyle = '#fff';
+  g.beginPath();
+  g.roundRect(22, 22, c.width - 44, c.height - 44, 18);
+  g.fill();
+  softPanel = new THREE.CanvasTexture(c);
+  return softPanel;
 }
