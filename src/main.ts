@@ -1055,7 +1055,7 @@ function step(now: number) {
     }
   }
   if (fiction) {
-    fiction.update(simMs, dt, elapsed, jumped, stage.camera);
+    fiction.update(simMs, dt, elapsed, jumped, stage.camera, clock.speed);
     const warm = fiction.takeWarmup();
     if (warm) warmShaders(warm);
     if (pendingFrame) {

@@ -46,6 +46,7 @@ import {
   WOTW_SHOTS,
   WOTW_SPAN_MS,
   wotwOccurrence,
+  tooFrequent,
 } from '../fiction/catalog';
 
 const DAY = 86_400_000;
@@ -1961,18 +1962,29 @@ export class Fiction {
     this.refresh();
   }
 
+  /** Recurring events skipped at the clock's current speed (they'd come round too often to be anything but noise). */
+  private skipped = new Set<string>();
+
   private refresh() {
     const inScene = (id: string) => this.playing === null || this.playing === id;
+    // An event shows when no other scene is playing and, unless it's the one playing, it isn't skipped for coming round too often.
+    const shows = (id: string) => inScene(id) && (this.playing === id || !this.skipped.has(id));
     for (const p of this.places) p.object.visible = this.on && this.placeShown(p.id) && inScene(p.id);
-    this.wotw.suppressed = !inScene(WAR_OF_THE_WORLDS.id);
-    this.breakaway.suppressed = !inScene(SPACE_1999.id);
-    this.demolition.suppressed = !inScene(VOGON_DEMOLITION.id);
+    this.wotw.suppressed = !shows(WAR_OF_THE_WORLDS.id);
+    this.breakaway.suppressed = !shows(SPACE_1999.id);
+    this.demolition.suppressed = !shows(VOGON_DEMOLITION.id);
     // Suppressed scenes stop updating, so give the real Earth and Moon back now.
     if (this.demolition.suppressed) this.demolition.release();
     if (this.breakaway.suppressed) this.breakaway.release();
   }
 
-  update(simMs: number, dt: number, elapsed: number, jumped: boolean, camera: THREE.Camera) {
+  /** `speed`: the clock's speed (sim seconds per second), for skipping events that would come round too often. */
+  update(simMs: number, dt: number, elapsed: number, jumped: boolean, camera: THREE.Camera, speed = 1) {
+    const skipped = [WAR_OF_THE_WORLDS, SPACE_1999, VOGON_DEMOLITION].filter((e) => tooFrequent(e, speed)).map((e) => e.id);
+    if (skipped.length !== this.skipped.size || skipped.some((id) => !this.skipped.has(id))) {
+      this.skipped = new Set(skipped);
+      this.refresh();
+    }
     this.wotw.update(simMs, dt, jumped);
     this.breakaway.update(simMs, dt, jumped);
     this.demolition.update(simMs, dt, jumped, camera);
