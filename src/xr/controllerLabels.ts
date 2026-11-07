@@ -5,7 +5,8 @@ import * as THREE from 'three/webgpu';
  * standing just off the controller with a fine leader line to the button or
  * stick it names. They fade in when a controller is raised and turned to be
  * read (near the face, top toward the eyes) and fade away otherwise, so they
- * teach the controls without cluttering the view.
+ * teach the controls without cluttering the view. They also show for the
+ * first half minute in VR, so the player finds out they're there.
  *
  * Anchored to the controller model's touch points (each profile's model names
  * one per component), so they sit on the real buttons of whatever controller
@@ -53,7 +54,16 @@ interface Built {
 
 export class ControllerLabels {
   private built: Built[] = [];
+  /** Telemetry: per hand, what was found and why the labels show or not. */
+  readonly state: Record<string, unknown> = {};
   private opacity = new Map<THREE.Object3D, number>();
+  /** Seconds left of showing regardless (on arrival, so the player learns they exist). */
+  private showing = 0;
+
+  /** Show the labels for `seconds` whatever the controllers' pose. */
+  showFor(seconds: number) {
+    this.showing = seconds;
+  }
   private tmp = new THREE.Vector3();
   private up = new THREE.Vector3();
 
@@ -63,6 +73,7 @@ export class ControllerLabels {
    * `metresPerUnit`: the world scale.
    */
   update(dt: number, controllers: { grip: THREE.Object3D; model: ModelLike; hand: Hand | null }[], head: THREE.Vector3, metresPerUnit: number) {
+    this.showing = Math.max(0, this.showing - dt);
     for (const c of controllers) {
       let b = this.built.find((x) => x.model === c.model);
       if (b && b.hand !== c.hand) {
@@ -71,6 +82,15 @@ export class ControllerLabels {
         b = undefined;
       }
       if (!b && c.hand && c.model.motionController) b = this.build(c.model, c.hand) ?? undefined;
+      if (c.hand) {
+        const comps = c.model.motionController?.components;
+        this.state[c.hand] = {
+          controller: !!c.model.motionController,
+          components: comps ? Object.keys(comps) : null,
+          touchPoints: comps ? Object.entries(comps).filter(([, v]) => v.touchPointNode).map(([k]) => k) : null,
+          built: !!b,
+        };
+      }
       if (!b) continue;
       // Shown when the controller is near the face and its top turned toward the eyes.
       const at = c.grip.getWorldPosition(this.tmp);
@@ -78,7 +98,8 @@ export class ControllerLabels {
       const dist = toEye.length() * metresPerUnit;
       this.up.set(0, 1, 0).transformDirection(c.grip.matrixWorld);
       const facing = toEye.normalize().dot(this.up);
-      const want = dist < 0.5 && facing > 0.35 ? 1 : 0;
+      const want = this.showing > 0 || (dist < 0.6 && facing > 0.2) ? 1 : 0;
+      Object.assign(this.state[b.hand] as object, { dist: +dist.toFixed(2), facing: +facing.toFixed(2), opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2) });
       const o0 = this.opacity.get(b.group) ?? 0;
       const o = o0 + THREE.MathUtils.clamp(want - o0, -dt * 4, dt * 4);
       this.opacity.set(b.group, o);

@@ -315,6 +315,7 @@ export class XrMode {
   }
 
   private begin() {
+    this.controllerLabels.showFor(30);
     // The desktop view the particle sizes were tuned against (40° field of view).
     this.desktopPx = this.renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(20)));
     this.renderer.xr.setFoveation(1);
@@ -937,6 +938,7 @@ export class XrMode {
       metresPerUnit: r(this.metresPerUnit),
       grounded: this.grounded,
       hz: (this.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate ?? null,
+      labels: this.controllerLabels.state,
       renderer: this.backendText(),
     };
   }
