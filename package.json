@@ -13,7 +13,8 @@
     "design": "node --experimental-strip-types scripts/design-mechanism.ts"
   },
   "dependencies": {
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "three-mesh-bvh": "0.9.16"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

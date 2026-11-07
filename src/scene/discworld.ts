@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { mergeStaticMeshes } from './merge';
+import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
 import { cos, float, fract, mod, modelViewMatrix, sin, smoothstep, uniform, uv, vec3, vec4 } from 'three/tsl';
 import { particleFloat, particleVec3, particles, pointSize } from './pointSize';
 import type { Materials } from './materials';
@@ -732,6 +733,8 @@ export class Discworld {
   /** Current stroke rate (signed; negative swims backwards). */
   private rate = 0;
   private pickables: THREE.Object3D[] = [];
+  /** Shapes still waiting for a ray index (BVH); a few are built per pick so none stalls a frame. */
+  private bvhQueue: THREE.BufferGeometry[] = [];
   /** The hit behind the last pickLore() result (where the ray lands), or null. */
   loreHit: THREE.Intersection | null = null;
   private turtleLore: Lore = {
@@ -829,9 +832,23 @@ export class Discworld {
     // Test every solid part, so a plaque behind the shell or another
     // elephant isn't picked through it.
     if (!this.pickables.length) {
+      const shapes = new Set<THREE.BufferGeometry>();
       this.stack.traverse((o) => {
-        if ((o as THREE.Mesh).isMesh) this.pickables.push(o);
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        this.pickables.push(mesh);
+        shapes.add(mesh.geometry);
+        mesh.raycast = pickRaycast;
       });
+      this.bvhQueue = [...shapes];
+    }
+    // VR picks every frame, and a plain walk tests every triangle of every
+    // part the ray passes near (~92k): milliseconds on a headset. A ray index
+    // per shape makes it a handful of tests.
+    const until = performance.now() + 1;
+    while (this.bvhQueue.length && performance.now() < until) {
+      const g = this.bvhQueue.pop()!;
+      (g as THREE.BufferGeometry & { boundsTree?: MeshBVH }).boundsTree = new MeshBVH(g, { indirect: true }); // (indirect: leaves the shape's index, shared with drawing, untouched)
     }
     const hit = raycaster.intersectObjects(this.pickables, false)[0];
     this.loreHit = hit ?? null;
@@ -928,4 +945,18 @@ export class Discworld {
       if (L.t >= 1) this.lift = null;
     }
   }
+}
+
+const pickSphere = new THREE.Sphere();
+/**
+ * A part's ray test for lore picking: the cheap bounding-sphere reject first
+ * (the indexed test skips it), then the shape's ray index once built, a plain
+ * triangle walk until then.
+ */
+function pickRaycast(this: THREE.Mesh, raycaster: THREE.Raycaster, hits: THREE.Intersection[]) {
+  const g = this.geometry;
+  if (!g.boundingSphere) g.computeBoundingSphere();
+  pickSphere.copy(g.boundingSphere!).applyMatrix4(this.matrixWorld);
+  if (!raycaster.ray.intersectsSphere(pickSphere)) return;
+  acceleratedRaycast.call(this, raycaster, hits);
 }
