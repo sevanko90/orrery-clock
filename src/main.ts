@@ -630,8 +630,9 @@ function viewFrom(head: THREE.Vector3 | null) {
     orrery.mechanism.root.visible = true;
     return;
   }
-  // From under the cabinet its opaque base hides the whole movement (115 draw calls): skip it.
-  orrery.mechanism.root.visible = head.y > orreryBox.min.y;
+  // From under the Disc its opaque underside hides the whole movement (115 draw calls): skip it.
+  // (Only under it: out past the rim, below table height, the drum shows over the edge.)
+  orrery.mechanism.root.visible = head.y > orreryBox.min.y || Math.hypot(head.x, head.z) > TABLE_RADIUS;
   culler.setRoots([orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
   culler.update(head, cullAngle);
   xrHead = head;
@@ -780,6 +781,33 @@ function frame(now: number) {
   telemetry.tick(t0);
 }
 
+/**
+ * Compile the shaders of everything under `root` in the background, hidden
+ * parts included, so their first appearance doesn't stall a frame. (The
+ * renderer only compiles what is visible and in view, so those flags are
+ * lifted for the call and put back straight after; nothing is drawn.)
+ */
+function warmShaders(root: THREE.Object3D) {
+  const restore: [THREE.Object3D, boolean, boolean][] = [];
+  root.traverse((o) => {
+    restore.push([o, o.visible, o.frustumCulled]);
+    o.visible = true;
+    o.frustumCulled = false;
+  });
+  let p: Promise<unknown> | undefined;
+  try {
+    // In VR, against the headset's camera, so the two-eye shader variants are the ones built.
+    const camera = xr.presenting ? stage.renderer.xr.getCamera() : stage.camera;
+    p = stage.renderer.compileAsync(root, camera, stage.scene);
+  } finally {
+    for (const [o, visible, culled] of restore) {
+      o.visible = visible;
+      o.frustumCulled = culled;
+    }
+  }
+  p?.catch(() => undefined);
+}
+
 function step(now: number) {
   // (Frozen by the scrunch debug tools: every animation holds still for frame diffs.)
   // three's animation loop calls once with no timestamp when it (re)starts,
@@ -847,6 +875,8 @@ function step(now: number) {
   }
   if (fiction) {
     fiction.update(simMs, dt, elapsed, jumped, stage.camera);
+    const warm = fiction.takeWarmup();
+    if (warm) warmShaders(warm);
     if (pendingFrame) {
       const points = fiction.framePoints(pendingFrame);
       if (points.length) focus.frame(points, 2.4);

@@ -907,6 +907,14 @@ interface Chunk {
 class Demolition {
   readonly group = new THREE.Group();
   readonly body: Body;
+  /**
+   * Set once per occurrence when the fleet arrives: the owner should compile
+   * the whole scene's shaders now, so the explosion's first frame (flash,
+   * fireball, shockwaves, pieces, embers, all drawn for the first time)
+   * doesn't stall.
+   */
+  warmupDue = false;
+  private warmedFor = -1;
   /** The bypass has its own card. */
   readonly bypassBody: Body;
   private bypassFocus = new THREE.Group();
@@ -1177,6 +1185,11 @@ class Demolition {
       return;
     }
 
+    if (show && toBlast < 0 && this.warmedFor !== start) {
+      this.warmedFor = start;
+      this.warmupDue = true;
+    }
+
     this.bodies.positionOf('earth', this.earth);
     this.focus.position.copy(this.earth);
     const spot = new THREE.Vector3();
@@ -1209,7 +1222,8 @@ class Demolition {
       if (moving > 0.02) {
         streak.visible = true;
         streak.position.copy(ship.position);
-        streak.quaternion.setFromUnitVectors(DOWN, UP);
+        // The trail streams behind the ship: above it coming down, below it going up.
+        streak.quaternion.setFromUnitVectors(DOWN, leave > 0 ? DOWN : UP);
         const len = 0.3 + 2.5 * moving;
         streak.scale.set(0.06, len, 0.06);
         streak.material.uniforms.uOpacity.value = 1.6 * moving;
@@ -1963,6 +1977,13 @@ export class Fiction {
     this.breakaway.update(simMs, dt, jumped);
     this.demolition.update(simMs, dt, jumped, camera);
     for (const p of this.places) if (p.object.visible) p.update(simMs, elapsed);
+  }
+
+  /** Scene parts whose shaders should be compiled now (once, ahead of first use), or null. */
+  takeWarmup(): THREE.Object3D | null {
+    if (!this.demolition.warmupDue) return null;
+    this.demolition.warmupDue = false;
+    return this.demolition.group;
   }
 
   /** Camera shake from fiction (the planet exploding), 0..1. */
