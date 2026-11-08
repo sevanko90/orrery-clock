@@ -923,6 +923,7 @@ export class Discworld {
       if (!brushed && mt?.roughnessMap) brushed = mt.roughnessMap;
     });
     const shared = this.bakeMaterials(brushed);
+    const plaques = this.plaqueAtlas();
     for (const part of [this.turtle.group, this.elephantGroup]) {
       part.traverse((o) => {
         const m = o as THREE.Mesh;
@@ -938,15 +939,20 @@ export class Discworld {
         const toRoot = inv.clone().multiply(m.matrixWorld);
         g.applyMatrix4(toRoot);
         if (toRoot.determinant() < 0) flipWinding(g);
-        // The emissive eye keeps its own material; everything else goes to the shared two,
-        // its colour, roughness and metalness written per vertex (plaques: plain brass).
+        // The emissive eye keeps its own material; the name plaques share one, their names
+        // on one texture sheet; everything else goes to the shared two, its colour, roughness
+        // and metalness written per vertex.
         const std = material as THREE.MeshStandardMaterial;
         const glowing = !!std.emissive && std.emissive.getHex() !== 0;
         let target: THREE.Material = material;
-        if (!glowing && std.isMeshStandardMaterial) {
+        const cell = std.map ? plaques?.cells.get(std.map) : undefined;
+        if (cell && plaques) {
+          const uvs = g.attributes.uv;
+          for (let i = 0; i < uvs.count; i++) uvs.setXY(i, cell.u + uvs.getX(i) * cell.w, cell.v + uvs.getY(i) * cell.h);
+          target = plaques.material;
+        } else if (!glowing && std.isMeshStandardMaterial) {
           const n = g.attributes.position.count;
-          const plaque = !!std.map;
-          const c = plaque ? new THREE.Color(0xc9a24e) : std.color;
+          const c = std.map ? new THREE.Color(0xc9a24e) : std.color;
           const colour = new Float32Array(n * 3),
             rough = new Float32Array(n),
             metal = new Float32Array(n);
@@ -976,6 +982,53 @@ export class Discworld {
     this.root.add(baked);
     this.baked = baked;
     this.turtle.group.visible = this.elephantGroup.visible = false;
+  }
+
+  private plaques: { material: THREE.MeshStandardNodeMaterial; cells: Map<THREE.Texture, { u: number; v: number; w: number; h: number }> } | null = null;
+
+  /**
+   * The elephants' name plaques on one texture sheet, so baked they're one
+   * draw with their names (each was a draw of its own), or null if their
+   * textures aren't ready. Made once.
+   */
+  private plaqueAtlas() {
+    if (this.plaques) return this.plaques;
+    const maps: THREE.Texture[] = [];
+    let template: THREE.MeshStandardMaterial | null = null;
+    this.elephantGroup.traverse((o) => {
+      const mt = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if ((o as THREE.Mesh).isMesh && mt?.map && !maps.includes(mt.map)) {
+        maps.push(mt.map);
+        template = template ?? mt;
+      }
+    });
+    const first = maps[0]?.image as { width: number; height: number } | undefined;
+    if (!maps.length || !first?.width || !template) return null;
+    const cols = Math.min(4, maps.length),
+      rows = Math.ceil(maps.length / cols);
+    const canvas = document.createElement('canvas');
+    canvas.width = first.width * cols;
+    canvas.height = first.height * rows;
+    const g = canvas.getContext('2d')!;
+    const cells = new Map<THREE.Texture, { u: number; v: number; w: number; h: number }>();
+    maps.forEach((map, i) => {
+      const c = i % cols,
+        r = Math.floor(i / cols);
+      // (Canvas rows run down; texture v runs up, and these maps aren't flipped differently.)
+      g.drawImage(map.image as CanvasImageSource, c * first.width, r * first.height, first.width, first.height);
+      cells.set(map, { u: c / cols, v: map.flipY ? 1 - (r + 1) / rows : r / rows, w: 1 / cols, h: 1 / rows });
+    });
+    const atlas = new THREE.CanvasTexture(canvas);
+    atlas.colorSpace = maps[0].colorSpace;
+    atlas.flipY = maps[0].flipY;
+    atlas.anisotropy = 4;
+    const t = template as THREE.MeshStandardMaterial;
+    const material = new THREE.MeshStandardNodeMaterial({ map: atlas, metalness: t.metalness, roughness: t.roughness });
+    material.maskNode = this.dissolveMask;
+    material.emissiveNode = this.dissolveGlow;
+    material.name = 'stack-plaques';
+    this.plaques = { material, cells };
+    return this.plaques;
   }
 
   /** Back to the live stack. */
