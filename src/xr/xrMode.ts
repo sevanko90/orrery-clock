@@ -434,6 +434,8 @@ export class XrMode {
       this.beginTabletop();
       return;
     }
+    // VR at its own scale: the default, or what the player last chose in VR (not the tabletop's ~62 cm).
+    this.metresPerUnit = this.vrMetresPerUnit;
     this.resetPosition();
     // Arrive through the wormhole: standing still while it streams past, once per session.
     if (!LEGACY_HALL) {
@@ -443,7 +445,11 @@ export class XrMode {
     }
   }
 
+  /** The world scale VR last ended at (each VR session starts there; the tabletop keeps its own). */
+  private vrMetresPerUnit: number = XR.metresPerUnit;
+
   private end() {
+    if (this.mode === 'vr') this.vrMetresPerUnit = this.metresPerUnit;
     this.endTabletop();
     this.info.hide();
     this.info.update(1); // (gone at once: no frames left to fade in)
