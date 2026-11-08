@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import { telemetry } from './scripts/telemetry-plugin';
+import { upload } from './scripts/upload-plugin';
 
 // BASE_PATH is set by the GitHub Pages workflow (e.g. "/orrery-clock/").
 const base = process.env.BASE_PATH ?? '/';
@@ -19,6 +20,7 @@ export default defineConfig({
   plugins: [
     ...(https ? [basicSsl()] : []),
     telemetry(process.cwd()),
+    upload(process.cwd()),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,
