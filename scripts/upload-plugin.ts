@@ -99,7 +99,8 @@ const PAGE = `<!doctype html>
     const bar = li.querySelector('.bar i'), note = li.querySelector('.note');
     return new Promise((done) => {
       const x = new XMLHttpRequest();
-      x.open('POST', 'file?name=' + encodeURIComponent(file.name));
+      // (An absolute path: relative to /upload without its slash, 'file' meant /file.)
+      x.open('POST', '/upload/file?name=' + encodeURIComponent(file.name));
       x.upload.onprogress = (e) => {
         if (!e.lengthComputable) return;
         bar.style.width = (100 * e.loaded / e.total).toFixed(1) + '%';
