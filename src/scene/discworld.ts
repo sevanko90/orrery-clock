@@ -1,8 +1,10 @@
 import * as THREE from 'three/webgpu';
-import { mergeStaticMeshes } from './merge';
+import { flipWinding, mergeStaticMeshes } from './merge';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { decimateTree } from './decimate';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { clamp, cos, dot, float, floor, fract, materialEmissive, mod, modelViewMatrix, positionWorld, sin, smoothstep, step, uniform, uv, vec3, vec4 } from 'three/tsl';
+import { attribute, clamp, cos, dot, float, floor, fract, materialEmissive, texture, mod, modelViewMatrix, positionWorld, sin, smoothstep, step, uniform, uv, vec3, vec4 } from 'three/tsl';
 import { particleFloat, particleVec3, particles, pointSize } from './pointSize';
 import type { Materials } from './materials';
 import { TABLE_RADIUS } from './layout';
@@ -709,6 +711,20 @@ function buildDust(count: number, pixelScale: number) {
 
 export class Discworld {
   readonly root = new THREE.Group();
+  /**
+   * The tabletop: once formed, the stack stands still (no swimming, ear
+   * fans or stamps) and is baked into one mesh per material, in its pose
+   * then: ~19 draws and their per-frame sync become ~4. Its materials are
+   * the same, so it still dissolves away. The dust and Rimfall keep moving.
+   */
+  freeze = false;
+  private baked: THREE.Group | null = null;
+  /** Is the stack baked (its live parts hidden, nothing for their batches to sync)? */
+  get isBaked() {
+    return this.baked !== null;
+  }
+  /** Triangles before and after the headset's simplification (telemetry), or null. */
+  trianglesSaved: { before: number; after: number } | null = null;
   /** 0 = hidden, 1 = fully assembled. */
   progress = 0;
   /** Earthquake strength (0–1), for a little camera shake. */
@@ -747,7 +763,7 @@ export class Discworld {
     ],
   };
 
-  constructor(mats: Materials, opts: { lowQuality: boolean; pixelRatio: number }) {
+  constructor(mats: Materials, opts: { lowQuality: boolean; pixelRatio: number; decimate?: boolean }) {
     this.root.name = 'discworld';
     this.root.visible = false;
     const m = makeMaterials(mats);
@@ -777,6 +793,9 @@ export class Discworld {
     // Hundreds of small parts: bake each rig's fixed parts together to cut draw calls
     // (the shins stretch as the legs step, so they stay separate).
     mergeStaticMeshes(this.stack, new Set(this.elephants.flatMap((e) => e.legs.map((l) => l.shin))));
+    // Headset: a lighter stack (~137k triangles, none of it with LODs, ~5 fps of a warm Quest's
+    // GPU at tabletop size): each mesh simplified to about a third, keeping its silhouette.
+    if (opts.decimate) this.trianglesSaved = decimateTree(this.stack);
 
     // World units to pixels at unit distance, for point sprites (40° fov).
     const pixelScale = (innerHeight * opts.pixelRatio) / (2 * Math.tan(THREE.MathUtils.degToRad(20)));
@@ -814,6 +833,33 @@ export class Discworld {
   private static DISSOLVE_S = 0.9;
   private static FORM_S = 2;
 
+  private dissolveMask!: THREE.Node<'bool'>;
+  private dissolveGlow!: THREE.Node<'vec3'>;
+  /** The baked stack's two shared materials (made on first bake). */
+  private bakedMats: { metal: THREE.MeshStandardNodeMaterial; ears: THREE.MeshStandardNodeMaterial } | null = null;
+
+  /**
+   * Materials for the baked stack: colour, roughness and metalness per vertex,
+   * so every metal part (and the name plaques, unreadable at tabletop size,
+   * as plain brass) is one draw, and both ears another; with the dissolve.
+   */
+  private bakeMaterials(brushed: THREE.Texture | null) {
+    if (this.bakedMats) return this.bakedMats;
+    const make = (side: THREE.Side) => {
+      const m = new THREE.MeshStandardNodeMaterial({ side });
+      m.colorNode = attribute('color', 'vec3');
+      const rough = attribute('rough', 'float');
+      m.roughnessNode = brushed ? rough.mul(texture(brushed, uv()).g) : rough;
+      m.metalnessNode = attribute('metal', 'float');
+      m.maskNode = this.dissolveMask;
+      m.emissiveNode = this.dissolveGlow;
+      m.name = 'stack-baked';
+      return m;
+    };
+    this.bakedMats = { metal: make(THREE.FrontSide), ears: make(THREE.DoubleSide) };
+    return this.bakedMats;
+  }
+
   /**
    * Give the stack its own copies of its lit materials (they're shared with
    * the orrery), each with a dissolve mask: eaten away from A'Tuin up to the
@@ -829,6 +875,8 @@ export class Discworld {
     const cellNoise = fract(sin(dot(floor(positionWorld.mul(2.5)), vec3(127.1, 311.7, 74.7))).mul(43758.5453));
     const key = height.mul(0.75).add(cellNoise.mul(0.25));
     const edge = smoothstep(u.add(0.07), u, key).mul(step(0.001, u));
+    this.dissolveMask = key.greaterThan(u);
+    this.dissolveGlow = vec3(1.0, 0.72, 0.32).mul(edge.mul(4));
     const copies = new Map<THREE.Material, THREE.Material>();
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -861,6 +909,82 @@ export class Discworld {
       }
       m.material = copy;
     });
+  }
+
+  /** Bake the turtle and elephants as they stand into one mesh per material (see `freeze`). */
+  private bake() {
+    this.root.updateMatrixWorld(true);
+    const inv = this.root.matrixWorld.clone().invert();
+    const groups = new Map<string, { material: THREE.Material; geos: THREE.BufferGeometry[] }>();
+    // The brushed roughness map the metals share (each metal's roughness rides on it).
+    let brushed: THREE.Texture | null = null;
+    this.root.traverse((o) => {
+      const mt = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (!brushed && mt?.roughnessMap) brushed = mt.roughnessMap;
+    });
+    const shared = this.bakeMaterials(brushed);
+    for (const part of [this.turtle.group, this.elephantGroup]) {
+      part.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || Array.isArray(m.material) || Object.keys(m.geometry.morphAttributes).length) return;
+        const material = m.material as THREE.Material;
+        // (Pick proxies and anything hidden stay out.)
+        if (!material.visible) return;
+        for (let a: THREE.Object3D | null = m; a && a !== part.parent; a = a.parent) if (!a.visible) return;
+        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+        for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+        if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+        if (!g.attributes.normal) g.computeVertexNormals();
+        const toRoot = inv.clone().multiply(m.matrixWorld);
+        g.applyMatrix4(toRoot);
+        if (toRoot.determinant() < 0) flipWinding(g);
+        // The emissive eye keeps its own material; everything else goes to the shared two,
+        // its colour, roughness and metalness written per vertex (plaques: plain brass).
+        const std = material as THREE.MeshStandardMaterial;
+        const glowing = !!std.emissive && std.emissive.getHex() !== 0;
+        let target: THREE.Material = material;
+        if (!glowing && std.isMeshStandardMaterial) {
+          const n = g.attributes.position.count;
+          const plaque = !!std.map;
+          const c = plaque ? new THREE.Color(0xc9a24e) : std.color;
+          const colour = new Float32Array(n * 3),
+            rough = new Float32Array(n),
+            metal = new Float32Array(n);
+          for (let i = 0; i < n; i++) {
+            colour.set([c.r, c.g, c.b], i * 3);
+            rough[i] = std.roughness;
+            metal[i] = std.metalness;
+          }
+          g.setAttribute('color', new THREE.BufferAttribute(colour, 3));
+          g.setAttribute('rough', new THREE.BufferAttribute(rough, 1));
+          g.setAttribute('metal', new THREE.BufferAttribute(metal, 1));
+          target = std.side === THREE.DoubleSide ? shared.ears : shared.metal;
+        }
+        const key = `${target.uuid}|${Object.keys(g.attributes).sort().join(',')}`;
+        const entry = groups.get(key) ?? { material: target, geos: [] };
+        entry.geos.push(g);
+        groups.set(key, entry);
+      });
+    }
+    const baked = new THREE.Group();
+    baked.name = 'stack-baked';
+    for (const { material, geos } of groups.values()) {
+      const merged = mergeGeometries(geos, false);
+      geos.forEach((g) => g.dispose());
+      if (merged) baked.add(new THREE.Mesh(merged, material));
+    }
+    this.root.add(baked);
+    this.baked = baked;
+    this.turtle.group.visible = this.elephantGroup.visible = false;
+  }
+
+  /** Back to the live stack. */
+  private unbake() {
+    if (!this.baked) return;
+    this.baked.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    this.baked.removeFromParent();
+    this.baked = null;
+    this.turtle.group.visible = this.elephantGroup.visible = true;
   }
 
   /**
@@ -964,6 +1088,7 @@ export class Discworld {
     const p = this.progress;
     this.root.visible = p > 0;
     this.quake = Math.max(0, this.quake - dt * 1.5);
+    if (p === 0 || (!this.freeze && this.baked)) this.unbake();
     if (p === 0) return;
     this.time += dt;
 
@@ -984,6 +1109,12 @@ export class Discworld {
     this.swimPhase += dt * rate * Math.PI * 2 * 0.35;
     this.swimDistance += dt * rate * 6;
     this.dust.uniforms.uOffset.value = this.swimDistance;
+    if (this.freeze) {
+      // Formed (whole, not mid-dissolve): bake once, and the limbs rest as they are.
+      if (!this.baked && p === 1 && this.dissolveU.value === 0) this.bake();
+      this.lift = null;
+      return;
+    }
     const ph = this.swimPhase;
     this.turtle.front.forEach((f, i) => {
       const s = i === 0 ? 1 : -1;

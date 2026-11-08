@@ -13,6 +13,7 @@
     "design": "node --experimental-strip-types scripts/design-mechanism.ts"
   },
   "dependencies": {
+    "meshoptimizer": "^0.22.0",
     "three": "^0.187.0",
     "three-mesh-bvh": "0.9.16"
   },

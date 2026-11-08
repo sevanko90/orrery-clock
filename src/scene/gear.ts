@@ -135,14 +135,24 @@ export function gearLods(opt: GearOptions): { geometry: THREE.BufferGeometry; er
       [rootR, 0.3],
     ],
   ];
-  return [trapezoidError, pointedError].map((toothError, level) => {
+  // Coarsest: no teeth at all, a plain circle halfway up them (at tabletop distance a gear's
+  // teeth are under a pixel, and they were most of the movement's ~84k triangles).
+  const midR = (rootR + outerR) / 2;
+  const toothlessError = Math.max(pointedError, (outerR - rootR) / 2);
+  return [trapezoidError, pointedError, toothlessError].map((toothError, level) => {
     // The outline's own error (teeth, arcs) and the lost chamfer can land on the
     // same edge, so the bound is their sum. Arcs are cut as finely as the teeth.
     const budget = Math.max(toothError, chamfer * 0.5);
     let outlineError = toothError;
     const outline: [number, number][] = [];
-    for (let i = 0; i < teeth; i++) {
-      for (const [r, f] of profiles[level]) outline.push(P(r, i * step + f * step));
+    if (level < profiles.length) {
+      for (let i = 0; i < teeth; i++) {
+        for (const [r, f] of profiles[level]) outline.push(P(r, i * step + f * step));
+      }
+    } else {
+      const n = arcSegments(midR, Math.PI * 2, budget, 12);
+      outlineError = Math.max(outlineError, arcError(midR, Math.PI * 2, n));
+      outline.push(...arcPoints(0, 0, midR, 0, Math.PI * 2, n).slice(0, -1));
     }
     const shape = pathFrom(outline, new THREE.Shape()) as THREE.Shape;
     const nb = arcSegments(boreRadius, Math.PI * 2, budget, 6);

@@ -20,6 +20,8 @@ export type Command =
   /** Log the scene's named groups (two levels), to know what can be hidden. */
   | { type: 'list' }
   | { type: 'inspect'; name: string }
+  /** Live LOD bias (distances seen by the LOD pickers are multiplied by it). */
+  | { type: 'lod'; bias: number }
   /** Heavier probes (GPU timer, three's render split) on or off. */
   | { type: 'probe'; on: boolean }
   /** A screenshot of the headset's view (left eye) to .telemetry/captures/<name>.png. */

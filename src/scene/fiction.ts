@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { mergeStaticMeshes } from './merge';
 import {
   BeamMaterial,
   CracksMaterial,
@@ -449,6 +450,9 @@ class UtopiaPlanitia {
       this.beacons.push(b);
       dock.add(b);
     }
+
+    // The dock's ~21 static parts drawn as one mesh per material (a speck at tabletop size, it was ~21 draws).
+    mergeStaticMeshes(dock);
 
     const proxy = pickProxy(0.16);
     this.anchor.add(proxy);
@@ -2031,6 +2035,11 @@ export class Fiction {
   }
 
   /** Scene parts whose shaders should be compiled now (once, ahead of first use), or null. */
+  /** Where fiction's glow sprites live: its own root, and Utopia Planitia (which rides on Mars, in the bodies). */
+  get spriteRoots(): THREE.Object3D[] {
+    return [this.root, this.utopia.anchor];
+  }
+
   /** Smallest apparent size of on-screen signs (radians across): bigger in the tabletop, where the solar system is small. */
   set minSignAngle(a: number) {
     this.demolition.minSignAngle = a;

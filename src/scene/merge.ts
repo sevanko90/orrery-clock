@@ -57,7 +57,7 @@ export function mergeStaticMeshes(root: THREE.Object3D, keep: Set<THREE.Object3D
   return saved;
 }
 
-function flipWinding(g: THREE.BufferGeometry) {
+export function flipWinding(g: THREE.BufferGeometry) {
   for (const attr of Object.values(g.attributes)) {
     const a = attr as THREE.BufferAttribute;
     for (let i = 0; i < a.count; i += 3) {

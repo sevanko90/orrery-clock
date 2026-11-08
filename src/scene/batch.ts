@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { lodChain, type LodLevel } from './lod';
-import { LOD_HYSTERESIS } from '../xr/scrunch';
+import { LOD_HYSTERESIS, LIVE } from '../xr/scrunch';
 
 /** Layer the batched originals move to: kept for their transforms, never drawn themselves. */
 export const BATCHED_LAYER = 6;
@@ -147,7 +147,7 @@ export class Batcher {
         if (cull) visible = r > at.distanceTo(eye!) * minAngle;
         if (visible && lodEye && e.lods) {
           // Nearest point of the bounds, in the mesh's own units (errors are measured there).
-          const d = Math.max(0, at.distanceTo(lodEye) - r) / scale;
+          const d = (LIVE.lodBias * Math.max(0, at.distanceTo(lodEye) - r)) / scale;
           const lods = e.lods;
           let l = e.level;
           while (l + 1 < lods.length && d >= lods[l + 1].from * (1 + LOD_HYSTERESIS)) l++;

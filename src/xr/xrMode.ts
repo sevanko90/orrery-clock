@@ -389,6 +389,11 @@ export class XrMode {
     renderer.xr.addEventListener('sessionend', () => this.end());
   }
 
+  /** The world scale now (metres per world unit). */
+  get metresPerUnitNow() {
+    return this.metresPerUnit;
+  }
+
   get presenting() {
     return this.renderer.xr.isPresenting;
   }
@@ -398,6 +403,9 @@ export class XrMode {
     const xr = navigator.xr;
     if (!xr) return;
     this.mode = mode;
+    // (?xrscale=0.8 renders the headset's views at a fraction of full resolution, to price the GPU's share.)
+    const scale = Number(new URLSearchParams(location.search).get('xrscale'));
+    if (scale > 0 && scale <= 1) this.renderer.xr.setFramebufferScaleFactor(scale);
     const session = await xr.requestSession(mode === 'ar' ? 'immersive-ar' : 'immersive-vr', {
       // 'layers' lets the renderer draw both eyes in one pass (multiview).
       optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers', ...(mode === 'ar' ? ['hit-test', 'anchors', 'plane-detection'] : [])],

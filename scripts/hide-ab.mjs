@@ -56,9 +56,10 @@ async function measure(label) {
 // mean of its two neighbours, so a view that drifts during the run can't fake a result.
 for (const name of names) {
   const before = await measure(`  ${name} shown`);
-  send({ type: 'hide', name, on: true });
+  // ("a+b" hides several parts together.)
+  for (const part of name.split('+')) send({ type: 'hide', name: part, on: true });
   const hidden = await measure(`- ${name}`);
-  send({ type: 'hide', name, on: false });
+  for (const part of name.split('+')) send({ type: 'hide', name: part, on: false });
   const after = await measure(`  ${name} shown`);
   if (before && hidden && after) {
     const d = (k) => (hidden[k] - (before[k] + after[k]) / 2).toFixed(1);

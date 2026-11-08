@@ -31,8 +31,11 @@ import { Batcher, raycastLayers } from './scene/batch';
 import { Telemetry, type Command } from './xr/telemetry';
 import { XR } from './xr/config';
 import { TABLE_RADIUS } from './scene/layout';
-import { scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
+import { LIVE, scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
 import { ScrunchDebug } from './xr/scrunchDebug';
+import { MoonDots } from './scene/moonDots';
+import { decimateTree, simplifierReady } from './scene/decimate';
+import { lodChain } from './scene/lod';
 import { MeshLods, beltRock } from './scene/meshLod';
 import { SpriteBatch } from './scene/spriteBatch';
 import { viewpoints, yawFacing } from './xr/vrScene';
@@ -96,6 +99,18 @@ stage.scene.add(orrery.root);
 // Scrunched (the headset): no glass in the drum, the mechanism open in its frame.
 const vrGlass = new VrGlass(orrery.root);
 if (scrunch) vrGlass.set(true);
+// Headset: the movement's parts without LODs simplified (~84k triangles, barely seen through
+// the glass at tabletop size, the biggest single cost there); the gears keep their own LODs.
+// (Before batching: the batches take the geometries as they are now.)
+let movementTriangles: { before: number; after: number } | null = null;
+if (scrunch) {
+  try {
+    await simplifierReady;
+    movementTriangles = decimateTree(orrery.mechanism.root, undefined, undefined, (m) => lodChain(m.geometry) !== null);
+  } catch {
+    /* no simplifier: full detail */
+  }
+}
 // Draw the instrument's hundreds of parts as a few batches (one per material).
 const orreryBatch = new Batcher(orrery.root, stage.scene, { lod: scrunch });
 // World matrices are brought up to date once a frame, just before the batches copy them.
@@ -105,6 +120,13 @@ const bodies = new Bodies(orrery.arms, { lowQuality: quality.low });
 stage.scene.add(bodies.root);
 /** Scrunched: spheres (planets, Sun, moons) step down in segments with distance. */
 const meshLods = scrunch ? new MeshLods() : null;
+/** The mesh simplifier (headset): loaded at start, used when the Discworld is first built. */
+let simplifierLoaded = false;
+if (scrunch) simplifierReady.then(() => (simplifierLoaded = true)).catch(() => undefined);
+/** Headset: tiny moons drawn together as dots (see MoonDots). */
+const moonDots = scrunch ? new MoonDots() : null;
+if (moonDots) stage.scene.add(moonDots.sprite);
+const sunAt = new THREE.Vector3();
 if (scrunch) {
   // The belt's 1800 rocks: 20-face indexed rocks instead of 36-face unindexed ones.
   const belt = bodies.root.getObjectByName('belt') as THREE.InstancedMesh | undefined;
@@ -219,7 +241,7 @@ const NORMAL_LIMITS = { maxPolar: stage.controls.maxPolarAngle, maxDistance: sta
 function setDiscworld(on: boolean, persist = true) {
   if (on && !discworld) {
     reseed('discworld');
-    discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio });
+    discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio, decimate: scrunch && simplifierLoaded });
     discBatch = new Batcher(discworld.root, stage.scene);
     stage.scene.add(discworld.root);
   }
@@ -497,7 +519,7 @@ function setFiction(on: boolean, persist = true) {
     fiction = new Fiction(bodies, mats);
     hiddenPlaces.forEach((id) => fiction!.setPlaceShown(id, false));
     stage.scene.add(fiction.root);
-    if (scrunch) fictionSprites = new SpriteBatch([fiction.root], stage.scene);
+    if (scrunch) fictionSprites = new SpriteBatch(fiction.spriteRoots, stage.scene);
   }
   if (!on && playing) finishScene();
   fiction?.setEnabled(on);
@@ -800,11 +822,13 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   tabletopDisc: (on) => {
     if (!!discworld?.enabled === on) return;
     setDiscworld(on, false);
-    // It forms and dissolves where it is (rising and sinking, it went through the floor).
-    if (discworld) discworld.dissolveOnExit = true;
+    // It forms and dissolves where it is (rising and sinking, it went through the floor),
+    // and once formed it stands still, baked (see Discworld.freeze): the tabletop's biggest cost.
+    if (discworld) discworld.dissolveOnExit = discworld.freeze = true;
   },
   // The VR scene: Discworld on (assembled), without touching the saved setting.
   sessionStart: (mode) => {
+    orrery.setHeadsetLook(true);
     discBeforeVr = !!discworld?.enabled;
     // Fiction always on in VR and the tabletop (the scene panel is its catalogue), without touching the saved setting.
     fictionBeforeVr = !!fiction?.enabled;
@@ -821,9 +845,10 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
     }
   },
   sessionEnd: () => {
+    orrery.setHeadsetLook(false);
     if (!!fiction?.enabled !== fictionBeforeVr) setFiction(fictionBeforeVr, false);
     // Discworld back as it was (VR turned it on; the tabletop turned it off).
-    if (discworld) discworld.dissolveOnExit = false;
+    if (discworld) discworld.dissolveOnExit = discworld.freeze = false;
     if (!!discworld?.enabled !== discBeforeVr) setDiscworld(discBeforeVr, false);
     vrReturn = null;
     vrFlyPending = null;
@@ -912,6 +937,9 @@ const telemetry = new Telemetry((c: Command) => {
       return;
     case 'capture':
       captureDue = c.name ?? `vr-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`;
+      return;
+    case 'lod':
+      LIVE.lodBias = c.bias;
       return;
     case 'inspect': {
       // One named object's drawing state (and its parents' visibility), to see why something doesn't show.
@@ -1223,8 +1251,16 @@ function step(now: number) {
   for (const list of forcedHidden.values()) for (const o of list) o.visible = false;
   fictionSprites?.sync();
   if (meshLods && lodEye) meshLods.update(lodEye, [bodies.root, ...(fiction ? [fiction.root] : [])]);
+  if (moonDots && lodEye) {
+    moonDots.add(bodies.moonMeshes());
+    moonDots.update(lodEye, bodies.positionOf('sun', sunAt), xr.presenting ? xr.metresPerUnitNow : 1);
+  }
   orreryBatch.sync(eye, cullAngle, lodEye);
-  discBatch?.sync(eye, cullAngle);
+  // (Baked in the tabletop, the stack's live parts are hidden, so their batches are too, and
+  // there's nothing to copy into them.)
+  const baked = !!discworld?.isBaked;
+  for (const b of discBatch?.batches ?? []) b.visible = !baked;
+  if (!baked) discBatch?.sync(eye, cullAngle);
   mark('sync');
   stage.render(xr.camera);
   mark('render');
@@ -1300,4 +1336,4 @@ const vrPreview = {
 stage.renderer.setAnimationLoop(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, culler, fictionSprites: () => fictionSprites, batch: () => orreryBatch }, vr: vrPreview } });
+Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, moonDots, movementTriangles: () => movementTriangles, culler, fictionSprites: () => fictionSprites, batch: () => orreryBatch }, vr: vrPreview } });

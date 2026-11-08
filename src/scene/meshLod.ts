@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { LOD_HYSTERESIS, switchDistance } from '../xr/scrunch';
+import { LIVE, LOD_HYSTERESIS, switchDistance } from '../xr/scrunch';
 
 /**
  * Distance LODs for meshes drawn on their own (the planets, the Sun, moons):
@@ -96,7 +96,7 @@ export class MeshLods {
       const e = it.mesh.matrixWorld.elements;
       const scale = Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10]));
       const r = (it.levels[0].geometry as THREE.SphereGeometry).parameters.radius * scale;
-      const d = Math.max(0, this.tmp.setFromMatrixPosition(it.mesh.matrixWorld).distanceTo(eye) - r) / (scale || 1);
+      const d = (LIVE.lodBias * Math.max(0, this.tmp.setFromMatrixPosition(it.mesh.matrixWorld).distanceTo(eye) - r)) / (scale || 1);
       let l = it.level;
       while (l + 1 < it.levels.length && d >= it.levels[l + 1].from * (1 + LOD_HYSTERESIS)) l++;
       while (l > 0 && d < it.levels[l].from * (1 - LOD_HYSTERESIS)) l--;

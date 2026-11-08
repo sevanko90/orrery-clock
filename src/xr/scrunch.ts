@@ -49,3 +49,10 @@ export function allowedError(d: number, px = LOD_PX, f = QUEST_PX_PER_RAD) {
 
 /** Relative hysteresis on LOD switches, so a level doesn't flicker at its boundary. */
 export const LOD_HYSTERESIS = 0.06;
+
+/**
+ * Live tuning (telemetry `lod`): distances seen by the LOD pickers are
+ * multiplied by `lodBias`, so above 1 every mesh with LODs takes its coarser
+ * levels sooner. For pricing triangles on the headset without a reload.
+ */
+export const LIVE = { lodBias: 1 };

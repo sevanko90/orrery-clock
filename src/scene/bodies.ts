@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { float, fract, modelViewMatrix, smoothstep, step, uniform, uv, vec3, vec4 } from 'three/tsl';
 import { particleFloat, particleVec3, particles, pointSize } from './pointSize';
 import { PLANET_FACTS, SUN_FACTS, COMETS, type BodyFacts, type CometDef } from '../astro/bodies';
@@ -505,15 +506,15 @@ export class Bodies {
     this.root.add(this.belt);
 
     // ---- Faint orbit rings at the planets' plane ----
-    for (const spec of ARMS) {
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(spec.radius - 0.008, spec.radius + 0.008, 256),
-        new THREE.MeshBasicMaterial({ color: 0xe0c38a, transparent: true, opacity: 0.12, depthWrite: false }),
-      );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = PLANE_Y;
-      this.root.add(ring);
-    }
+    // (One mesh for all of them: concentric, flat and fixed, they were a draw each.)
+    const orbitRings = new THREE.Mesh(
+      mergeGeometries(ARMS.map((spec) => new THREE.RingGeometry(spec.radius - 0.008, spec.radius + 0.008, 256))),
+      new THREE.MeshBasicMaterial({ color: 0xe0c38a, transparent: true, opacity: 0.12, depthWrite: false }),
+    );
+    orbitRings.name = 'orbit-rings';
+    orbitRings.rotation.x = -Math.PI / 2;
+    orbitRings.position.y = PLANE_Y;
+    this.root.add(orbitRings);
 
     // Day and night sides: everything lit (planets, clouds, rocks, comets).
     this.root.traverse((o) => {
@@ -559,6 +560,11 @@ export class Bodies {
     else this.hiddenMoons.delete(id);
   }
 
+  /** The moon spheres built so far, with their plain colours (for the headset's moon dots). */
+  moonMeshes(): { mesh: THREE.Mesh; colour: number | undefined }[] {
+    return (this.moonSystems ?? []).flatMap((sys) => sys.moons.map((m) => ({ mesh: m.mesh, colour: m.def.color })));
+  }
+
   get moonsVisible() {
     return this.moonsOn;
   }
@@ -590,6 +596,9 @@ export class Bodies {
 
       const a0 = defs[0].aKm;
       const aN = defs[defs.length - 1].aKm;
+      // Every moon's orbit ring in this system, as segments in the system's space: one draw for
+      // them all (one line each was ~17 draws across the planets, each tiny).
+      const orbitSegments: number[] = [];
       const moons = defs.map((def, i) => {
         const f = defs.length > 1 ? 0.5 * (i / (defs.length - 1) + Math.log(def.aKm / a0) / Math.log(aN / a0)) : 0;
         const orbitRadius = host.size * (inner + (outer - inner) * f);
@@ -599,18 +608,13 @@ export class Bodies {
         plane.rotation.x = def.incDeg * DEG;
         root.add(plane);
 
+        // The ring, tilted with its plane, closed (each segment k to k+1, the last back to the first).
         const ring: THREE.Vector3[] = [];
-        // A closed line (the WebGPU renderer has no LineLoop): the last point repeats the first.
         for (let k = 0; k <= 128; k++) {
           const t = (k / 128) * Math.PI * 2;
-          ring.push(new THREE.Vector3(Math.cos(t) * orbitRadius, 0, Math.sin(t) * orbitRadius));
+          ring.push(new THREE.Vector3(Math.cos(t) * orbitRadius, 0, Math.sin(t) * orbitRadius).applyEuler(plane.rotation));
         }
-        plane.add(
-          new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints(ring),
-            new THREE.LineBasicMaterial({ color: 0xe0c38a, transparent: true, opacity: 0.14, depthWrite: false }),
-          ),
-        );
+        for (let k = 0; k < 128; k++) orbitSegments.push(ring[k].x, ring[k].y, ring[k].z, ring[k + 1].x, ring[k + 1].y, ring[k + 1].z);
 
         const group = new THREE.Group();
         group.name = def.id;
@@ -656,6 +660,12 @@ export class Bodies {
         });
         return { def, group, mesh, orbitRadius, angle: 0, rate: (Math.PI * 2) / def.periodDays };
       });
+      const orbits = new THREE.LineSegments(
+        new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(orbitSegments, 3)),
+        new THREE.LineBasicMaterial({ color: 0xe0c38a, transparent: true, opacity: 0.14, depthWrite: false }),
+      );
+      orbits.name = `${parent}-moon-orbits`;
+      root.add(orbits);
       systems.push({ root, moons });
     }
     return systems;

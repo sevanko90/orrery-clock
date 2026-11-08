@@ -36,6 +36,8 @@ export interface Orrery {
   mechanism: Mechanism3D;
   /** Set each arm's absolute angle (radians, plan convention). */
   setArmAngles(angles: Record<string, number>): void;
+  /** In a headset (true) the zodiac's engraving is drawn as colour, not cut (it shimmered); on the desktop it's cut. */
+  setHeadsetLook(on: boolean): void;
 }
 
 function enableShadows(obj: THREE.Object3D, cast = true, receive = true) {
@@ -51,12 +53,27 @@ function cylinder(r: number, h: number, mat: THREE.Material, segments = 32) {
   return new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, segments), mat);
 }
 
-async function zodiacAlphaTexture(rInner: number, rOuter: number, extent: number): Promise<THREE.Texture> {
+/**
+ * The zodiac band's textures: `alpha` cuts the band and its engraving out
+ * (the desktop: the walnut shows through the cuts); for VR, `colour` has the
+ * engraving as dark colour on brass, on a ring of geometry. In a headset the engraving is a few pixels high, and cut by alpha
+ * its strokes shimmered as the head moved (4x MSAA gives alpha-to-coverage
+ * only four steps); as colour it filters smoothly through the mipmaps.
+ */
+async function zodiacTextures(rInner: number, rOuter: number, extent: number): Promise<{ alpha: THREE.Texture; colour: THREE.Texture }> {
   try {
     await document.fonts.load('600 48px Cinzel');
   } catch {
     /* fall back to serif */
   }
+  const alpha = drawZodiac(rInner, rOuter, extent, '#000', '#000');
+  // Engraving the colour of the walnut under the cuts (it multiplies the brass).
+  const colour = drawZodiac(rInner, rOuter, extent, '#fff', '#3a2a1e');
+  colour.colorSpace = THREE.SRGBColorSpace;
+  return { alpha, colour };
+}
+
+function drawZodiac(rInner: number, rOuter: number, extent: number, outside: string, cut: string): THREE.Texture {
   const size = 4096;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
@@ -66,8 +83,8 @@ async function zodiacAlphaTexture(rInner: number, rOuter: number, extent: number
   const R0 = rInner * px,
     R1 = rOuter * px;
 
-  // Solid band (white = brass), then cut engravings in black.
-  ctx.fillStyle = '#000';
+  // Solid band (white = brass), then cut engravings.
+  ctx.fillStyle = outside;
   ctx.fillRect(0, 0, size, size);
   ctx.fillStyle = '#fff';
   ctx.beginPath();
@@ -75,8 +92,8 @@ async function zodiacAlphaTexture(rInner: number, rOuter: number, extent: number
   ctx.arc(c, c, R0, 0, Math.PI * 2, true);
   ctx.fill();
 
-  ctx.strokeStyle = '#000';
-  ctx.fillStyle = '#000';
+  ctx.strokeStyle = cut;
+  ctx.fillStyle = cut;
   const band = R1 - R0;
   const Rtick = R0 + band * 0.22;
   const lineW = Math.max(2, px * 0.03);
@@ -129,6 +146,10 @@ async function zodiacAlphaTexture(rInner: number, rOuter: number, extent: number
     });
   }
 
+  return finish(canvas);
+}
+
+function finish(canvas: HTMLCanvasElement) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.anisotropy = 8;
   return tex;
@@ -263,6 +284,7 @@ export function buildOrrery(mats: Materials): Orrery {
   const zInner = TABLE_RADIUS - 2.0,
     zOuter = TABLE_RADIUS - 0.35,
     extent = TABLE_RADIUS;
+  let zodiacLook: (vr: boolean) => void = () => undefined;
   const zodiacMat = inlay(mats.brass.clone());
   // Satin finish: a large flat ring of polished brass mirrors the Sun as a glare.
   zodiacMat.roughness = 0.55;
@@ -276,11 +298,35 @@ export function buildOrrery(mats: Materials): Orrery {
   zodiac.position.y = S + 0.004;
   zodiac.receiveShadow = true;
   cabinet.add(zodiac);
-  zodiacAlphaTexture(zInner, zOuter, extent).then((tex) => {
-    zodiacMat.alphaMap = tex;
+  // The headset's version: a real ring of geometry with the engraving as colour (see
+  // zodiacTextures), opaque. Its edges are geometry, which multisampling smooths: cut by
+  // alpha-to-coverage, the band's edge (alpha part-way along the circle) speckled, the
+  // dither crawling with the head's tiny tracking jitter.
+  const zodiacVr = zodiacMat.clone();
+  zodiacVr.alphaToCoverage = false;
+  const ring = new THREE.RingGeometry(zInner, zOuter, 360, 1);
+  // UVs as the square plane's (its texture spans the whole table, ±extent).
+  const pos = ring.attributes.position;
+  const uv = ring.attributes.uv;
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / (2 * extent) + 0.5, pos.getY(i) / (2 * extent) + 0.5);
+  const zodiacRing = new THREE.Mesh(ring, zodiacVr);
+  zodiacRing.rotation.x = -Math.PI / 2;
+  zodiacRing.position.y = S + 0.004;
+  zodiacRing.receiveShadow = true;
+  zodiacRing.visible = false;
+  cabinet.add(zodiacRing);
+  zodiacTextures(zInner, zOuter, extent).then((t) => {
+    zodiacMat.alphaMap = t.alpha;
     zodiacMat.visible = true;
     zodiacMat.needsUpdate = true;
+    zodiacVr.map = t.colour;
+    zodiacVr.visible = true;
+    zodiacVr.needsUpdate = true;
   });
+  zodiacLook = (vr) => {
+    zodiac.visible = !vr;
+    zodiacRing.visible = vr;
+  };
   root.add(cabinet);
 
   // ---- The movement ----------------------------------------------------
@@ -352,6 +398,7 @@ export function buildOrrery(mats: Materials): Orrery {
         if (a !== undefined) rig.pivot.rotation.y = a;
       }
     },
+    setHeadsetLook: (on) => zodiacLook(on),
   };
 }
 

@@ -56,7 +56,8 @@ export class Stage {
     // WebGL 2: it's the backend three can drive VR with, drawing both eyes in
     // one pass (multiview).
     this.renderer = new THREE.WebGPURenderer({
-      antialias: true,
+      // (?msaa=0 turns multisampling off, to price it on the headset.)
+      antialias: new URLSearchParams(location.search).get('msaa') !== '0',
       powerPreference: 'high-performance',
       // (?webgl=1 forces it on the desktop, to check what the headset gets.)
       forceWebGL: quality.headset || new URLSearchParams(location.search).get('webgl') === '1',

@@ -130,3 +130,17 @@ measurements behind it are in `docs/VR-PERFORMANCE.md`.
 - **Plane poses aren't stable between sessions:** Quest's floor plane can
   come back turned half round, so don't save positions relative to a
   plane; use a persistent anchor.
+- **Build perf experiments as live switches, and run them in one pass.**
+  Every reload or re-entry costs the tester taking the headset off and
+  on, the session restarting, and the headset's heat changing between
+  runs (which skews comparisons). Give each suspect a runtime toggle
+  (hide a named part, switch a mode, bias the LODs, change a cull angle)
+  driven over the dev telemetry channel, then script the whole set:
+  baseline, experiment, baseline, experiment... with each priced against
+  the baselines either side of it, so slow drift (warming) can't fake a
+  result (here: `scripts/perf-pass.mjs`). One still-headed session of a
+  few minutes beats a dozen one-at-a-time reload-and-measure rounds.
+- **Measure in the pathological case.** A warm headset after an hour or
+  more runs the same scene ~40% slower; that is the budget to design to,
+  not the cold first run. And what limits the frame can change as it
+  warms (JS-bound cold, GPU-bound warm), so re-check which lever matters.
