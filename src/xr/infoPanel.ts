@@ -9,6 +9,15 @@ import { FADE_S } from './controlPanel';
  * player's space (it's parented to the rig, so it travels with them). Point
  * at the close mark and pull the trigger to dismiss it.
  */
+/** Where a card opens, from the head (metres): ahead, to the right, up. */
+export interface CardPlace {
+  ahead: number;
+  right: number;
+  up: number;
+}
+/** VR: straight ahead, at reading distance. */
+export const CARD_AHEAD: CardPlace = { ahead: 0.85, right: 0, up: 0.1 };
+
 export class InfoPanel {
   readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   private canvas = document.createElement('canvas');
@@ -53,20 +62,32 @@ export class InfoPanel {
 
   /**
    * Open showing `content` (called again a few times a second for live
-   * figures), in front of `camera` within `rig` (whose units are metres).
+   * figures), in front of `camera` within `rig` (whose units are metres),
+   * or at a given point in the rig (turned to face the head).
    */
-  show(content: () => CardContent, rig: THREE.Object3D, camera: THREE.Camera) {
+  /** Physical width (metres). */
+  get width() {
+    return this.mesh.geometry.parameters.width;
+  }
+
+  show(content: () => CardContent, rig: THREE.Object3D, camera: THREE.Camera, place: CardPlace | THREE.Vector3 = CARD_AHEAD) {
     this.content = content;
     this.last = '';
     if (this.mesh.parent !== rig) rig.add(this.mesh);
-    // Camera pose in the rig's space (metres): ahead on the horizontal, a little low.
     const head = camera.position;
-    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).setY(0);
-    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
-    fwd.normalize();
-    this.mesh.position.copy(head).addScaledVector(fwd, 0.85);
-    this.mesh.position.y = head.y + 0.1;
-    this.mesh.rotation.set(0, Math.atan2(-fwd.x, -fwd.z), 0);
+    if (place instanceof THREE.Vector3) this.mesh.position.copy(place);
+    else {
+      // Camera pose in the rig's space (metres): ahead on the horizontal (and to the side if asked), a little up.
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).setY(0);
+      if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+      fwd.normalize();
+      const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+      this.mesh.position.copy(head).addScaledVector(fwd, place.ahead).addScaledVector(right, place.right);
+      this.mesh.position.y = head.y + place.up;
+    }
+    // Facing the head.
+    const to = head.clone().sub(this.mesh.position).setY(0);
+    this.mesh.rotation.set(0, Math.atan2(to.x, to.z), 0);
     // Tilted back a touch, like a lectern.
     this.mesh.rotateX(-0.15);
     this.wanted = 1;

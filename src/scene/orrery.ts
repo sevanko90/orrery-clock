@@ -266,7 +266,10 @@ export function buildOrrery(mats: Materials): Orrery {
   const zodiacMat = inlay(mats.brass.clone());
   // Satin finish: a large flat ring of polished brass mirrors the Sun as a glare.
   zodiacMat.roughness = 0.55;
-  zodiacMat.alphaTest = 0.5;
+  // The engraving is cut by alpha. A hard alpha test gets no anti-aliasing, so on a
+  // headset's coarse pixels, at a glancing angle, the lettering went jagged and shimmered:
+  // alpha-to-coverage turns the alpha into MSAA coverage, smoothing the cut edges.
+  zodiacMat.alphaToCoverage = true;
   zodiacMat.visible = false;
   const zodiac = new THREE.Mesh(new THREE.PlaneGeometry(extent * 2, extent * 2), zodiacMat);
   zodiac.rotation.x = -Math.PI / 2;

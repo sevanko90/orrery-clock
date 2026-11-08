@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { mergeStaticMeshes } from './merge';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { cos, float, fract, mod, modelViewMatrix, sin, smoothstep, uniform, uv, vec3, vec4 } from 'three/tsl';
+import { clamp, cos, dot, float, floor, fract, materialEmissive, mod, modelViewMatrix, positionWorld, sin, smoothstep, step, uniform, uv, vec3, vec4 } from 'three/tsl';
 import { particleFloat, particleVec3, particles, pointSize } from './pointSize';
 import type { Materials } from './materials';
 import { TABLE_RADIUS } from './layout';
@@ -796,6 +796,71 @@ export class Discworld {
     key.name = 'disc-key';
     this.lights.push({ light: under, base: 1.4 }, { light: key, base: 1.1 });
     this.root.add(under, key);
+    this.makeDissolvable();
+  }
+
+  /**
+   * The tabletop leaves the Disc by dissolving it where it is (sinking, it
+   * went through the room's floor). 0 = whole, past 1 = gone.
+   */
+  private dissolveU = uniform(0);
+  /**
+   * The tabletop: come and go by dissolving in place instead of rising from
+   * below and sinking away (both went through the room's floor). Coming in,
+   * it forms from the Disc down to A'Tuin; going, it's eaten from A'Tuin up.
+   */
+  dissolveOnExit = false;
+  /** Seconds a dissolve takes, going and coming. */
+  private static DISSOLVE_S = 0.9;
+  private static FORM_S = 2;
+
+  /**
+   * Give the stack its own copies of its lit materials (they're shared with
+   * the orrery), each with a dissolve mask: eaten away from A'Tuin up to the
+   * Disc through a ragged noise edge that glows brass as it goes. Built in
+   * from the start, so a dissolve compiles nothing.
+   */
+  private makeDissolvable() {
+    const u = this.dissolveU;
+    // How soon a point goes: low first (A'Tuin's underside ~-19, the Disc ~0), ragged with noise.
+    const height = clamp(positionWorld.y.add(19).div(19.5), 0, 1);
+    // (Ragged with a single hash per small cell: 3D Perlin noise on every pixel of the stack,
+    // even at rest, cost the headset ~3 ms of GPU a frame.)
+    const cellNoise = fract(sin(dot(floor(positionWorld.mul(2.5)), vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+    const key = height.mul(0.75).add(cellNoise.mul(0.25));
+    const edge = smoothstep(u.add(0.07), u, key).mul(step(0.001, u));
+    const copies = new Map<THREE.Material, THREE.Material>();
+    this.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || Array.isArray(m.material)) return;
+      const src = m.material as THREE.MeshStandardMaterial;
+      if (!src.isMeshStandardMaterial || (src as unknown as { isNodeMaterial?: boolean }).isNodeMaterial) return;
+      let copy = copies.get(src);
+      if (!copy) {
+        const n = new THREE.MeshStandardNodeMaterial();
+        n.setValues({
+          name: src.name,
+          color: src.color,
+          emissive: src.emissive,
+          emissiveIntensity: src.emissiveIntensity,
+          roughness: src.roughness,
+          metalness: src.metalness,
+          map: src.map,
+          roughnessMap: src.roughnessMap,
+          metalnessMap: src.metalnessMap,
+          normalMap: src.normalMap,
+          normalScale: src.normalScale,
+          envMapIntensity: src.envMapIntensity,
+          side: src.side,
+          flatShading: src.flatShading,
+        });
+        n.maskNode = key.greaterThan(u);
+        n.emissiveNode = materialEmissive.add(vec3(1.0, 0.72, 0.32).mul(edge.mul(4)));
+        copy = n;
+        copies.set(src, copy);
+      }
+      m.material = copy;
+    });
   }
 
   /**
@@ -877,7 +942,25 @@ export class Discworld {
     // Entrance (~4 s) overlaps the camera's ~2.4 s flight so the arrival is
     // visible; the exit is quicker.
     // (Clamped step toward the target, so it rests exactly at 0 or 1.)
-    this.progress += THREE.MathUtils.clamp(this.target - this.progress, -dt / 3, dt / 4);
+    if (this.dissolveOnExit && this.target === 0 && this.progress > 0) {
+      // Dissolve where it stands (fully assembled), then gone.
+      this.progress = 1;
+      this.dissolveU.value += dt / Discworld.DISSOLVE_S;
+      if (this.dissolveU.value >= 1.05) {
+        this.progress = 0;
+        this.dissolveU.value = 0;
+      }
+    } else if (this.dissolveOnExit && this.target === 1 && (this.progress < 1 || this.dissolveU.value > 0)) {
+      // Form where it stands, from the Disc down (or turn back mid-dissolve).
+      if (this.progress < 1) {
+        this.progress = 1;
+        this.dissolveU.value = 1.05;
+      }
+      this.dissolveU.value = Math.max(0, this.dissolveU.value - dt / Discworld.FORM_S);
+    } else {
+      this.dissolveU.value = 0;
+      this.progress += THREE.MathUtils.clamp(this.target - this.progress, -dt / 3, dt / 4);
+    }
     const p = this.progress;
     this.root.visible = p > 0;
     this.quake = Math.max(0, this.quake - dt * 1.5);
@@ -888,10 +971,11 @@ export class Discworld {
     // arrives (~1.2–2.9 s) and the turtle surfaces alongside (~1.6–4 s).
     this.elephantGroup.position.y = -(1 - smooth(0.3, 0.72, p)) * 45;
     this.turtle.group.position.y = SHELL_Y - (1 - easeOut(smooth(0.4, 1, p))) * 80;
-    this.rimfall.uniforms.uOpacity.value = smooth(0.08, 0.45, p);
+    const left = 1 - Math.min(1, this.dissolveU.value);
+    this.rimfall.uniforms.uOpacity.value = smooth(0.08, 0.45, p) * left;
     this.rimfall.uniforms.uTime.value = this.time;
-    this.dust.uniforms.uOpacity.value = smooth(0.5, 1, p);
-    for (const { light, base } of this.lights) light.intensity = base * p;
+    this.dust.uniforms.uOpacity.value = smooth(0.5, 1, p) * left;
+    for (const { light, base } of this.lights) light.intensity = base * p * left;
 
     // Swimming: faster time means harder paddling; reverse time, reverse strokes.
     const mag = Math.abs(simSpeed);

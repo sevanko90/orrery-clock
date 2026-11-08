@@ -52,6 +52,23 @@ favour of polish; the renderer stays WebGPURenderer.
 - **Test a hypothesis with a same-build A/B (URL flag or live toggle)
   before building on it.** Across sessions, run noise is ±4 fps and the
   headset slows as it warms (render time crept 4.1 → 5.5 ms in an hour).
+- **Thermal slowdown shows as judder.** A warm headset clocks its CPU down:
+  every part of the frame got ~25–30% slower together (same draws, same
+  objects), dropping 72 → ~60 fps, which on a 72 Hz display judders when
+  the head turns. A uniform slowdown across all parts means clocks, not
+  content: test cool before blaming the scene.
+  Tabletop thermal run 2026-11-08 (`scripts/thermal-log.mjs`, cold start,
+  ~16 min seated): held 72 fps throughout, JS 7.2–8.2 ms, render 4.9–5.3 ms,
+  no creep. The tabletop runs cooler than the VR scene; harder tabletop
+  culling isn't needed until a warm slowdown is actually seen there.
+  Warm, the same day (~1.5 h in, scripts/hide-ab.mjs and live `mode` /
+  `cull` A/Bs): the plain tabletop ~60 fps, render 7.3 ms for ~560 visible
+  objects (72 fps / 5.2 ms cold); with Discworld 52–61 fps, ~890 objects.
+  Discworld animation 0.08 ms, Rimfall ~0.7 ms GPU, star dome ~2 fps;
+  the dissolve mask's Perlin noise ~1.2 ms GPU (replaced by a cell hash).
+  Detail culling barely moved draws (the stack is batched). Quest 3 offers
+  72/80/90/120 Hz (no 60). The lever left: the render walk, i.e. merge
+  static parts into fewer objects.
 - **Quest Browser quirks:** `window.requestAnimationFrame` doesn't run
   during an XR session, so anything polling with it (three's GPU readback
   and async shader compile) never finishes unless a timer stands in. The

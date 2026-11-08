@@ -378,6 +378,8 @@ export class Bodies {
     );
     this.sunGlow.scale.setScalar(SUN_RADIUS * 7);
     this.sunMesh.add(this.sunGlow);
+    this.sunMesh.name = 'sun';
+    this.sunGlow.name = 'sun-glow';
     this.root.add(this.sunMesh);
 
     this.sunLight = new THREE.PointLight(SUN_COLOR, 2.2, 0, 0);

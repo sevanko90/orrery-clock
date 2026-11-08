@@ -14,6 +14,9 @@ import { XR } from './config';
  *  Left stick click  screenshot (dev)   Left grip  telemetry marker
  *  X             time panel on/off    A / B          faster / slower time
  *                                     Right stick click  back to now
+ *
+ * Tabletop (see tabletop.ts): grips hold the orrery (both: scale it); the
+ * sticks drive it when it floats, and turn it on a table.
  */
 export interface Actions {
   /** Left stick, x right, y forward (deadzoned). */
@@ -42,6 +45,10 @@ export interface Actions {
   faster: boolean;
   slower: boolean;
   now: boolean;
+  /** Raw for the tabletop's handling: both sticks (deadzoned; x right, y forward / up) and both grips held. */
+  sticks: { left: THREE.Vector2; right: THREE.Vector2 };
+  gripLeft: boolean;
+  gripRight: boolean;
 }
 
 type Hand = 'left' | 'right';
@@ -72,6 +79,9 @@ export class XrInput {
     mark: false,
     capture: false,
     now: false,
+    sticks: { left: new THREE.Vector2(), right: new THREE.Vector2() },
+    gripLeft: false,
+    gripRight: false,
   };
   private slots: Slot[];
   private turnArmed = true;
@@ -112,6 +122,9 @@ export class XrInput {
     a.move.set(0, 0);
     a.thrust = a.lift = a.snapTurn = a.scale = 0;
     a.scaling = a.select = a.timePanel = a.scenePanel = a.mark = a.capture = a.faster = a.slower = a.now = false;
+    a.sticks.left.set(0, 0);
+    a.sticks.right.set(0, 0);
+    a.gripLeft = a.gripRight = false;
 
     for (const s of this.slots) {
       const pad = s.source?.gamepad;
@@ -121,6 +134,10 @@ export class XrInput {
       const edge = (i: number) => down(i) && !s.pressed[i];
       const sx = dead(pad.axes[2] ?? 0),
         sy = -dead(pad.axes[3] ?? 0);
+
+      if (hand === 'left') a.gripLeft = down(1);
+      else if (hand === 'right') a.gripRight = down(1);
+      if (hand === 'left' || hand === 'right') a.sticks[hand].set(sx, sy);
 
       if (hand === 'left') {
         a.move.set(sx, sy);

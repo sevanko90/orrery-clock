@@ -111,3 +111,22 @@ measurements behind it are in `docs/VR-PERFORMANCE.md`.
   effect is visible.
 - **Things the player walks through anyway** (here, glass) can go in VR: an
   open frame reads fine and costs nothing.
+- **Plane detection on Quest comes from Space Setup**, not live scanning: the
+  furniture marked there (tables, couches, shelves, floor, ceiling, walls,
+  windows, doors, wall art) arrives as `frame.detectedPlanes` with a
+  `semanticLabel`, once the page asks for the optional `plane-detection`
+  feature. **Floors, tables and couches have their plane Y axis pointing
+  down** (only the ceiling's points up), so don't pick "upward-facing"
+  surfaces by the normal's sign: use `|normal.y|`, the label, and room
+  heights.
+- **Persistent anchors are capped per site (about 8 on Quest):** past it,
+  `requestPersistentHandle()` rejects with `InvalidStateError: ... Maximum
+  number of anchors reached!`. Keep one persistent anchor per thing, delete
+  the old persistent anchor (`session.deletePersistentAnchor`) *before*
+  asking for the new handle, and clear strays at the session's start.
+  Clearing the site's data also clears them. Log each anchor step as an
+  event, not a sampled state: a quick failure followed by a new save hides
+  the error.
+- **Plane poses aren't stable between sessions:** Quest's floor plane can
+  come back turned half round, so don't save positions relative to a
+  plane; use a persistent anchor.

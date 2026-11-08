@@ -4,12 +4,18 @@ import { XR, speedScale } from './config';
 import { mark } from '../perfMarks';
 import { SPRITE_SCALE } from '../scene/spriteScale';
 import { XrInput } from './input';
+import { TabletopHandling } from './tabletop';
+import { RoomSpot } from './roomSpot';
+import { StarDome } from './starDome';
+import { FloorGuide } from './floorGuide';
+import { Reticle } from './reticle';
+import { planesReport, surfaceUnder, surfacesFrom, type Surface as RoomSurface } from './surfaces';
 import { buildHangar } from './hangar';
 import { groundAt, spawnPoint, walkRadius, drumRadius, liftPoint, WALK_RADIUS, GROUND_Y, UNDERSIDE_Y, type Surface, type Viewpoint } from './vrScene';
 import { CAPTURE_RADIUS, Lift } from './lift';
 import { shellTopAt, type Lore } from '../scene/discworld';
 import type { CardContent } from '../ui/infocard';
-import { InfoPanel } from './infoPanel';
+import { CARD_AHEAD, InfoPanel } from './infoPanel';
 import { ControllerLabels } from './controllerLabels';
 import { TABLE_RADIUS } from '../scene/layout';
 import { Wormhole } from './wormhole';
@@ -17,7 +23,7 @@ import { ControlPanel, type PanelRow } from './controlPanel';
 import { Label, TextPlate } from './text';
 import type { Body } from '../scene/bodies';
 import { POINT_UNIFORMS } from '../scene/pointSize';
-import { float, length, smoothstep, uniform, uv } from 'three/tsl';
+import { float, length, sin, smoothstep, uniform, uv, vec3 } from 'three/tsl';
 
 /** What the pointer ray is on. */
 export interface XrHit {
@@ -33,7 +39,8 @@ export interface XrHit {
 
 /** What VR needs from the rest of the app. */
 export interface XrHooks {
-  pick(ray: THREE.Raycaster): XrHit | null;
+  /** What the ray points at. `loose` (the tabletop, where the models are tiny): failing an exact hit, the body nearest the ray within a few degrees. */
+  pick(ray: THREE.Raycaster, loose?: boolean): XrHit | null;
   faster(): void;
   slower(): void;
   /** A screenshot of the view (dev builds: left stick click). */
@@ -51,14 +58,16 @@ export interface XrHooks {
   quake(): number;
   /** Is Discworld on (the Disc is then the ground)? */
   discOn?(): boolean;
-  /** Session start / end (Discworld goes on for VR, and back after). */
-  sessionStart?(): void;
+  /** Tabletop: Discworld in (its entrance plays) or out, as the orrery is dropped in mid-air or set on a table. */
+  tabletopDisc?(on: boolean): void;
+  /** Session start / end (Discworld goes on for VR, and back after; off for the tabletop). */
+  sessionStart?(mode: XrSessionMode): void;
   sessionEnd?(): void;
   /** The panel's time controls (rows) and a press on one (`part`: which button or slider stop). */
   timeRows?(): PanelRow[];
   timePress?(index: number, part: number): void;
   /** The panel's scene controls, and a press on one. */
-  panelRows?(): PanelRow[];
+  panelRows?(mode: XrSessionMode): PanelRow[];
   panelPress?(index: number, part: number): void;
   /** The info card for a pointed-at object (its content, called again for live figures), or null if it has none. */
   card?(hit: XrHit): (() => CardContent) | null;
@@ -98,6 +107,14 @@ const DISC_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), -GROUND_Y);
 /** Controller models: the Quest 3's bundled (public/controllers, from @webxr-input-profiles/assets 1.0.20, MIT), the rest from the CDN. */
 const BUNDLED_PROFILES = `${import.meta.env.BASE_URL}controllers/profiles`;
 const CDN_PROFILES = 'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles';
+
+/** 'vr': the immersive scene. 'ar': the tabletop orrery over passthrough. */
+export type XrSessionMode = 'vr' | 'ar';
+
+/** Tabletop: metres per world unit (the instrument ~60 cm across), and where it stands from the head (metres). */
+const TABLETOP = { metresPerUnit: 0.016, ahead: 0.8, height: 0.72 };
+/** The assembled Discworld stack under the orrery's base (world units, measured): A'Tuin's underside, and its reach from the centre. */
+const DISC_STACK = { depth: 19, radius: 28 };
 
 /** Display refresh rate asked for in VR (Hz). */
 const TARGET_HZ = 72;
@@ -194,9 +211,37 @@ export class XrMode {
     lift?: { centre: THREE.Vector3; top: THREE.Vector3; exit: THREE.Vector3 | null; tc: number; tv: number };
   } | null = null;
 
+  /** The session's kind: the VR scene or the tabletop over passthrough. */
+  mode: XrSessionMode = 'vr';
+  /** Tabletop: place the orrery in front of the player on the first posed frame. */
+  private placePending = false;
+  /** Tabletop: the orrery held, driven and turned as an object in the room. */
+  private handling: TabletopHandling;
+  /** Tabletop: its footprint on the surface under it while held (let go to set it down there). */
+  private ghost: THREE.Mesh;
+  /** The footprint's clock (s), for its pulse and inward ripples. */
+  private ghostTime = uniform(0);
+  /** Tabletop: until when (performance.now() ms) a fresh placement settles onto a table found under it. */
+  private settleUntil = 0;
+  /** Tabletop: horizontal surfaces seen in the room (for telemetry). */
+  private surfaceCount = 0;
+  /** Tabletop: a faint dome of stars over the orrery (the full sky would hide the room). */
+  private starDome = new StarDome();
+  /** Tabletop: a dotted line on the floor to the orrery when it's out of view. */
+  private floorGuide = new FloorGuide();
+  /** Tabletop: a blinking target reticle over a chosen fiction site (tiny at this scale). */
+  private reticle = new Reticle();
+  /** Tabletop: where it was left, kept between sessions (one persistent anchor). */
+  private spot = new RoomSpot();
+  /** When (performance.now() ms) the orrery was last moved, to anchor it once it's been still a moment; 0 when anchored. */
+  private movedAt = 0;
+  /** What the tabletop hides or clears, to put back after. */
+  private arSaved: { background: THREE.Scene['background']; sky: boolean[]; clear: THREE.Color; alpha: number } | null = null;
+  private orreryBox: THREE.Box3;
+
   constructor(
     private renderer: THREE.WebGPURenderer,
-    scene: THREE.Scene,
+    private scene: THREE.Scene,
     layout: XrLayout,
     private hooks: XrHooks,
   ) {
@@ -205,6 +250,7 @@ export class XrMode {
     renderer.xr.setReferenceSpaceType('local-floor');
 
     // The hall, sized from the instrument (only with ?hangar=1: the VR scene now has no hall).
+    this.orreryBox = layout.orrery;
     this.floorY = layout.orrery.min.y - XR.hoverGap;
     this.half = layout.tableRadius + XR.hangarMargin;
     this.roofY = layout.orrery.max.y + XR.roofClearance;
@@ -229,6 +275,11 @@ export class XrMode {
       scene.add(this.lift.group);
     }
     this.input = new XrInput(renderer, this.rig);
+    this.spot.onEvent = (e) => this.hooks.report?.(e);
+    this.handling = new TabletopHandling(this.rig, () => this.orreryCentre(), (m) => {
+      this.metresPerUnit = m;
+      this.applyScale();
+    });
 
     const models = new XRControllerModelFactory();
     this.controllerModels = this.input.all.map((slot) => {
@@ -257,6 +308,29 @@ export class XrMode {
     this.pivotDot.renderOrder = 24;
     this.pivotDot.visible = false;
     scene.add(this.pivotDot);
+
+    // The orrery's footprint on a real surface, while it's held over one: a
+    // bright rim where its edge will stand, and ripples of light (the arrival
+    // tunnel's brass and gold) drawing in toward it from well outside the
+    // disc, so it shows round the instrument held over it. It pulses.
+    const ghostMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    {
+      const OUTER = 1.6; // the quad's half-size, in footprint radii
+      const t = this.ghostTime;
+      const r = length(uv().sub(0.5)).mul(2 * OUTER);
+      const rim = smoothstep(0.93, 1.0, r).mul(smoothstep(1.07, 1.0, r));
+      // Ripples moving inward, only outside the footprint, fading out at the edge of the quad.
+      const ripple = smoothstep(0.7, 1.0, sin(r.mul(30).add(t.mul(6))).mul(0.5).add(0.5));
+      const band = smoothstep(0.95, 1.08, r).mul(smoothstep(OUTER, 1.25, r));
+      const pulse = sin(t.mul(5)).mul(0.25).add(0.75);
+      ghostMat.colorNode = vec3(1.0, 0.78, 0.38).mul(rim.mul(1.4)).add(vec3(0.95, 0.68, 0.3).mul(ripple.mul(band)));
+      ghostMat.opacityNode = rim.mul(1.2).add(ripple.mul(band).mul(0.65)).mul(pulse).clamp(0, 1);
+    }
+    this.ghost = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2).rotateX(-Math.PI / 2), ghostMat);
+    this.ghost.renderOrder = 24;
+    this.ghost.visible = false;
+    this.rig.add(this.ghost, this.floorGuide.mesh);
+    scene.add(this.starDome.backdrop, this.reticle.group);
 
     // Comfort vignette: a dark ring just in front of the eyes, closing in with speed.
     const vigMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false });
@@ -298,9 +372,9 @@ export class XrMode {
       },
     );
     this.scenePanel = new ControlPanel(
-      () => [...(this.hooks.panelRows?.() ?? []), { label: 'Debug', on: this.debugShown }],
+      () => [...(this.hooks.panelRows?.(this.mode) ?? []), { label: 'Debug', on: this.debugShown }],
       (i, part) => {
-        if (i < (this.hooks.panelRows?.().length ?? 0)) this.hooks.panelPress?.(i, part);
+        if (i < (this.hooks.panelRows?.(this.mode).length ?? 0)) this.hooks.panelPress?.(i, part);
         else this.debugShown = !this.debugShown;
       },
       () => ['ORRERY'],
@@ -320,19 +394,23 @@ export class XrMode {
   }
 
   /** Ask for an immersive session (from a click). */
-  async enter() {
+  async enter(mode: XrSessionMode = 'vr') {
     const xr = navigator.xr;
     if (!xr) return;
-    const session = await xr.requestSession('immersive-vr', {
+    this.mode = mode;
+    const session = await xr.requestSession(mode === 'ar' ? 'immersive-ar' : 'immersive-vr', {
       // 'layers' lets the renderer draw both eyes in one pass (multiview).
-      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'],
+      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers', ...(mode === 'ar' ? ['hit-test', 'anchors', 'plane-detection'] : [])],
     });
     await this.renderer.xr.setSession(session);
     // Quest runs at 90 Hz by default; 72 Hz gives each frame 13.9 ms instead
     // of 11.1 ms. Only rates the headset offers.
+    // (?xrhz=60 asks for another rate, to compare: a steady lower rate can feel better than a missed higher one.)
+    const asked = Number(new URLSearchParams(location.search).get('xrhz')) || TARGET_HZ;
     const rates = session.supportedFrameRates;
-    if (rates?.includes(TARGET_HZ) && session.updateTargetFrameRate) {
-      await session.updateTargetFrameRate(TARGET_HZ).catch(() => undefined);
+    this.hooks.report?.({ kind: 'xr-rates', supported: rates ? [...rates] : null, asked });
+    if (rates?.includes(asked) && session.updateTargetFrameRate) {
+      await session.updateTargetFrameRate(asked).catch(() => undefined);
     }
   }
 
@@ -343,7 +421,11 @@ export class XrMode {
     this.renderer.xr.setFoveation(1);
     this.hangar.visible = LEGACY_HALL;
     this.rig.visible = true;
-    this.hooks.sessionStart?.();
+    this.hooks.sessionStart?.(this.mode);
+    if (this.mode === 'ar') {
+      this.beginTabletop();
+      return;
+    }
     this.resetPosition();
     // Arrive through the wormhole: standing still while it streams past, once per session.
     if (!LEGACY_HALL) {
@@ -354,6 +436,7 @@ export class XrMode {
   }
 
   private end() {
+    this.endTabletop();
     this.info.hide();
     this.info.update(1); // (gone at once: no frames left to fade in)
     SPRITE_SCALE.value = 1;
@@ -372,6 +455,255 @@ export class XrMode {
     this.fader.visible = false;
     this.rayDot.visible = false;
     this.hoverLabel.sprite.visible = false;
+  }
+
+  /**
+   * Tabletop: the room shows through (passthrough), so the scene's sky,
+   * stars and background go and the frame clears to transparent; the orrery
+   * is placed on the first posed frame.
+   */
+  private beginTabletop() {
+    const clear = new THREE.Color();
+    this.renderer.getClearColor(clear);
+    this.arSaved = { background: this.scene.background, sky: this.sky.map((o) => o.visible), clear, alpha: this.renderer.getClearAlpha() };
+    this.scene.background = null;
+    for (const o of this.sky) o.visible = false;
+    this.starDome.shown = true;
+    this.renderer.setClearColor(0x000000, 0);
+    this.velocity.set(0, 0, 0);
+    this.grounded = false;
+    this.placePending = true;
+    const session = this.renderer.xr.getSession();
+    if (session) this.spot.begin(session);
+  }
+
+  /** Tabletop: an easing turn of the orrery about its centre (radians to go, and how far it has come). */
+  private turn: { angle: number; done: number; t: number } | null = null;
+
+  /**
+   * Tabletop: turn the orrery about its centre so that world point `at` comes
+   * round to the player's side (the player never moves: they're looking down
+   * on it in their own room). Done by turning the rig the other way about the
+   * same axis, over ~1.5 s.
+   */
+  turnToward(at: THREE.Vector3, from?: THREE.Vector3) {
+    if (this.mode !== 'ar') return;
+    const c = this.orreryCentre();
+    const head = this.head();
+    const toHead = Math.atan2(head.x - c.x, head.z - c.z);
+    // With a viewpoint (the desktop's camera for the scene), turn so the player sees it from that side
+    // (a line from the Sun shows side-on, not end-on); else bring `at` round to the player's side.
+    const toAt = from && Math.hypot(from.x - at.x, from.z - at.z) > 1e-3 ? Math.atan2(from.x - at.x, from.z - at.z) : Math.atan2(at.x - c.x, at.z - c.z);
+    // The world turns by (toHead − toAt); the rig turns the opposite way. Shortest way round.
+    let angle = toAt - toHead;
+    angle = Math.atan2(Math.sin(angle), Math.cos(angle));
+    this.turn = { angle, done: 0, t: 0 };
+  }
+
+  /** Tabletop: put the orrery back in front of the player (on the next posed frame). */
+  placeInFront() {
+    if (this.mode !== 'ar') return;
+    this.turn = null;
+    this.placePending = true;
+    // A fresh start: every old anchor goes (they count against the site's few), and the new spot is saved once it's placed.
+    this.spot.reset(this.renderer.xr.getSession());
+  }
+
+  private orreryCentre() {
+    const b = this.orreryBox;
+    return new THREE.Vector3((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2);
+  }
+
+  /** Per frame: advance the tabletop turn. */
+  private stepTurn(dt: number) {
+    const t = this.turn;
+    if (!t) return;
+    t.t = Math.min(1, t.t + dt / 1.5);
+    const eased = t.t * t.t * (3 - 2 * t.t);
+    const step = t.angle * eased - t.done;
+    t.done += step;
+    // Rotate the rig about the orrery's vertical axis by `step`.
+    const c = this.orreryCentre();
+    const p = this.rig.position;
+    const dx = p.x - c.x,
+      dz = p.z - c.z;
+    const cs = Math.cos(step),
+      sn = Math.sin(step);
+    p.x = c.x + dx * cs + dz * sn;
+    p.z = c.z - dx * sn + dz * cs;
+    this.rig.rotation.y += step;
+    if (t.t >= 1) {
+      this.turn = null;
+      // Anchored at its new heading.
+      this.movedAt = performance.now();
+    }
+  }
+
+  /**
+   * Tabletop: real surfaces. While the orrery is held with any surface
+   * closer under it than the Discworld stack would reach (A'Tuin's underside,
+   * under its centre or the Disc's edge), its footprint shows on the highest
+   * such surface; let go and it floats down onto it (on a table: the stick
+   * only turns it). No footprint means there's room: let go and the
+   * Discworld entrance plays, clear of everything. A fresh placement settles
+   * onto a table up to half a metre below it.
+   */
+  private stepSurfaces(dropped: boolean) {
+    const surfaces = surfacesFrom(this.renderer.xr.getFrame(), this.renderer.xr.getReferenceSpace());
+    this.surfaceCount = surfaces.length;
+    const box = this.orreryBox;
+    const base = this.tmpBase.set((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2);
+    const at = this.handling.toRoom(base, this.tmpRoom).clone();
+    const fresh = this.handling.placement === 'air' && !this.handling.grabbing && performance.now() < this.settleUntil;
+    const y = this.handling.grabbing || dropped ? this.surfaceInReach(surfaces, at) : fresh ? surfaceUnder(surfaces, at, 0.05, 0.5) : null;
+    this.ghost.visible = this.handling.grabbing && y !== null;
+    if (this.ghost.visible) {
+      const r = (Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2) * this.metresPerUnit;
+      this.ghost.position.set(at.x, y! + 0.003, at.z);
+      this.ghost.scale.setScalar(r);
+      // (Kept small: phones and headsets run shaders at low float precision.)
+      this.ghostTime.value = (performance.now() / 1000) % 600;
+    }
+    if ((dropped || fresh) && y !== null) {
+      this.handling.settle(base, y);
+      this.settleUntil = 0;
+      this.input.rumble(0.5, 50);
+      // On a table it's the instrument alone.
+      this.hooks.tabletopDisc?.(false);
+    } else if (dropped) this.hooks.tabletopDisc?.(true);
+    if (dropped) this.settleUntil = 0;
+    this.lastSurfaces = surfaces;
+  }
+  private lastSurfaces: RoomSurface[] = [];
+
+  /**
+   * The highest surface the Discworld stack would reach if it came in under
+   * the orrery's base at `at` (room metres): any within its depth under the
+   * centre or round the Disc's edge. Null: there's room for it.
+   */
+  private surfaceInReach(surfaces: RoomSurface[], at: THREE.Vector3): number | null {
+    const M = this.metresPerUnit;
+    const depth = DISC_STACK.depth * M + 0.05,
+      r = DISC_STACK.radius * M;
+    let best: number | null = null;
+    for (const [dx, dz] of [
+      [0, 0],
+      [r, 0],
+      [-r, 0],
+      [0, r],
+      [0, -r],
+    ]) {
+      const y = surfaceUnder(surfaces, this.tmpProbe.set(at.x + dx, at.y, at.z + dz), depth, 0.05);
+      if (y !== null && (best === null || y > best)) best = y;
+    }
+    return best;
+  }
+
+  /** Room under the floating orrery for the whole stack? */
+  private clearBelow(surfaces = this.lastSurfaces) {
+    const box = this.orreryBox;
+    const base = this.tmpBase.set((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2);
+    return this.surfaceInReach(surfaces, this.handling.toRoom(base, this.tmpRoom).clone()) === null;
+  }
+  private tmpProbe = new THREE.Vector3();
+  /**
+   * Tabletop: put the orrery back where it was left last session, once the
+   * floor plane is known; and save where it's left this time, once it has
+   * been still for a moment (not while held, landing or turning).
+   */
+  private stepSpot() {
+    const frame = this.renderer.xr.getFrame();
+    const space = this.renderer.xr.getReferenceSpace();
+    const box = this.orreryBox;
+    const base = this.tmpBase.set((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2);
+    // Taken elsewhere before the saved spot was found: this is where it is now.
+    if (this.handling.grabbing && this.spot.restoring) this.spot.abandon();
+    const back = this.spot.restored(frame, space);
+    if (back) {
+      // (Found before the head had a pose, the start-up placement in front would still be pending: it mustn't run now.)
+      this.placePending = false;
+      this.handling.placeAt(base, back.position, back.yaw, back.saved.metresPerUnit);
+      this.handling.placement = back.saved.placement;
+      this.settleUntil = 0;
+      this.turn = null;
+      this.movedAt = 0;
+      this.hooks.tabletopDisc?.(back.saved.placement === 'air' && this.clearBelow());
+      return;
+    }
+    const still = this.movedAt && performance.now() - this.movedAt > 600 && !this.handling.grabbing && !this.handling.landing && !this.turn;
+    if (!still || this.spot.restoring || this.placePending) return;
+    const at = this.handling.toRoom(base, this.tmpRoom);
+    // (Busy clearing old anchors: try again next frame.)
+    if (!this.spot.save(frame, space, this.renderer.xr.getSession(), at, this.handling.yaw, this.metresPerUnit, this.handling.placement)) return;
+    this.movedAt = 0;
+    // Come to rest floating (driven there): Discworld if there's room for it.
+    if (this.handling.placement === 'air') this.hooks.tabletopDisc?.(this.clearBelow());
+  }
+  private tmpBase = new THREE.Vector3();
+  private tmpRoom = new THREE.Vector3();
+
+  /**
+   * Tabletop: the floor guide shows while the orrery is more than ~45° from
+   * where the player looks and at least a metre away (it may have been put
+   * back behind them or across the room).
+   */
+  private stepGuide(dt: number) {
+    const box = this.orreryBox;
+    const at = this.handling.toRoom(this.tmpBase.set((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2), this.tmpRoom);
+    const head = this.camera.position;
+    const fwd = this.tmpProbe.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    const to = at.clone().sub(head);
+    const away = to.length();
+    const outOfView = away > 1 && fwd.angleTo(to) > THREE.MathUtils.degToRad(45);
+    this.floorGuide.update(dt, head, at, outOfView && !this.handling.grabbing);
+  }
+
+  /** Put back what the tabletop hid or cleared. */
+  private endTabletop() {
+    const saved = this.arSaved;
+    if (!saved) return;
+    this.scene.background = saved.background;
+    this.sky.forEach((o, i) => (o.visible = saved.sky[i]));
+    this.renderer.setClearColor(saved.clear, saved.alpha);
+    this.arSaved = null;
+    this.placePending = false;
+    this.turn = null;
+    this.spot.end();
+    this.movedAt = 0;
+    this.reticle.hide();
+    this.floorGuide.update(1, this.camera.position, this.camera.position, false);
+    this.starDome.shown = false;
+    this.starDome.update(1, this.orreryCentre(), 1);
+    this.ghost.visible = false;
+  }
+
+  /**
+   * Tabletop: the instrument at coffee-table size, its base at table height a
+   * little in front of where the player is looking.
+   */
+  private placeTabletop() {
+    const M = TABLETOP.metresPerUnit;
+    this.metresPerUnit = M;
+    this.rig.rotation.set(0, 0, 0);
+    this.applyScale();
+    // The head in the rig's space (metres), and its facing on the horizontal.
+    const head = this.camera.position;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).setY(0);
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const spot = head.clone().addScaledVector(fwd, TABLETOP.ahead);
+    spot.y = TABLETOP.height;
+    // The orrery's base centre (world) lands on that spot: world = rig + local / M.
+    const box = this.orreryBox;
+    const base = new THREE.Vector3((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2);
+    this.rig.position.copy(base).addScaledVector(spot, -1 / M);
+    this.velocity.set(0, 0, 0);
+    this.grounded = false;
+    this.handling.placement = 'air';
+    // If there's a table under that spot, it settles onto it (surfaces can take a moment to arrive).
+    this.settleUntil = performance.now() + 3000;
+    // ...and is anchored there (unless a saved spot is still being found).
+    this.movedAt = performance.now();
   }
 
   private resetPosition() {
@@ -616,6 +948,12 @@ export class XrMode {
   /** Per frame, before rendering, while presenting. `cpuMs` is the last frame's simulation time. */
   update(dt: number, cpuMs: number) {
     this.input.update();
+    // Tabletop: place the orrery once the head has a pose.
+    if (this.placePending && this.camera.position.lengthSq() > 1e-6) {
+      this.placePending = false;
+      this.placeTabletop();
+    }
+    this.stepTurn(dt);
     mark('xr.input');
     const a = this.input.actions;
     const M = this.metresPerUnit;
@@ -640,7 +978,7 @@ export class XrMode {
       }
     }
     this.lastDt = dt;
-    if (a.mark) {
+    if (a.mark && this.mode !== 'ar') {
       this.marks++;
       this.hooks.report?.({ kind: 'mark', n: this.marks, ...this.snapshot() });
       this.input.rumble(0.6, 80);
@@ -659,14 +997,33 @@ export class XrMode {
       carried = true;
     }
 
+    // Tabletop: the orrery is an object in the room, held with the grips and
+    // driven or turned with the sticks; the player never moves (no flying,
+    // turning or stick scaling below).
+    const table = this.mode === 'ar';
+    if (table && !carried) {
+      const hands = { left: this.input.hand('left')?.grip ?? null, right: this.input.hand('right')?.grip ?? null };
+      const moved = this.handling.update(dt, { left: a.sticks.left, right: a.sticks.right, gripLeft: a.gripLeft, gripRight: a.gripRight }, hands, this.camera.quaternion);
+      if (moved) this.turn = null;
+      if (moved === 'grab') this.input.rumble(0.3, 40);
+      this.stepSurfaces(moved === 'drop');
+      // Over the orrery, ~1.5x the Disc's reach.
+      this.starDome.update(dt, this.orreryCentre(), DISC_STACK.radius * 1.5, this.head());
+      this.stepGuide(dt);
+      this.renderer.xr.getCamera().matrixWorld.decompose(this.eyeAt, this.eyeQ, this.tmpS);
+      this.reticle.update(dt, this.eyeAt, this.eyeQ);
+      if (moved) this.movedAt = performance.now();
+      this.stepSpot();
+    } else this.ghost.visible = false;
+
     // World scale, live, pivoting at what the ray points at (else the
     // orrery's centre), so the world visibly grows or shrinks about that
     // point. Standing on the Disc, the pivot is dropped onto the Disc's top:
     // the surface stays put and the feet stay on it, sliding toward or away
     // from the pivot. (The old hall pivoted at the head.)
-    if (a.scaling && !this.scalePivot) this.scalePivot = (this.rayHit ?? ORRERY_CENTRE).clone();
-    if (!a.scaling) this.scalePivot = null;
-    if (!carried && a.scaling && a.scale !== 0) {
+    if (a.scaling && !table && !this.scalePivot) this.scalePivot = (this.rayHit ?? ORRERY_CENTRE).clone();
+    if (!a.scaling || table) this.scalePivot = null;
+    if (!carried && !table && a.scaling && a.scale !== 0) {
       const next = THREE.MathUtils.clamp(M * Math.exp(a.scale * dt * XR.scaleRate), XR.minMetresPerUnit, XR.maxMetresPerUnit);
       if (LEGACY_HALL) {
         const was = this.head();
@@ -688,10 +1045,10 @@ export class XrMode {
       this.pivotDot.position.copy(this.scalePivot);
       this.pivotDot.scale.setScalar(this.scalePivot.distanceTo(this.head()) * 0.03);
     }
-    this.scaleTag.visible = a.scaling;
-    if (a.scaling) this.scalePlate.set(this.scaleCompare(), [`${this.scaleText()} · stick up / down`]);
+    this.scaleTag.visible = a.scaling && !table;
+    if (a.scaling && !table) this.scalePlate.set(this.scaleCompare(), [`${this.scaleText()} · stick up / down`]);
 
-    if (!carried && a.snapTurn) {
+    if (!carried && !table && a.snapTurn) {
       const was = this.head();
       this.rig.rotateY((-a.snapTurn * XR.snapTurnDeg * Math.PI) / 180);
       this.keepHead(was);
@@ -704,12 +1061,14 @@ export class XrMode {
     const right = new THREE.Vector3().crossVectors(fwd, UP);
     const v = this.velocity;
     const wish = fwd.multiplyScalar(a.move.y).addScaledVector(right, a.move.x);
-    if (carried) {
+    if (carried || table) {
       wish.set(0, 0, 0);
       v.set(0, 0, 0);
     }
 
-    if (this.grounded) {
+    if (table) {
+      // (The tabletop handles its own movement above.)
+    } else if (this.grounded) {
       wish.multiplyScalar(XR.walkSpeed);
       v.set(wish.x, 0, wish.z);
     } else if (!carried) {
@@ -718,12 +1077,12 @@ export class XrMode {
       v.x += (wish.x - v.x) * k;
       v.z += (wish.z - v.z) * k;
     }
-    if (!carried) {
+    if (!carried && !table) {
       // Jetpack: thrust along wherever the left controller points.
       if (a.thrust > 0.05) v.addScaledVector(a.thrustDir, a.thrust * XR.thrust * s * dt);
       if (a.lift !== 0) v.y += (a.lift * XR.liftSpeed * s - v.y) * Math.min(1, dt * 4);
     }
-    if (!this.grounded) {
+    if (!this.grounded && !table) {
       // With nothing pressed it settles into a hover.
       const drag = Math.exp(-XR.drag * dt);
       if (a.lift === 0) v.y *= drag;
@@ -757,7 +1116,7 @@ export class XrMode {
       const lim = this.half - 0.5 / M;
       if (Math.abs(head.x) > lim) this.rig.position.x -= head.x - Math.sign(head.x) * lim;
       if (Math.abs(head.z) > lim) this.rig.position.z -= head.z - Math.sign(head.z) * lim;
-    } else if (!carried) {
+    } else if (!carried && !table) {
       // Walk on the Disc's top (held back from the rim and the glass drum) or
       // on A'Tuin's shell; land on either from above. Off them, or with
       // Discworld off, float.
@@ -788,7 +1147,8 @@ export class XrMode {
     mark('xr.move');
     // The lift: walk into its light (on the shell or the deck) to ride it.
     if (!LEGACY_HALL) {
-      const discOn = this.hooks.discOn?.() ?? false;
+      // (No lift in the tabletop: nobody stands on that Disc.)
+      const discOn = !table && (this.hooks.discOn?.() ?? false);
       this.lift.group.visible = discOn;
       if (discOn) {
         const head = this.head();
@@ -895,7 +1255,7 @@ export class XrMode {
         hit = { point: onCard.hit.point, distance: onCard.hit.distance, label: '' };
         if (select && onCard.close) this.info.hide();
         select = false;
-      } else hit = this.hooks.pick(this.raycaster);
+      } else hit = this.hooks.pick(this.raycaster, this.mode === 'ar');
     }
     if ((this.panelAt += 1) % 15 === 0) {
       if (this.open === 'time') this.timePanel.refresh();
@@ -921,7 +1281,7 @@ export class XrMode {
     if (select) {
       // The trigger on something with a card opens it; on nothing, closes it.
       const card = hit ? (this.hooks.card?.(hit) ?? null) : null;
-      if (card) this.info.show(card, this.rig, this.camera);
+      if (card) this.info.show(card, this.rig, this.camera, CARD_AHEAD);
       else if (!hit?.label) this.info.hide();
     }
     this.info.update(this.lastDt);
@@ -932,6 +1292,17 @@ export class XrMode {
       this.hoverLabel.plate.set(hit.label, hit.note ? [hit.note] : []);
       this.hoverLabel.place(hit.point, eye, XR.labelAngular);
     }
+  }
+
+  /** Tabletop: mark something with the target reticle (`at` gives its world position each frame). */
+  markTarget(at: () => THREE.Vector3 | null) {
+    if (this.mode === 'ar') this.reticle.show(at);
+  }
+
+  /** Open the info card for something (if it has one), as the trigger on it would: the tabletop's scene panel uses it. */
+  showCard(hit: XrHit) {
+    const card = this.hooks.card?.(hit) ?? null;
+    if (card) this.info.show(card, this.rig, this.camera, CARD_AHEAD);
   }
 
   /** Frame rate (for the debug panel) and the telemetry sample each second. */
@@ -982,6 +1353,18 @@ export class XrMode {
     const fwd = new THREE.Vector3(0, 0, -1).transformDirection(this.camera.matrixWorld);
     const r = (v: number) => Math.round(v * 1000) / 1000;
     return {
+      session: this.mode,
+      ...(this.mode === 'ar'
+        ? {
+            placement: this.handling.placement,
+            surfaces: this.surfaceCount,
+            spot: this.spot.state,
+            spotError: this.spot.error,
+            planes: planesReport(this.renderer.xr.getFrame(), this.renderer.xr.getReferenceSpace()),
+            // What the browser granted (plane-detection missing: no permission, or not offered).
+            features: (this.renderer.xr.getSession() as (XRSession & { enabledFeatures?: string[] }) | null)?.enabledFeatures ?? null,
+          }
+        : {}),
       fps: Math.round(this.fps * 10) / 10,
       cpuMs: r(this.cpuMs),
       head: [r(head.x), r(head.y), r(head.z)],

@@ -53,9 +53,10 @@ export class DetailCuller {
       const e = mesh.matrixWorld.elements;
       const scale = Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10]));
       const at = this.tmp.copy(centre).applyMatrix4(mesh.matrixWorld);
-      const big = radius * scale > at.distanceTo(eye) * minAngle;
-      if (big) mesh.layers.set(0);
-      else mesh.layers.set(CULLED);
+      // A margin between hiding and showing again, so parts at the edge don't blink as the head moves.
+      const shown = mesh.layers.isEnabled(0);
+      const big = radius * scale > at.distanceTo(eye) * minAngle * (shown ? 1 : 1.35);
+      if (big !== shown) mesh.layers.set(big ? 0 : CULLED);
     }
   }
 

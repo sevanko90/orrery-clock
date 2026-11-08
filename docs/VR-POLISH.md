@@ -88,3 +88,62 @@ already capped at 1 MB) so it can't fill the disk.
   (2d4fe76); before, the Sun's glow swamped the tabletop view.
 - Scrunch round 2's rebuild hitch (~0.5 s when moons or fiction are first
   turned on mid-session).
+
+## 5. Tabletop (passthrough) mode — proof works, UX to do
+
+Proof 2026-11-07 (branch `tabletop`, 65567e6): a Tabletop button starts a
+WebXR `immersive-ar` session; three's WebGPU renderer (WebGL 2, multiview)
+clears to transparent and the room shows through. The instrument is placed
+at ~60 cm across, base at 72 cm, 80 cm ahead. To work through:
+
+- (Done 2026-11-08) Handling: the orrery is an object in the room, the
+  player never moves. One grip holds it (moves and turns it, upright; the
+  turn is the hand's twist about the vertical, so no flip overhead); both
+  grips also scale it (~15 cm to ~3 m). No grip: the sticks drive it like a
+  remote control while it floats (left stick across the room, right stick
+  up / down and turn); on a table the stick only turns it.
+- (Done 2026-11-08, headset-checked inside and outside the boundary, roomscale and stationary) Placing: let go with its base
+  just over a real surface (WebXR plane detection: Space Setup's tables,
+  desks, floor) and it settles onto it; a warm footprint ring shows there
+  while it's held (a pulsing rim with ripples drawing in from past the
+  disc), and it floats down onto the surface. Let go anywhere else and it floats. On entering it
+  settles onto a table up to 50 cm under the default spot. No anchor yet
+  (the room's reference space holds it; anchors would matter for keeping it
+  between sessions).
+- (Built 2026-11-08, headset check pending) The footprint rings show
+  wherever the Discworld stack wouldn't fit below (any surface within ~19
+  units x scale under the centre or the Disc's edge); let go then and it
+  settles on that surface, the instrument alone. No rings: room for it, and
+  letting go plays the Discworld entrance, clear of everything. (The rings
+  may show quite high up: to be seen.) Re-checked whenever the floating
+  orrery comes to rest.
+- (Built 2026-11-08, headset check pending) Persistent anchor: where it was
+  left (position, turn, scale, on a table or not) comes back next session.
+- (Built 2026-11-08, headset check pending) Info cards open nearer and to
+  the right in the tabletop, so they don't cover the orrery.
+- (Built 2026-11-08, desktop-checked) Fiction on/off per element, in VR and the tabletop alike, like the
+  desktop's fiction panel (fiction is forced on in both today; let the
+  player show or hide the fictional elements).
+- (Built 2026-11-08, headset check pending: loose ~3° pick, cards from the
+  scene panel) Tabletop only: info cards without pointing. Choosing a fiction entry
+  there also shows a holographic target reticle over it (four arrowheads
+  at the compass points: blink, turn a quarter closing in, fade; ~7° across
+  whatever the target's size), since at tabletop size a site like Utopia
+  Planitia is a speck and leaning in breaks the model's illusion. At tabletop scale the models
+  are too small to hit with the ray, so choosing an element (from the scene
+  panel, or a bigger, more forgiving pick) pops its info card. (In VR the
+  elements are big enough to point at: leave it as it is.)
+- (Built 2026-11-08, desktop-checked) Stars: a faint dome of point stars
+  over the orrery only (hemisphere, ~1.5x the Disc's reach, fading in), its
+  own small sky in the room; the full sky sphere stays hidden.
+- Lighting: the orrery's own warm light (no real-world light estimation on
+  the web).
+- Panels, labels and cards at tabletop distances; leaving and re-placing.
+- (Done) Scenes don't move the player: the orrery turns the action round to
+  the player's side; Return becomes "Place in front of me".
+- (Done) The Demolition's hologram faces the real viewer in VR (it faced the
+  desktop camera) and keeps a minimum apparent size (~4.5°).
+- Discworld from mid-air: on a table it's the flat Disc; picked up or placed
+  in the air, with room below for the whole stack clear of the floor and
+  table, the Discworld entrance plays.
+

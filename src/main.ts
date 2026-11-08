@@ -25,7 +25,7 @@ import { detectGpu, warnIfNoGpu } from './ui/gpuCheck';
 import { Fiction } from './scene/fiction';
 import { FictionPanel } from './ui/fictionPanel';
 import { nextOccurrence, type FictionEntry } from './fiction/catalog';
-import { XrMode, type XrHit } from './xr/xrMode';
+import { XrMode, type XrHit, type XrSessionMode } from './xr/xrMode';
 import { DetailCuller } from './xr/detailCull';
 import { Batcher, raycastLayers } from './scene/batch';
 import { Telemetry, type Command } from './xr/telemetry';
@@ -267,13 +267,14 @@ function setMoons(on: boolean) {
   }
 }
 {
-  let saved = false;
+  // Moons are on unless the viewer has turned them off.
+  let on = true;
   try {
-    saved = localStorage.getItem('moons') === '1';
+    on = localStorage.getItem('moons') !== '0';
   } catch {
     /* ignore */
   }
-  if (saved) setMoons(true);
+  if (on) setMoons(true);
 }
 moonButton.addEventListener('click', () => setMoons(!bodies.moonsVisible));
 addEventListener('keydown', (e) => {
@@ -363,7 +364,8 @@ let vrFictionAt: string | null = null;
  * flies to (approached from the player's own direction of view).
  */
 function vrFiction(entry: FictionEntry) {
-  if (!vrReturn) vrReturn = xr.pose();
+  // (The tabletop never carries the player off, so there's nowhere to return to.)
+  if (!vrReturn && xr.mode !== 'ar') vrReturn = xr.pose();
   if (!fiction?.enabled) setFiction(true);
   const p = xr.pose();
   const fwd = new THREE.Vector3(-Math.sin(THREE.MathUtils.degToRad(p.yawDeg)), 0, -Math.cos(THREE.MathUtils.degToRad(p.yawDeg)));
@@ -372,6 +374,16 @@ function vrFiction(entry: FictionEntry) {
   playFiction(entry);
   vrFlyPending = entry.id;
   vrFictionAt = entry.id;
+  // Tabletop: the models are too small to point at, so choosing it here opens its card too,
+  // and a target reticle shows where it is.
+  if (xr.mode === 'ar') {
+    const body = fiction?.bodies.find((b) => b.id === entry.id);
+    if (body) {
+      xr.showCard({ point: new THREE.Vector3(), distance: 0, label: body.name, body });
+      const at = new THREE.Vector3();
+      xr.markTarget(() => (body.available?.() === false ? null : body.pickProxy.getWorldPosition(at)));
+    }
+  }
 }
 
 /** Back to where the player was before the fiction scene (if they were carried off). */
@@ -389,6 +401,8 @@ function vrFlyToFocus() {
   vrFlyPending = null;
   const d = focus.destination();
   if (!d || !xr.presenting) return;
+  // Tabletop: the player stays put (looking down on it in their room); the orrery turns the action toward them.
+  if (xr.mode === 'ar') return xr.turnToward(d.target, d.camera);
   xr.moveTo(d.camera, yawFacing(d.target.clone().sub(d.camera).setY(0)));
 }
 
@@ -431,30 +445,53 @@ function timePress(i: number, part: number) {
   }
 }
 
-function panelRows(): PanelRow[] {
+/**
+ * The VR scene panel: what's shown, and the fiction catalogue as on the
+ * desktop (fiction on or off; each entry plays or flies to it, and the
+ * always-on places have an eye to show or hide them). Each row with what a
+ * press on it (part 0, or 1 for the eye) does.
+ */
+function panelItems(mode: XrSessionMode): { row: PanelRow; press?: (part: number) => void }[] {
+  const on = !!fiction?.enabled;
   return [
-    { label: 'Show', heading: true },
-    { label: 'Moons', on: bodies.moonsVisible },
-    { label: 'Fiction', heading: true },
-    ...FICTION.map((e) => ({ label: e.title, active: vrFictionAt === e.id })),
-    { label: vrReturn ? 'Return' : 'Return to the Disc' },
+    { row: { label: 'Show', heading: true } },
+    { row: { label: 'Moons', on: bodies.moonsVisible }, press: () => setMoons(!bodies.moonsVisible) },
+    { row: { label: 'Fiction', on }, press: () => setFiction(!on, false) },
+    ...(on
+      ? FICTION.map((e) => ({
+          row: { label: e.title, active: vrFictionAt === e.id, ...(e.kind === 'place' ? { eye: !hiddenPlaces.has(e.id) } : {}) },
+          press: (part: number) => {
+            if (part === 1) {
+              setPlaceShown(e, hiddenPlaces.has(e.id));
+              fictionPanel.syncToggles();
+            } else vrFiction(e);
+          },
+        }))
+      : []),
+    {
+      row: { label: mode === 'ar' ? 'Place in front of me' : vrReturn ? 'Return' : 'Return to the Disc' },
+      press: () => {
+        if (playing) dropScene();
+        if (xr.mode === 'ar') xr.placeInFront();
+        else if (vrReturn) vrReturnHome();
+        else xr.goTo(viewpoints().spawn);
+      },
+    },
   ];
 }
-function panelPress(i: number) {
-  if (i === 1) return setMoons(!bodies.moonsVisible);
-  const entry = FICTION[i - 3];
-  if (entry) return vrFiction(entry);
-  if (i === FICTION.length + 3) {
-    if (playing) dropScene();
-    if (vrReturn) vrReturnHome();
-    else xr.goTo(viewpoints().spawn);
-  }
+function panelRows(mode: XrSessionMode = 'vr'): PanelRow[] {
+  return panelItems(mode).map((x) => x.row);
+}
+function panelPress(i: number, part = 0) {
+  panelItems(xr.mode).at(i)?.press?.(part);
 }
 
 /** Discworld's state before VR turned it on, to put back after. */
 let discBeforeVr = false;
+/** Fiction's state before VR or the tabletop turned it on, to put back after. */
+let fictionBeforeVr = false;
 
-function setFiction(on: boolean) {
+function setFiction(on: boolean, persist = true) {
   if (!fiction) {
     reseed('fiction');
     fiction = new Fiction(bodies, mats);
@@ -470,6 +507,7 @@ function setFiction(on: boolean) {
   // Don't leave the camera or a card on something that has just vanished (a place; events stay).
   const shown = [focus.focused, info.showingBody];
   if (!on && fiction && shown.some((b) => b && fiction!.bodies.includes(b) && b.available?.() === false)) unfocus();
+  if (!persist) return;
   try {
     localStorage.setItem('fiction', on ? '1' : '0');
   } catch {
@@ -595,10 +633,10 @@ function markerHit(): { id: string; hit: THREE.Intersection } | null {
 }
 
 /** VR pointer: what a controller's ray is on, with where it lands. */
-function xrPick(ray: THREE.Raycaster): XrHit | null {
+function xrPick(ray: THREE.Raycaster, loose = false): XrHit | null {
   raycaster.ray.copy(ray.ray);
   raycaster.camera = ray.camera;
-  const b = bodyHit();
+  const b = bodyHit() ?? (loose ? bodyNearRay(raycaster.ray, LOOSE_PICK) : null);
   if (b) return { point: b.hit.point, distance: b.hit.distance, label: b.body.hoverLabel ?? b.body.name, body: b.body };
   const m = markerHit();
   if (m) {
@@ -612,6 +650,25 @@ function xrPick(ray: THREE.Raycaster): XrHit | null {
     if (hit) return { point: hit.point, distance: hit.distance, label: lore.name, note: lore.kind, lore };
   }
   return null;
+}
+
+/** How far off the ray (radians) the tabletop's loose pick still takes a body: ~3°. */
+const LOOSE_PICK = THREE.MathUtils.degToRad(3);
+const nearAt = new THREE.Vector3();
+/** The body whose centre is nearest the ray, within `within` radians of it (seen from the ray's start), as a hit at that centre. */
+function bodyNearRay(ray: THREE.Ray, within: number): { body: Body; hit: THREE.Intersection } | null {
+  let best: { body: Body; hit: THREE.Intersection; angle: number } | null = null;
+  for (const proxy of activeProxies()) {
+    const body = bodyOf(proxy);
+    if (!body) continue;
+    proxy.getWorldPosition(nearAt);
+    const to = nearAt.clone().sub(ray.origin);
+    const distance = to.length();
+    const angle = to.angleTo(ray.direction);
+    if (angle > within || (best && angle >= best.angle)) continue;
+    best = { body, angle, hit: { point: nearAt.clone(), distance, object: proxy } as THREE.Intersection };
+  }
+  return best;
 }
 
 let downAt: { x: number; y: number; t: number } | null = null;
@@ -677,7 +734,9 @@ function viewFrom(head: THREE.Vector3 | null) {
   // From under the Disc its opaque underside hides the whole movement (115 draw calls): skip it.
   // (Only under it: out past the rim, below table height, the drum shows over the edge.)
   orrery.mechanism.root.visible = head.y > orreryBox.min.y || Math.hypot(head.x, head.z) > TABLE_RADIUS;
-  culler.setRoots([orrery.root, bodies.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
+  // (Not the planets and moons: they're what's being looked at, and at tabletop size the moons sit right at the
+  // cull size, so they blinked in and out as the head moved.)
+  culler.setRoots([orrery.root, ...(discworld ? [discworld.root] : []), ...(fiction ? [fiction.root] : [])]);
   culler.update(head, cullAngle);
   xrHead = head;
 }
@@ -737,14 +796,35 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   },
   backend: () => stage.backend,
   discOn: () => !!discworld?.enabled,
+  // Tabletop: dropped in mid-air with room below, the Discworld entrance plays; set on a table, it goes.
+  tabletopDisc: (on) => {
+    if (!!discworld?.enabled === on) return;
+    setDiscworld(on, false);
+    // It forms and dissolves where it is (rising and sinking, it went through the floor).
+    if (discworld) discworld.dissolveOnExit = true;
+  },
   // The VR scene: Discworld on (assembled), without touching the saved setting.
-  sessionStart: () => {
+  sessionStart: (mode) => {
     discBeforeVr = !!discworld?.enabled;
-    setDiscworld(true, false);
-    discworld!.finish();
+    // Fiction always on in VR and the tabletop (the scene panel is its catalogue), without touching the saved setting.
+    fictionBeforeVr = !!fiction?.enabled;
+    if (!fictionBeforeVr) setFiction(true, false);
+    // The VR scene stands on the Disc; the tabletop is the instrument alone.
+    if (mode === 'ar') {
+      // Gone at once, not sinking away at the player's feet.
+      setDiscworld(false, false);
+      discworld?.finish();
+    }
+    else {
+      setDiscworld(true, false);
+      discworld!.finish();
+    }
   },
   sessionEnd: () => {
-    if (!discBeforeVr) setDiscworld(false, false);
+    if (!!fiction?.enabled !== fictionBeforeVr) setFiction(fictionBeforeVr, false);
+    // Discworld back as it was (VR turned it on; the tabletop turned it off).
+    if (discworld) discworld.dissolveOnExit = false;
+    if (!!discworld?.enabled !== discBeforeVr) setDiscworld(discBeforeVr, false);
     vrReturn = null;
     vrFlyPending = null;
   },
@@ -762,6 +842,16 @@ const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRad
   vrButton.addEventListener('click', () => {
     info.hide();
     xr.enter().catch((err) => console.error('Could not start VR', err));
+  });
+  // Tabletop: the orrery on a real table, over the headset's passthrough.
+  const arButton = document.getElementById('c-ar') as HTMLButtonElement;
+  navigator.xr
+    ?.isSessionSupported('immersive-ar')
+    .then((ok) => (arButton.hidden = !ok))
+    .catch(() => undefined);
+  arButton.addEventListener('click', () => {
+    info.hide();
+    xr.enter('ar').catch((err) => console.error('Could not start the tabletop', err));
   });
 }
 
@@ -823,6 +913,32 @@ const telemetry = new Telemetry((c: Command) => {
     case 'capture':
       captureDue = c.name ?? `vr-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`;
       return;
+    case 'inspect': {
+      // One named object's drawing state (and its parents' visibility), to see why something doesn't show.
+      const o = stage.scene.getObjectByName(c.name);
+      if (!o) return telemetry.send({ kind: 'inspect', name: c.name, found: false });
+      o.updateWorldMatrix(true, false);
+      const pos = new THREE.Vector3(),
+        quat = new THREE.Quaternion(),
+        scl = new THREE.Vector3();
+      o.matrixWorld.decompose(pos, quat, scl);
+      const chain: string[] = [];
+      for (let p: THREE.Object3D | null = o; p; p = p.parent) chain.push(`${p.name || p.type}:${p.visible ? 'v' : 'H'}:L${p.layers.mask}`);
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+      telemetry.send({
+        kind: 'inspect',
+        name: c.name,
+        found: true,
+        chain,
+        renderOrder: o.renderOrder,
+        frustumCulled: o.frustumCulled,
+        world: [pos.x, pos.y, pos.z].map((v) => +v.toFixed(3)),
+        scale: +scl.x.toFixed(3),
+        material: m && { type: m.type, opacity: m.opacity, transparent: m.transparent, visible: m.visible, depthTest: m.depthTest, blending: m.blending, side: m.side },
+        eye: viewer().position.toArray().map((v) => +v.toFixed(3)),
+      });
+      return;
+    }
     case 'list': {
       const groups: Record<string, string[]> = {};
       for (const o of stage.scene.children) groups[o.name || o.type] = o.children.filter((k) => k.name).map((k) => k.name);
@@ -954,6 +1070,22 @@ function standInFrameTimer() {
   };
 }
 
+/**
+ * Whoever is looking: the desktop camera, or in VR a stand-in posed from the
+ * headset camera's matrix (its own position and quaternion fields aren't kept
+ * up to date). For scene parts that turn to face the viewer: the Demolition's
+ * hologram faced the desktop camera in VR, edge-on or from behind.
+ */
+/** Displays the fiction's shaders have been built for ('desktop', 'xr'). */
+const fictionWarmed = new Set<string>();
+const eyes = new THREE.PerspectiveCamera();
+const eyesScale = new THREE.Vector3();
+function viewer(): THREE.Camera {
+  if (!xr.presenting) return stage.camera;
+  stage.renderer.xr.getCamera().matrixWorld.decompose(eyes.position, eyes.quaternion, eyesScale);
+  return eyes;
+}
+
 function step(now: number) {
   // (Frozen by the scrunch debug tools: every animation holds still for frame diffs.)
   // three's animation loop calls once with no timestamp when it (re)starts,
@@ -1022,9 +1154,22 @@ function step(now: number) {
     }
   }
   if (fiction) {
-    fiction.update(simMs, dt, elapsed, jumped, stage.camera, clock.speed);
-    const warm = fiction.takeWarmup();
-    if (warm) warmShaders(warm);
+    // (In the tabletop, where the whole solar system is small, the construction hologram is held to ~9° across, to be read.)
+    fiction.minSignAngle = xr.presenting && xr.mode === 'ar' ? 0.157 : 0.078;
+    // (And the Sun is always in view there, so the hologram's smoked glass stays on.)
+    fiction.tabletop = xr.presenting && xr.mode === 'ar';
+    fiction.update(simMs, dt, elapsed, jumped, viewer(), clock.speed);
+    // Build the Demolition's shaders once per display (desktop, or the headset's
+    // two-eye variants) as soon as fiction exists: in VR that's the arrival
+    // tunnel, in the tabletop its placement, not mid-scene (where a 1.6 s
+    // compile showed as stutter). The fleet's arrival is the fallback.
+    const warmKey = xr.presenting ? 'xr' : 'desktop';
+    // (In VR, once the headset camera has its two eyes: before that it would build the wrong variants.)
+    const eyesReady = !xr.presenting || (stage.renderer.xr.getCamera() as THREE.ArrayCamera).cameras.length > 0;
+    if (eyesReady && (!fictionWarmed.has(warmKey) || fiction.takeWarmup())) {
+      if (!fictionWarmed.has(warmKey)) warmShaders(fiction.warmupRoot);
+      fictionWarmed.add(warmKey);
+    }
     if (pendingFrame) {
       const points = fiction.framePoints(pendingFrame);
       if (points.length) focus.frame(points, 2.4);
@@ -1036,7 +1181,7 @@ function step(now: number) {
   fictionPanel.update(simMs);
   focus.update(dt);
   if (discworld) {
-    discworld.update(dt, clock.speed, stage.camera);
+    discworld.update(dt, clock.speed, viewer());
     if (!discworld.enabled && !focus.flying && stage.controls.maxPolarAngle !== NORMAL_LIMITS.maxPolar) {
       stage.controls.maxPolarAngle = NORMAL_LIMITS.maxPolar;
       stage.controls.maxDistance = NORMAL_LIMITS.maxDistance;

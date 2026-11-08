@@ -9,6 +9,8 @@ export interface PanelRow {
   on?: boolean;
   /** Highlighted (e.g. the fiction scene playing). */
   active?: boolean;
+  /** A separate eye button at the right (shown or hidden), pressed as part 1; the row itself is part 0. */
+  eye?: boolean;
   /** Several buttons side by side in place of one; a press reports which (`part`). */
   buttons?: { label: string; active?: boolean }[];
   /** A notched slider: `stops` positions, the knob at `at`, `caption` above it; a press reports the stop under the ray (`part`). */
@@ -110,6 +112,7 @@ export class ControlPanel {
         const t = (x - SIDE - 20) / (W - (SIDE + 20) * 2);
         return { row: i, part: Math.round(THREE.MathUtils.clamp(t, 0, 1) * (r.slider.stops - 1)) };
       }
+      if (r.eye !== undefined && x >= W - SIDE - EYE_W) return { row: i, part: 1 };
       return { row: i, part: 0 };
     }
     return null;
@@ -228,11 +231,17 @@ export class ControlPanel {
           ctx.stroke();
         }
       } else {
-        inlay(ctx, SIDE, y + 6, W - SIDE * 2, h - 12, lit === 0, !!r.active);
+        const eyeW = r.eye !== undefined ? EYE_W + 8 : 0;
+        inlay(ctx, SIDE, y + 6, W - SIDE * 2 - eyeW, h - 12, lit === 0, !!r.active);
         ctx.fillStyle = lit === 0 ? '#1e1306' : '#f1dcaa';
         ctx.font = '500 25px Georgia, serif';
         ctx.textAlign = 'left';
-        ctx.fillText(r.label, 54, y + h / 2, W - 150);
+        ctx.fillText(r.label, 54, y + h / 2, W - 150 - eyeW);
+        if (r.eye !== undefined) {
+          const ex = W - SIDE - EYE_W;
+          inlay(ctx, ex, y + 6, EYE_W, h - 12, lit === 1, false);
+          drawEye(ctx, ex + EYE_W / 2, y + h / 2, r.eye, lit === 1 ? '#1e1306' : '#f1dcaa');
+        }
         if (r.on !== undefined) {
           // A lamp: lit amber when on.
           ctx.beginPath();
@@ -276,6 +285,34 @@ export class ControlPanel {
     this.mesh.scale.y = f;
     this.texture.needsUpdate = true;
   }
+}
+
+/** Width of a row's eye button (canvas px). */
+const EYE_W = 64;
+
+/** An eye (shown), struck through when hidden. */
+function drawEye(ctx: CanvasRenderingContext2D, x: number, y: number, open: boolean, colour: string) {
+  ctx.save();
+  ctx.strokeStyle = ctx.fillStyle = colour;
+  ctx.lineWidth = 2.5;
+  ctx.globalAlpha = open ? 1 : 0.6;
+  ctx.beginPath();
+  ctx.moveTo(x - 17, y);
+  ctx.quadraticCurveTo(x, y - 15, x + 17, y);
+  ctx.quadraticCurveTo(x, y + 15, x - 17, y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.fill();
+  if (!open) {
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 15, y + 13);
+    ctx.lineTo(x + 15, y - 13);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function rowHeight(r: PanelRow) {
