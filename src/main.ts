@@ -34,6 +34,7 @@ import { TABLE_RADIUS } from './scene/layout';
 import { LIVE, scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
 import { ScrunchDebug } from './xr/scrunchDebug';
 import { MoonDots } from './scene/moonDots';
+import { setupShare } from './ui/share';
 import { decimateTree, simplifierReady } from './scene/decimate';
 import { lodChain } from './scene/lod';
 import { MeshLods, beltRock } from './scene/meshLod';
@@ -578,6 +579,7 @@ addEventListener('keydown', (e) => {
 
 const credits = document.getElementById('credits') as HTMLDialogElement;
 document.getElementById('credits-btn')!.addEventListener('click', () => credits.showModal());
+setupShare();
 
 // ---- Idle auto-rotation ----------------------------------------------------
 let lastInteraction = -Infinity;
