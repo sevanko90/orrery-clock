@@ -46,7 +46,18 @@ export default defineConfig({
         theme_color: '#0b0a09',
         background_color: '#0b0a09',
         display: 'standalone',
-        icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
+        // Explicit, so the installed app's identity and reach don't depend on where the manifest is served:
+        // `id` must never change once people have installed it (or it's packaged for the Horizon Store).
+        id: base,
+        start_url: base,
+        scope: base,
+        // PNGs for install prompts and Quest/Android packaging (npm run icons renders them from icon.svg).
+        icons: [
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+        ],
       },
       workbox: {
         // Take over as soon as a new version is installed, so returning
