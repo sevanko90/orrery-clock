@@ -23,13 +23,6 @@ services:
       #  - Windows/WSL2 bind-mount performance isn't tanked by node_modules
       #  - installed packages survive container rebuilds
       - orrery-clock-node-modules:/workspace/node_modules
-      # Quest packaging (docs/QUEST-PACKAGING.md): the JDK and Android SDK that Bubblewrap downloads
-      # (~1 GB) live in a named volume too, so they're fetched once and survive container rebuilds.
-      - orrery-clock-bubblewrap:/home/node/.bubblewrap
-      # The app's signing key. It must never be lost or committed, so it lives outside the repo:
-      # set SIGNING_DIR in .env to a folder on this machine that you back up (default: ./.signing,
-      # git-ignored, for machines without the key).
-      - ${SIGNING_DIR:-./.signing}:/home/node/signing
 
     ports:
       - '${DEV_PORT:-5173}:${DEV_PORT:-5173}'
@@ -50,10 +43,6 @@ services:
         echo 'First-time volume detected (root ownership). Fixing permissions...';
         sudo chown -R node:node /workspace/node_modules && \
         touch /workspace/node_modules/.volume_initialized;
-      fi;
-      if [ ! -f /home/node/.bubblewrap/.volume_initialized ]; then
-        sudo chown -R node:node /home/node/.bubblewrap && \
-        touch /home/node/.bubblewrap/.volume_initialized;
       fi;
 
       if [ ! -f package.json ]; then
@@ -78,6 +67,32 @@ services:
       echo 'Handing terminal stream over to the dev server...' &&
       exec ${DEV_COMMAND:-npm run dev -- --host 0.0.0.0 --port ${DEV_PORT:-5173}}
       "
+
+  # Quest packaging (docs/QUEST-PACKAGING.md), run on demand, never by `docker compose up`:
+  #   docker compose run --rm -it quest bubblewrap <command>
+  # Always x86-64: the Android build tools (aapt2, zipalign) and the JDK that Bubblewrap downloads
+  # only exist for x86-64 Linux, so on Apple-silicon / ARM machines this runs under emulation
+  # (Rosetta in Docker Desktop): slower, fine for an occasional build. The dev server stays native.
+  quest:
+    profiles: ['quest']
+    image: orrery-clock-quest-image:latest
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    user: node
+    working_dir: /workspace/quest
+    volumes:
+      - .:/workspace
+      # The JDK and Android SDK that Bubblewrap downloads (~1 GB): fetched once, kept across rebuilds.
+      - orrery-clock-bubblewrap:/home/node/.bubblewrap
+      # The app's signing key. It must never be lost or committed, so it lives outside the repo:
+      # set SIGNING_DIR in .env to a folder on this machine that you back up (default: ./.signing,
+      # git-ignored, for machines without the key).
+      - ${SIGNING_DIR:-./.signing}:/home/node/signing
+    # New named volumes are created owned by root: hand it to node before running the command.
+    entrypoint: ['sh', '-c', 'sudo chown node:node /home/node/.bubblewrap && exec "$$@"', '--']
+    command: ['bubblewrap', 'help']
 
 volumes:
   orrery-clock-node-modules:
