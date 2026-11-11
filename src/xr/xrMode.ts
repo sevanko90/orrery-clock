@@ -1450,7 +1450,7 @@ export class XrMode {
     holder.quaternion.copy(camera.quaternion);
     holder.translateY(-0.12 * k);
     holder.scale.setScalar(k);
-    camera.parent ? camera.parent.add(holder) : this.rig.parent?.add(holder);
+    (camera.parent ?? this.rig.parent)?.add(holder);
   }
   private previewHolder: THREE.Group | null = null;
 

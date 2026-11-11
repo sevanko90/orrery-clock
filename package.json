@@ -10,7 +10,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "textures": "node scripts/fetch-textures.mjs",
-    "design": "node --experimental-strip-types scripts/design-mechanism.ts"
+    "design": "node --experimental-strip-types scripts/design-mechanism.ts",
+    "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "engines": {
     "node": ">=26"
@@ -27,6 +30,8 @@
     "@types/node": "^26.6.6",
     "@types/three": "^0.187.0",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "oxlint": "^1.93.0",
+    "prettier": "^3.10.0",
     "sharp": "^0.35.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
