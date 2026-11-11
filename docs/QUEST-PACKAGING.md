@@ -99,3 +99,17 @@ run them yourself, not through an agent: they ask for passwords.
 8. **Store submission** (not covered yet): Meta developer account and organization, app created
    in the Developer Dashboard, store listing assets, privacy policy URL, data-use questionnaire,
    and the Virtual Reality Checks (VRCs). To be written up when we get there.
+
+## After store approval
+
+- **Sharing** (`src/ui/share.ts`): the share button keeps sharing the website. Inside the
+  packaged app the page is the live site, so it already does, and the website works for whoever
+  receives the link (phone, desktop, or VR in Quest Browser). Once the store page exists
+  (`meta.com/experiences/<id>`, assigned at submission), _add_ to it rather than replace it:
+  - a "Get it on Meta Quest" link in the share menu and the credits corner, pointing at the
+    store page;
+  - optionally a share text that mentions both, e.g. "…in your browser, or on Meta Quest:
+    <store link>";
+  - consider showing the store link only to Quest Browser visitors and hiding it inside the
+    packaged app itself (Meta's suggested check for the packaged app:
+    `window.getDigitalGoodsService !== undefined`).
