@@ -9,3 +9,5 @@ quest-uploads/
 src/mechanism/design.json
 # TSL shader code: hand-laid-out node chains read like the math they build; Prettier's member-chain breaking scatters them.
 src/scene/fictionShaders.ts
+# Generated Android project (Bubblewrap): formatted by its own tools, not Prettier.
+quest/

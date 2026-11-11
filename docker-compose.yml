@@ -23,6 +23,13 @@ services:
       #  - Windows/WSL2 bind-mount performance isn't tanked by node_modules
       #  - installed packages survive container rebuilds
       - orrery-clock-node-modules:/workspace/node_modules
+      # Quest packaging (docs/QUEST-PACKAGING.md): the JDK and Android SDK that Bubblewrap downloads
+      # (~1 GB) live in a named volume too, so they're fetched once and survive container rebuilds.
+      - orrery-clock-bubblewrap:/home/node/.bubblewrap
+      # The app's signing key. It must never be lost or committed, so it lives outside the repo:
+      # set SIGNING_DIR in .env to a folder on this machine that you back up (default: ./.signing,
+      # git-ignored, for machines without the key).
+      - ${SIGNING_DIR:-./.signing}:/home/node/signing
 
     ports:
       - '${DEV_PORT:-5173}:${DEV_PORT:-5173}'
@@ -43,6 +50,10 @@ services:
         echo 'First-time volume detected (root ownership). Fixing permissions...';
         sudo chown -R node:node /workspace/node_modules && \
         touch /workspace/node_modules/.volume_initialized;
+      fi;
+      if [ ! -f /home/node/.bubblewrap/.volume_initialized ]; then
+        sudo chown -R node:node /home/node/.bubblewrap && \
+        touch /home/node/.bubblewrap/.volume_initialized;
       fi;
 
       if [ ! -f package.json ]; then
@@ -70,3 +81,4 @@ services:
 
 volumes:
   orrery-clock-node-modules:
+  orrery-clock-bubblewrap:
