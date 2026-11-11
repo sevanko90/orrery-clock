@@ -86,6 +86,20 @@ already capped at 1 MB) so it can't fill the disk.
   (2d4fe76); before, the Sun's glow swamped the tabletop view.
 - Scrunch round 2's rebuild hitch (~0.5 s when moons or fiction are first
   turned on mid-session).
+- **Discworld restored at start-up is never simplified on the headset**
+  (found 2026-11-11). `main.ts` sets `simplifierLoaded` in a `.then()` on
+  `loadSimplifier()`, but there's no `await` between that and the start-up
+  restore of a saved Discworld, so the callback hasn't run yet and the Disc
+  is built with `decimate: false` (full detail: ~420–460k triangles in view
+  with the Disc on, 66–69 fps at 72 Hz). Turning the Disc on later in the
+  session does simplify it. Fix tried: set `simplifierLoaded = true` right
+  after the `await loadSimplifier()` that simplifies the movement, and drop
+  the `.then()`. Shelved, not disproved: the one VR run with it hung while
+  resizing the world scale and was dropped to the browser, but the Quest had
+  also lost its connection to the dev server in that run (no telemetry for the
+  whole session), so the cause is unknown. Retest it on its own, with
+  telemetry confirmed flowing, scaling well past 1.5 → 1.8 with the Disc in
+  view; compare triangles and fps against the numbers above.
 
 ## 5. Tabletop (passthrough) mode — proof works, UX to do
 
