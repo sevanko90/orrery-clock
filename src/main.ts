@@ -1,5 +1,8 @@
 // First: a seeded Math.random (?seed=N) must be in place before anything draws one.
 import { reseed } from './xr/seed';
+// Next: start-up error reporting, so a failure anywhere below shows on the page.
+import { boot, bootDone, showFatal } from './boot';
+import { standInFrameTimer } from './xr/rafStandIn';
 import { frameBegin, frameEnd, mark, probeRenderer, probes, startFrame, takeCpuParts, takeFrameStats } from './perfMarks';
 import { VrGlass } from './xr/vrGlass';
 import { captureEye } from './xr/vrCapture';
@@ -56,37 +59,6 @@ if (import.meta.env.PROD) {
   // Activate new builds immediately; reload once the new worker takes control.
   const updateSW = registerSW({ immediate: true, onNeedRefresh: () => updateSW(true) });
 }
-
-// Start-up progress to the dev server's telemetry log, so a page stuck on the
-// veil (on a headset, with no console to hand) says how far it got.
-const boot = new Telemetry(() => undefined);
-boot.sendNow({ kind: 'boot', stage: 'start', url: location.href });
-
-// Surface failures on the page rather than leaving a silent black canvas.
-function showFatal(msg: string) {
-  let el = document.getElementById('fatal');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'fatal';
-    el.setAttribute('role', 'alert');
-    document.body.appendChild(el);
-  }
-  el.textContent = `The orrery couldn't start: ${msg}`;
-  document.getElementById('veil')?.classList.add('gone');
-}
-addEventListener('error', (e) => {
-  showFatal(e.message || String(e.error));
-  boot.sendNow({ kind: 'error', message: e.message, stack: String(e.error?.stack ?? '').slice(0, 2000) });
-});
-addEventListener('unhandledrejection', (e) => {
-  showFatal(String(e.reason?.message ?? e.reason));
-  boot.sendNow({ kind: 'error', message: String(e.reason?.message ?? e.reason), stack: String(e.reason?.stack ?? '').slice(0, 2000) });
-});
-
-const bootStall = setTimeout(() => {
-  boot.sendNow({ kind: 'boot', stage: 'stalled' });
-  showFatal('start-up stalled (the graphics device never came up). Try closing the tab and opening the page again.');
-}, 20_000);
 
 const container = document.getElementById('scene')!;
 const gpu = detectGpu();
@@ -1135,28 +1107,16 @@ function warmShaders(root: THREE.Object3D) {
   });
 }
 
-/** Replace window.requestAnimationFrame with a short timer; returns the undo (safe to call twice). */
-function standInFrameTimer() {
-  const raf = window.requestAnimationFrame;
-  window.requestAnimationFrame = (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 4);
-  let undone = false;
-  return () => {
-    if (undone) return;
-    undone = true;
-    window.requestAnimationFrame = raf;
-  };
-}
-
+/** Displays the fiction's shaders have been built for ('desktop', 'xr'). */
+const fictionWarmed = new Set<string>();
+const eyes = new THREE.PerspectiveCamera();
+const eyesScale = new THREE.Vector3();
 /**
  * Whoever is looking: the desktop camera, or in VR a stand-in posed from the
  * headset camera's matrix (its own position and quaternion fields aren't kept
  * up to date). For scene parts that turn to face the viewer: the Demolition's
  * hologram faced the desktop camera in VR, edge-on or from behind.
  */
-/** Displays the fiction's shaders have been built for ('desktop', 'xr'). */
-const fictionWarmed = new Set<string>();
-const eyes = new THREE.PerspectiveCamera();
-const eyesScale = new THREE.Vector3();
 function viewer(): THREE.Camera {
   if (!xr.presenting) return stage.camera;
   stage.renderer.xr.getCamera().matrixWorld.decompose(eyes.position, eyes.quaternion, eyesScale);
@@ -1339,8 +1299,7 @@ function step(now: number) {
 
   if (++frames === 3) {
     veil.classList.add('gone');
-    clearTimeout(bootStall);
-    boot.sendNow({ kind: 'boot', stage: 'running' });
+    bootDone();
   }
 }
 // Restore Discworld mode last: it touches state declared throughout this file.

@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { standInFrameTimer } from './rafStandIn';
 
 /**
  * A screenshot from inside VR, for looking at the headset's view from the
@@ -44,16 +45,13 @@ export async function captureEye(
     xr.enabled = wasXr;
   }
   log(`rendered ${width}×${height}`);
-  // three's WebGL backend polls for the GPU with window.requestAnimationFrame,
-  // which the Quest Browser doesn't run during a VR session (only the
-  // session's own loop): stand a timer in for it while reading back.
-  const raf = window.requestAnimationFrame;
-  window.requestAnimationFrame = (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 4);
+  // No window.requestAnimationFrame during a VR session: stand a timer in for it while reading back.
+  const restoreRaf = standInFrameTimer();
   let raw: Uint16Array;
   try {
     raw = (await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height)) as Uint16Array;
   } finally {
-    window.requestAnimationFrame = raf;
+    restoreRaf();
   }
   log(`read ${raw?.length}`);
   target.dispose();
