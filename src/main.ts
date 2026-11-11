@@ -3,6 +3,14 @@ import { reseed } from './xr/seed';
 import { frameBegin, frameEnd, mark, probeRenderer, probes, startFrame, takeCpuParts, takeFrameStats } from './perfMarks';
 import { VrGlass } from './xr/vrGlass';
 import { captureEye } from './xr/vrCapture';
+// Fonts are bundled (no Google Fonts request): only the weights the UI uses.
+import '@fontsource/cinzel/500.css';
+import '@fontsource/cinzel/600.css';
+import '@fontsource/cinzel/700.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import '@fontsource/cormorant-garamond/500.css';
+import '@fontsource/cormorant-garamond/500-italic.css';
 import './style.css';
 import * as THREE from 'three/webgpu';
 import { registerSW } from 'virtual:pwa-register';
@@ -35,7 +43,7 @@ import { LIVE, scrunchOn, VRVIEW_FLAG } from './xr/scrunch';
 import { ScrunchDebug } from './xr/scrunchDebug';
 import { MoonDots } from './scene/moonDots';
 import { setupShare } from './ui/share';
-import { decimateTree, simplifierReady } from './scene/decimate';
+import { decimateTree, loadSimplifier } from './scene/decimate';
 import { lodChain } from './scene/lod';
 import { MeshLods, beltRock } from './scene/meshLod';
 import { SpriteBatch } from './scene/spriteBatch';
@@ -106,7 +114,7 @@ if (scrunch) vrGlass.set(true);
 let movementTriangles: { before: number; after: number } | null = null;
 if (scrunch) {
   try {
-    await simplifierReady;
+    await loadSimplifier();
     movementTriangles = decimateTree(orrery.mechanism.root, undefined, undefined, (m) => lodChain(m.geometry) !== null);
   } catch {
     /* no simplifier: full detail */
@@ -123,7 +131,7 @@ stage.scene.add(bodies.root);
 const meshLods = scrunch ? new MeshLods() : null;
 /** The mesh simplifier (headset): loaded at start, used when the Discworld is first built. */
 let simplifierLoaded = false;
-if (scrunch) simplifierReady.then(() => (simplifierLoaded = true)).catch(() => undefined);
+if (scrunch) loadSimplifier().then(() => (simplifierLoaded = true)).catch(() => undefined);
 /** Headset: tiny moons drawn together as dots (see MoonDots). */
 const moonDots = scrunch ? new MoonDots() : null;
 if (moonDots) stage.scene.add(moonDots.sprite);

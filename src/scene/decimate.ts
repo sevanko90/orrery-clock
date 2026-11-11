@@ -1,9 +1,19 @@
 import * as THREE from 'three/webgpu';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { MeshoptSimplifier } from 'meshoptimizer';
+import type { MeshoptSimplifier } from 'meshoptimizer';
 
-/** Resolves once the simplifier (WebAssembly) can be used. */
-export const simplifierReady: Promise<void> = MeshoptSimplifier.ready;
+/** The simplifier, once loaded (headset only: everyone else never downloads it). */
+let simplifier: typeof MeshoptSimplifier | null = null;
+let loading: Promise<void> | null = null;
+
+/** Load the simplifier (WebAssembly) on first call; resolves once it can be used. Safe to call repeatedly. */
+export function loadSimplifier(): Promise<void> {
+  loading ??= import('meshoptimizer').then(async ({ MeshoptSimplifier }) => {
+    await MeshoptSimplifier.ready;
+    simplifier = MeshoptSimplifier;
+  });
+  return loading;
+}
 
 const done = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
 
@@ -17,7 +27,9 @@ export function decimated(geo: THREE.BufferGeometry, ratio = 0.35, error = 0.02,
   const hit = done.get(geo);
   if (hit) return hit;
   let out = geo;
-  if (MeshoptSimplifier.supported) {
+  // Not loaded yet (or no WebAssembly): the original stays, as before.
+  const s = simplifier;
+  if (s?.supported) {
     const g = geo.index ? geo : mergeVertices(geo, 1e-6);
     const index = g.index!;
     if (index.count / 3 >= minTriangles) {
@@ -26,7 +38,7 @@ export function decimated(geo: THREE.BufferGeometry, ratio = 0.35, error = 0.02,
       const positions = new Float32Array(pos.count * 3);
       for (let i = 0; i < pos.count; i++) positions.set([pos.getX(i), pos.getY(i), pos.getZ(i)], i * 3);
       const target = Math.floor((indices.length * ratio) / 3) * 3;
-      const [kept] = MeshoptSimplifier.simplify(indices, positions, 3, target, error, ['LockBorder']);
+      const [kept] = s.simplify(indices, positions, 3, target, error, ['LockBorder']);
       if (kept.length < indices.length * 0.85) {
         out = g.clone();
         out.setIndex(new THREE.BufferAttribute(kept, 1));

@@ -12,7 +12,13 @@
     "textures": "node scripts/fetch-textures.mjs",
     "design": "node --experimental-strip-types scripts/design-mechanism.ts"
   },
+  "engines": {
+    "node": ">=26"
+  },
   "dependencies": {
+    "@fontsource/cinzel": "^5.3.0",
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
     "meshoptimizer": "^0.22.0",
     "three": "^0.187.0",
     "three-mesh-bvh": "0.9.16"
@@ -26,5 +32,10 @@
     "vite": "^8.3.5",
     "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "workbox-build": {
+      "glob": "^14.0.5"
+    }
   }
 }

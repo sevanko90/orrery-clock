@@ -58,4 +58,4 @@ The dev server listens on port **`${DEV_PORT:-5173}`**. Override it in a `.env` 
 - **`docker-compose.yml` is the source of truth.** All setup (permissions, install, run) happens in its `command:`, so the devcontainer just points at it — there's no separate `postCreateCommand` to keep in sync.
 - **`node_modules` is a named volume**, not part of the bind mount (`.:/workspace`). This keeps native/platform-specific binaries out of your host OS, avoids the very slow Windows/WSL2 bind-mount performance hit for `node_modules`, and persists installed packages across container rebuilds.
 - **First-run permission fix**: new Docker volumes are owned by `root`. The startup command detects this via a sentinel file (`.volume_initialized`) and `chown`s it to the `node` user once.
-- **`user: node`**: the base image (`mcr.microsoft.com/devcontainers/typescript-node:22`) is designed to run as this non-root user.
+- **`user: node`**: the base image (`mcr.microsoft.com/devcontainers/typescript-node:26`) is designed to run as this non-root user.
