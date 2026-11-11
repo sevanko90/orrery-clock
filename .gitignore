@@ -7,3 +7,12 @@ dist/
 .telemetry/
 .scrunch-review/
 quest-uploads/
+# Quest packaging: the signing key never goes in the repo; Android build outputs are regenerated.
+.signing/
+*.keystore
+*.jks
+*.apk
+*.aab
+quest/.gradle/
+quest/**/build/
+quest/local.properties
