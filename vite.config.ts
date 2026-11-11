@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import basicSsl from '@vitejs/plugin-basic-ssl';
-import { telemetry } from './scripts/telemetry-plugin';
-import { upload } from './scripts/upload-plugin';
+// Explicit extensions: Vite's native config loader (a future default) won't resolve bare paths.
+import { telemetry } from './scripts/telemetry-plugin.ts';
+import { upload } from './scripts/upload-plugin.ts';
 
 // BASE_PATH is set by the GitHub Pages workflow (e.g. "/orrery-clock/").
 const base = process.env.BASE_PATH ?? '/';
@@ -16,7 +17,21 @@ export default defineConfig({
   // import plain 'three', which must resolve to the same WebGPU build the app uses.
   resolve: { alias: [{ find: /^three$/, replacement: 'three/webgpu' }] },
   server: { host: '0.0.0.0', port: Number(process.env.DEV_PORT ?? 5173) },
-  build: { target: 'es2022', chunkSizeWarningLimit: 1200 },
+  build: {
+    target: 'es2022',
+    // three.js (its WebGPU build) is ~1 MB minified on its own and can't usefully be split further;
+    // every other chunk is far below this, so it still flags real growth.
+    chunkSizeWarningLimit: 1100,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          // three.js in a chunk of its own: it only changes when the dependency is upgraded, so a
+          // deploy of app code leaves it cached (browser and service worker) instead of re-downloading ~1 MB.
+          groups: [{ name: 'three', test: /[\\/]node_modules[\\/]three[\\/]/ }],
+        },
+      },
+    },
+  },
   plugins: [
     ...(https ? [basicSsl()] : []),
     telemetry(process.cwd()),
@@ -41,7 +56,9 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // Precache only the app shell. Textures are cached at runtime as they
         // are first requested, so the first visit never downloads anything twice.
-        globPatterns: ['**/*.{js,css,html,svg}'],
+        // Fonts: only the basic Latin subset is precached (so the first visit works offline); the others (Latin Extended,
+        // Cyrillic, Greek, Vietnamese) are fetched and cached only if a page ever needs them.
+        globPatterns: ['**/*.{js,css,html,svg}', 'assets/*-latin-[0-9]*.woff2'],
         globIgnores: ['textures/**'],
         runtimeCaching: [
           {
@@ -60,10 +77,10 @@ export default defineConfig({
             options: { cacheName: 'controllers-v1', cacheableResponse: { statuses: [0, 200] } },
           },
           {
-            urlPattern: ({ url }) =>
-              url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'fonts-v1', cacheableResponse: { statuses: [0, 200] } },
+            // Bundled font files outside the precache (file names are content-hashed, so never stale).
+            urlPattern: ({ url }) => url.pathname.endsWith('.woff2'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'fonts-v2', cacheableResponse: { statuses: [200] } },
           },
         ],
       },

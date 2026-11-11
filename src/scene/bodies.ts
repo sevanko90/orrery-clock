@@ -62,10 +62,7 @@ function glowTexture(inner: string, outer: string) {
 }
 
 function pickProxy(radius: number): THREE.Mesh {
-  const m = new THREE.Mesh(
-    new THREE.SphereGeometry(radius, 8, 6),
-    new THREE.MeshBasicMaterial({ visible: false }),
-  );
+  const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
   return m;
 }
 
@@ -93,13 +90,7 @@ interface PlanetVisual {
   textures: ProgressiveTexture[];
 }
 
-function makePlanet(
-  id: string,
-  size: number,
-  facts: BodyFacts,
-  fullTier: TextureTier,
-  allow4k: boolean,
-): PlanetVisual {
+function makePlanet(id: string, size: number, facts: BodyFacts, fullTier: TextureTier, allow4k: boolean): PlanetVisual {
   const group = new THREE.Group();
   group.name = id;
   const tilt = new THREE.Group();
@@ -274,12 +265,10 @@ function makeComet(def: CometDef, count: number): { visual: CometVisual; tailPoi
   }
 
   const a = def.elements.q / (1 - def.elements.e);
-  const orbitPts = sampleOrbit(a, def.elements.e, def.elements.i, def.elements.node, def.elements.argPeri, 512).map(
-    (p) => {
-      toWorld(p.x, p.y, p.z, tmp);
-      return new THREE.Vector3(tmp.x, tmp.y, tmp.z);
-    },
-  );
+  const orbitPts = sampleOrbit(a, def.elements.e, def.elements.i, def.elements.node, def.elements.argPeri, 512).map((p) => {
+    toWorld(p.x, p.y, p.z, tmp);
+    return new THREE.Vector3(tmp.x, tmp.y, tmp.z);
+  });
   const orbit = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(orbitPts),
     new THREE.LineBasicMaterial({ color: 0x7fa6c9, transparent: true, opacity: 0.18, depthWrite: false }),
@@ -529,7 +518,6 @@ export class Bodies {
       sunlit(m, fill, pluto);
     });
   }
-
 
   /** A planet's spinning frame: things fixed to its surface turn with it. */
   surfaceFrame(id: string): THREE.Object3D | null {

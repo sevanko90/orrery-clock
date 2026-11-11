@@ -4,7 +4,27 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { decimateTree } from './decimate';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { attribute, clamp, cos, dot, float, floor, fract, materialEmissive, texture, mod, modelViewMatrix, positionWorld, sin, smoothstep, step, uniform, uv, vec3, vec4 } from 'three/tsl';
+import {
+  attribute,
+  clamp,
+  cos,
+  dot,
+  float,
+  floor,
+  fract,
+  materialEmissive,
+  texture,
+  mod,
+  modelViewMatrix,
+  positionWorld,
+  sin,
+  smoothstep,
+  step,
+  uniform,
+  uv,
+  vec3,
+  vec4,
+} from 'three/tsl';
 import { particleFloat, particleVec3, particles, pointSize } from './pointSize';
 import type { Materials } from './materials';
 import { TABLE_RADIUS } from './layout';
@@ -294,9 +314,9 @@ const ELEPHANT_BLURBS: Record<string, string> = {
   Berilia:
     "The Disc's small sun circles the world, passing between the elephants, and each must lift a leg to let it by. The elephants on this orrery shift their feet now and then as well.",
   Tubul:
-    'There were once five elephants. The fifth slid from the turtle\'s back, fell onto the Disc and was buried deep in Überwald, where its fat and bones are still mined.',
+    "There were once five elephants. The fifth slid from the turtle's back, fell onto the Disc and was buried deep in Überwald, where its fat and bones are still mined.",
   "Great T'Phon":
-    "Everything that flows to the edge of the Disc pours over in the Rimfall. Along part of the edge, the island of Krull strings the Circumfence to catch whatever is swept towards the drop.",
+    'Everything that flows to the edge of the Disc pours over in the Rimfall. Along part of the edge, the island of Krull strings the Circumfence to catch whatever is swept towards the drop.',
   Jerakeen:
     "The Disc turns slowly on the elephants' shoulders. 'Turnwise' is the direction it spins and 'widdershins' the other; the other two directions are 'hubward' and 'rimward'.",
 };
@@ -668,7 +688,10 @@ function buildRimfall(count: number, pixelScale: number) {
     const t = life.mul(3.6);
     // Pour outward over the lip, then fall away and spread into spray.
     const jitter = fract(aSeed.mul(91.7)).sub(0.5);
-    const r = t.mul(fract(aSeed.mul(13.1)).mul(0.25).add(0.55)).add(t.mul(t).mul(0.18)).add(radius);
+    const r = t
+      .mul(fract(aSeed.mul(13.1)).mul(0.25).add(0.55))
+      .add(t.mul(t).mul(0.18))
+      .add(radius);
     const a = aAngle.add(jitter.mul(0.01).mul(t));
     const y = float(top).sub(t.mul(t).mul(2.6)).sub(t.mul(0.4));
     const p = vec3(cos(a).mul(r), y, sin(a).mul(r));
@@ -699,7 +722,11 @@ function buildDust(count: number, pixelScale: number) {
     mat.positionNode = p;
     const fadeX = smoothstep(55, 80, x.abs()).oneMinus();
     const depth = modelViewMatrix.mul(vec4(p, 1)).z.negate();
-    mat.sizeNode = pointSize(float(pixelScale * 0.12).div(depth).add(1));
+    mat.sizeNode = pointSize(
+      float(pixelScale * 0.12)
+        .div(depth)
+        .add(1),
+    );
     const soft = smoothstep(0.1, 0.5, uv().sub(0.5).length()).oneMinus();
     mat.colorNode = vec3(1.0, 0.9, 0.75).mul(soft);
     mat.opacityNode = soft.mul(fadeX).mul(uniforms.uOpacity).mul(0.5);
@@ -984,7 +1011,10 @@ export class Discworld {
     this.turtle.group.visible = this.elephantGroup.visible = false;
   }
 
-  private plaques: { material: THREE.MeshStandardNodeMaterial; cells: Map<THREE.Texture, { u: number; v: number; w: number; h: number }> } | null = null;
+  private plaques: {
+    material: THREE.MeshStandardNodeMaterial;
+    cells: Map<THREE.Texture, { u: number; v: number; w: number; h: number }>;
+  } | null = null;
 
   /**
    * The elephants' name plaques on one texture sheet, so baked they're one

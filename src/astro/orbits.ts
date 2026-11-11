@@ -16,16 +16,7 @@ export interface PlanetElements {
   node: [number, number];
 }
 
-export type PlanetId =
-  | 'mercury'
-  | 'venus'
-  | 'earth'
-  | 'mars'
-  | 'jupiter'
-  | 'saturn'
-  | 'uranus'
-  | 'neptune'
-  | 'pluto';
+export type PlanetId = 'mercury' | 'venus' | 'earth' | 'mars' | 'jupiter' | 'saturn' | 'uranus' | 'neptune' | 'pluto';
 
 export const PLANET_ELEMENTS: Record<PlanetId, PlanetElements> = {
   mercury: {
@@ -193,14 +184,7 @@ export function cometPosition(c: CometElements, date: Date): HelioPosition {
 }
 
 /** Sample a closed orbit as points (AU), evenly in eccentric anomaly. */
-export function sampleOrbit(
-  a: number,
-  e: number,
-  i: number,
-  node: number,
-  argPeri: number,
-  segments = 256,
-): HelioPosition[] {
+export function sampleOrbit(a: number, e: number, i: number, node: number, argPeri: number, segments = 256): HelioPosition[] {
   const pts: HelioPosition[] = [];
   for (let k = 0; k <= segments; k++) {
     const E = (k / segments) * 2 * Math.PI;

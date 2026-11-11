@@ -14,7 +14,6 @@ export interface Surface {
   label?: string;
 }
 
-
 /** The detected planes facing up, from this frame (empty without plane detection). */
 export function surfacesFrom(frame: XRFrame | null, space: XRReferenceSpace | null): Surface[] {
   const planes = (frame as (XRFrame & { detectedPlanes?: Set<XRPlaneLike> }) | null)?.detectedPlanes;

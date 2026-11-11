@@ -30,6 +30,7 @@ Read `docs/VR-PERFORMANCE.md` first: the draw-count budget below predates
 the headset findings there (draws halved without an fps change).
 
 **Performance (proxy; real fps needs the headset):**
+
 - Draw calls and triangles per frame at the VR viewpoints `spawn`, `rim`,
   `hub`, `far` (`viewpoints()` in `src/xr/vrScene.ts`). Count what the renderer would actually submit
   (after LOD selection, culling, batching), e.g. via `renderer.info` in a
@@ -44,6 +45,7 @@ the headset findings there (draws halved without an fps change).
   and say how confident you are.
 
 **Fidelity:**
+
 - Geometric: for each changed mesh/LOD level, sampled two-sided Hausdorff and
   mean surface distance vs the original, normal deviation, silhouette
   preservation. Convert to screen pixels at the switch distance
@@ -52,8 +54,8 @@ the headset findings there (draws halved without an fps change).
 - Image: review on the desktop (VR is only for the human's final test).
   `?scrunch=1` forces the optimised scene on desktop. Serve plain HTTP on
   port 5181 from a temp container (`docker compose run -d --rm --name
-  orrery-review -p 5181:5181 -e HTTPS=0 app npx vite --port 5181 --host
-  0.0.0.0`; pick another name/port if taken) and drive the user's desktop
+orrery-review -p 5181:5181 -e HTTPS=0 app npx vite --port 5181 --host
+0.0.0.0`; pick another name/port if taken) and drive the user's desktop
   Chrome with the claude-in-chrome tools (one ToolSearch load, own new tab,
   no dialogs). Render original (`?scrunch=0`) and optimised from identical
   fixed cameras (`?webgl=1`, fixed date, paused animation, Quest-like FOV),
@@ -67,6 +69,7 @@ the headset findings there (draws halved without an fps change).
   Loss there is weighted heavily; loss on hidden or sub-pixel detail barely.
 
 **Correctness gates (any failure = REJECT regardless of score):**
+
 - Desktop render unchanged: render desktop default on base and branch;
   must be pixel-identical (or explain any difference to the last pixel).
 - `npm run typecheck` and `npm test` pass on the branch.
@@ -105,6 +108,7 @@ Set `next` to **STOP** when any of these hold, else CONTINUE:
    to the human.
 
 Iteration list discipline (so each round has a finish line):
+
 - At most 5 items, ranked, each with its expected score gain. Drop items
   worth < 2 points into a one-line "not worth a round" list.
 - Once the performance score is 100, list no perf items; once fidelity is

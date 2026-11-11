@@ -9,7 +9,6 @@ Done 2026-11-07: trigger on a body or Discworld figure opens its card in
 front of the player (`src/xr/infoPanel.ts`); another object switches it,
 empty space or the close mark closes it.
 
-
 Pointing at an object and pulling the trigger should open its info card,
 as clicking does on desktop (planets, moons, fiction bodies, Discworld lore:
 A'Tuin, the elephants' nameplates). The pointer already picks every frame
@@ -23,7 +22,6 @@ Done 2026-11-07: X opens the time panel (date, speed slider, slower /
 pause / faster / now, day / month / year steps), Y the scene panel (moons,
 fiction, return, Debug); the debug panel opens beside the scene panel.
 One at a time. (`src/xr/controlPanel.ts`.)
-
 
 Today the clock panel shows debug readouts, and the fiction panel sits
 above it. Combine the clock and the scene (fiction) controls into one
@@ -41,7 +39,6 @@ in front of the face: within 50 cm, ~40° of the gaze, pointing up, top
 toward the eyes; ~0.8 s fade. Wrist panels also face the eyes. Dev builds:
 left stick click takes a VR screenshot to `.telemetry/captures/`.
 The Quest 3 controller model now ships in `public/controllers` (7be3103); other headsets still use the CDN.
-
 
 An overlay on the controllers: arrows and short text for each control
 (walk/fly, snap turn, rise/sink, jetpack, select, world scale, time
@@ -64,6 +61,7 @@ model (`meta-quest-touch-plus` profile) and point the factory at it with
 ## 4. Dev telemetry: hardening (done: capture uploads capped at 16 MB)
 
 Checked 2026-11-07. The release build is safe:
+
 - The telemetry client is off in production (`enabled = import.meta.env.DEV`,
   a build-time constant): no requests, no command polling. The inert code is
   still in the bundle; it could be stripped with a dev-only dynamic import,
@@ -88,6 +86,20 @@ already capped at 1 MB) so it can't fill the disk.
   (2d4fe76); before, the Sun's glow swamped the tabletop view.
 - Scrunch round 2's rebuild hitch (~0.5 s when moons or fiction are first
   turned on mid-session).
+- **Discworld restored at start-up is never simplified on the headset**
+  (found 2026-11-11). `main.ts` sets `simplifierLoaded` in a `.then()` on
+  `loadSimplifier()`, but there's no `await` between that and the start-up
+  restore of a saved Discworld, so the callback hasn't run yet and the Disc
+  is built with `decimate: false` (full detail: ~420–460k triangles in view
+  with the Disc on, 66–69 fps at 72 Hz). Turning the Disc on later in the
+  session does simplify it. Fix tried: set `simplifierLoaded = true` right
+  after the `await loadSimplifier()` that simplifies the movement, and drop
+  the `.then()`. Shelved, not disproved: the one VR run with it hung while
+  resizing the world scale and was dropped to the browser, but the Quest had
+  also lost its connection to the dev server in that run (no telemetry for the
+  whole session), so the cause is unknown. Retest it on its own, with
+  telemetry confirmed flowing, scaling well past 1.5 → 1.8 with the Disc in
+  view; compare triangles and fps against the numbers above.
 
 ## 5. Tabletop (passthrough) mode — proof works, UX to do
 
@@ -146,4 +158,3 @@ at ~60 cm across, base at 72 cm, 80 cm ahead. To work through:
 - Discworld from mid-air: on a table it's the flat Disc; picked up or placed
   in the air, with room below for the whole stack clear of the floor and
   table, the Discworld entrance plays.
-

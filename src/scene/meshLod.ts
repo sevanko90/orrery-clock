@@ -66,7 +66,12 @@ function lodable(m: THREE.Mesh) {
   const mat = m.material as THREE.Material & { positionNode?: unknown; visible: boolean };
   // Invisible pick proxies stay as they are; so do shaders that move vertices, and unlit
   // spheres (the Sun): with no shading to soften it, their texture shows the facets' seams.
-  return mat.visible !== false && !mat.positionNode && !(m as THREE.InstancedMesh).isInstancedMesh && !(mat as THREE.MeshBasicMaterial).isMeshBasicMaterial;
+  return (
+    mat.visible !== false &&
+    !mat.positionNode &&
+    !(m as THREE.InstancedMesh).isInstancedMesh &&
+    !(mat as THREE.MeshBasicMaterial).isMeshBasicMaterial
+  );
 }
 
 export class MeshLods {
@@ -94,7 +99,13 @@ export class MeshLods {
     if (this.frame++ % 60 === 0) this.scan(roots);
     for (const it of this.items) {
       const e = it.mesh.matrixWorld.elements;
-      const scale = Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10]));
+      const scale = Math.sqrt(
+        Math.max(
+          e[0] * e[0] + e[1] * e[1] + e[2] * e[2],
+          e[4] * e[4] + e[5] * e[5] + e[6] * e[6],
+          e[8] * e[8] + e[9] * e[9] + e[10] * e[10],
+        ),
+      );
       const r = (it.levels[0].geometry as THREE.SphereGeometry).parameters.radius * scale;
       const d = (LIVE.lodBias * Math.max(0, this.tmp.setFromMatrixPosition(it.mesh.matrixWorld).distanceTo(eye) - r)) / (scale || 1);
       let l = it.level;

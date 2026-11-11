@@ -21,7 +21,8 @@ export function mergeStaticMeshes(root: THREE.Object3D, keep: Set<THREE.Object3D
       const m = child as THREE.Mesh;
       if (!m.isMesh || (m as THREE.InstancedMesh).isInstancedMesh || (m as THREE.SkinnedMesh).isSkinnedMesh) continue;
       if (m.children.length || keep.has(m) || Object.keys(m.userData).length || Array.isArray(m.material)) continue;
-      if (!m.visible || Object.keys(m.geometry.morphAttributes).length || m.onBeforeRender !== THREE.Object3D.prototype.onBeforeRender) continue;
+      if (!m.visible || Object.keys(m.geometry.morphAttributes).length || m.onBeforeRender !== THREE.Object3D.prototype.onBeforeRender)
+        continue;
       const g = m.geometry;
       const attrs = Object.keys(g.attributes).sort().join(',');
       const key = [m.material.uuid, m.castShadow, m.receiveShadow, m.renderOrder, m.frustumCulled, attrs].join('|');

@@ -14,12 +14,27 @@ import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 const LOG = '.telemetry/log.jsonl';
 const CMDS = '.telemetry/commands.jsonl';
 const OUT = '.telemetry/sweep.jsonl';
-const label = process.argv.slice(2).find((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--toggle-hide') ?? `sweep-${new Date().toISOString().slice(11, 16)}`;
+const label =
+  process.argv.slice(2).find((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--toggle-hide') ??
+  `sweep-${new Date().toISOString().slice(11, 16)}`;
 const VIEWS = ['spawn', 'rim', 'hub', 'far'];
 const HEAVY = new Set(['rim', 'hub']);
 // Scene parts to price by hiding (names in the scene, or "type:X" for top-level objects of a type).
-const PARTS = ['cabinet', 'movement', 'bodies', 'stack', 'rimfall', 'fiction', 'stars', 'type:Sprite', 'sprite-batch', 'line-batch', 'lift'];
-const SETTLE = 3, MEASURE = 6;
+const PARTS = [
+  'cabinet',
+  'movement',
+  'bodies',
+  'stack',
+  'rimfall',
+  'fiction',
+  'stars',
+  'type:Sprite',
+  'sprite-batch',
+  'line-batch',
+  'lift',
+];
+const SETTLE = 3,
+  MEASURE = 6;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const lines = () => (existsSync(LOG) ? readFileSync(LOG, 'utf8').split('\n').filter(Boolean) : []);

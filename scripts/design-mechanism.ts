@@ -53,7 +53,7 @@ const F_PERIOD = 6 * SID_YEAR;
 
 // Deterministic PRNG so the design is reproducible.
 let seed = Number(process.env.SEED ?? 12345);
-const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
 
 interface Cand {
   a: number;
@@ -86,7 +86,9 @@ function candidates(R: number): Cand[] {
 
 const targets = ORDER.map((id) => F_PERIOD / PERIODS[id]);
 const cands = targets.map(candidates);
-cands.forEach((c, i) => console.log(`${ORDER[i]}: ratio ${targets[i].toFixed(6)}, ${c.length} candidates, best err ${c[0]?.err.toExponential(2)}`));
+cands.forEach((c, i) =>
+  console.log(`${ORDER[i]}: ratio ${targets[i].toFixed(6)}, ${c.length} candidates, best err ${c[0]?.err.toExponential(2)}`),
+);
 
 // ---------------------------------------------------------------------------
 // Phase A: drive wheel, intermediate arbors, pillars.
@@ -133,10 +135,50 @@ function buildLower(s: StateA) {
     const m2 = (2 * p.RX) / (c.c + c.d);
     const spokes = (n: number, m: number) => ((m * n) / 2 > 0.9 ? 5 : 0);
     gears.push(
-      { id: `${id}.a`, arbor: 'F', kind: 'spur', teeth: c.a, module: m1, y: stage1Y(k), thickness: GEAR_T, bore: F_ARBOR_R, spokes: spokes(c.a, m1) },
-      { id: `${id}.b`, arbor: X, kind: 'spur', teeth: c.b, module: m1, y: stage1Y(k), thickness: GEAR_T, bore: 0.06, spokes: spokes(c.b, m1) },
-      { id: `${id}.c`, arbor: X, kind: 'spur', teeth: c.c, module: m2, y: stage2Y(k), thickness: GEAR_T, bore: 0.06, spokes: spokes(c.c, m2) },
-      { id: `${id}.d`, arbor: tube, kind: 'spur', teeth: c.d, module: m2, y: stage2Y(k), thickness: GEAR_T, bore: tubeRadius(k), spokes: spokes(c.d, m2) },
+      {
+        id: `${id}.a`,
+        arbor: 'F',
+        kind: 'spur',
+        teeth: c.a,
+        module: m1,
+        y: stage1Y(k),
+        thickness: GEAR_T,
+        bore: F_ARBOR_R,
+        spokes: spokes(c.a, m1),
+      },
+      {
+        id: `${id}.b`,
+        arbor: X,
+        kind: 'spur',
+        teeth: c.b,
+        module: m1,
+        y: stage1Y(k),
+        thickness: GEAR_T,
+        bore: 0.06,
+        spokes: spokes(c.b, m1),
+      },
+      {
+        id: `${id}.c`,
+        arbor: X,
+        kind: 'spur',
+        teeth: c.c,
+        module: m2,
+        y: stage2Y(k),
+        thickness: GEAR_T,
+        bore: 0.06,
+        spokes: spokes(c.c, m2),
+      },
+      {
+        id: `${id}.d`,
+        arbor: tube,
+        kind: 'spur',
+        teeth: c.d,
+        module: m2,
+        y: stage2Y(k),
+        thickness: GEAR_T,
+        bore: tubeRadius(k),
+        spokes: spokes(c.d, m2),
+      },
     );
     drive.push({ driver: `${id}.a`, driven: `${id}.b` }, { driver: `${id}.c`, driven: `${id}.d` });
     planets.push({
@@ -299,10 +341,19 @@ function buildFull(s: StateB): MechanismDesign {
   const arbors = [...lower.arbors];
   const gears = [...lower.gears];
   const going: MeshSpec[] = [];
-  const top = (id: string, x: number, y: number, topY: number) =>
-    arbors.push({ id, x, y, radius: 0.03, bottom: TOP_PLATE, top: topY });
+  const top = (id: string, x: number, y: number, topY: number) => arbors.push({ id, x, y, radius: 0.03, bottom: TOP_PLATE, top: topY });
 
-  gears.push({ id: 'Y.wheel', arbor: 'Y', kind: 'spur', teeth: Y_WHEEL, module: TOP_MODULE, y: TL1, thickness: TOP_GEAR_T, bore: 0.07, spokes: 5 });
+  gears.push({
+    id: 'Y.wheel',
+    arbor: 'Y',
+    kind: 'spur',
+    teeth: Y_WHEEL,
+    module: TOP_MODULE,
+    y: TL1,
+    thickness: TOP_GEAR_T,
+    bore: 0.07,
+    spokes: 5,
+  });
   void TL4;
 
   // Walk the chain outward from Y: each hop's length is the pitch-circle sum.
@@ -316,8 +367,27 @@ function buildFull(s: StateB): MechanismDesign {
     top(g.id, x, y, g.top);
     gears.push(
       // Pinion leaves are cut into the arbor itself: no bore to speak of.
-      { id: `${g.id}.pinion`, arbor: g.id, kind: 'spur', teeth: g.pinion, module: TOP_MODULE, y: g.pinionY, thickness: TOP_GEAR_T, bore: 0.02 },
-      { id: `${g.id}.wheel`, arbor: g.id, kind: 'spur', teeth: g.wheel, module: TOP_MODULE, y: g.wheelY, thickness: TOP_GEAR_T, bore: 0.03, spokes: 5 },
+      {
+        id: `${g.id}.pinion`,
+        arbor: g.id,
+        kind: 'spur',
+        teeth: g.pinion,
+        module: TOP_MODULE,
+        y: g.pinionY,
+        thickness: TOP_GEAR_T,
+        bore: 0.02,
+      },
+      {
+        id: `${g.id}.wheel`,
+        arbor: g.id,
+        kind: 'spur',
+        teeth: g.wheel,
+        module: TOP_MODULE,
+        y: g.wheelY,
+        thickness: TOP_GEAR_T,
+        bore: 0.03,
+        spokes: 5,
+      },
     );
     // Kinematically the escape end drives: pinion of this arbor drives prev wheel.
     going.unshift({ driver: `${g.id}.pinion`, driven: prevWheelId });
@@ -347,7 +417,16 @@ function buildFull(s: StateB): MechanismDesign {
   const cDist = (TOP_MODULE * (Y_WHEEL + CRANK_TEETH)) / 2;
   const C = { x: Ypos.x + cDist * Math.cos(s.hops[6]), y: Ypos.y + cDist * Math.sin(s.hops[6]) };
   top('crank', C.x, C.y, TABLE_TOP + 0.3);
-  gears.push({ id: 'crank.gear', arbor: 'crank', kind: 'spur', teeth: CRANK_TEETH, module: TOP_MODULE, y: TL1, thickness: TOP_GEAR_T, bore: 0.03 });
+  gears.push({
+    id: 'crank.gear',
+    arbor: 'crank',
+    kind: 'spur',
+    teeth: CRANK_TEETH,
+    module: TOP_MODULE,
+    y: TL1,
+    thickness: TOP_GEAR_T,
+    bore: 0.03,
+  });
 
   return {
     fPeriodDays: F_PERIOD,

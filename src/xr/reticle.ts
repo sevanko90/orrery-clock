@@ -24,9 +24,17 @@ export class Reticle {
   private target: (() => THREE.Vector3 | null) | null = null;
 
   constructor() {
-    const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const mat = new THREE.MeshBasicNodeMaterial({
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
     // Hologram blue, with faint scanlines.
-    const scan = smoothstep(0.2, 0.5, fract(positionLocal.y.mul(18))).mul(0.35).add(0.65);
+    const scan = smoothstep(0.2, 0.5, fract(positionLocal.y.mul(18)))
+      .mul(0.35)
+      .add(0.65);
     mat.colorNode = vec3(0.5, 0.92, 1.0).mul(scan);
     mat.opacityNode = this.opacity;
     // An arrowhead: a chevron pointing toward the centre (−y), its tip at the origin.

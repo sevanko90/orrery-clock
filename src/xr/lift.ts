@@ -1,5 +1,27 @@
 import * as THREE from 'three/webgpu';
-import { abs, atan, clamp, dot, float, floor, fract, length, mix, mod, mx_noise_float, normalize, normalView, positionView, pow, smoothstep, step, uniform, uv, vec2, vec3 } from 'three/tsl';
+import {
+  abs,
+  atan,
+  clamp,
+  dot,
+  float,
+  floor,
+  fract,
+  length,
+  mix,
+  mod,
+  mx_noise_float,
+  normalize,
+  normalView,
+  positionView,
+  pow,
+  smoothstep,
+  step,
+  uniform,
+  uv,
+  vec2,
+  vec3,
+} from 'three/tsl';
 import type { Surface } from './vrScene';
 
 /**
@@ -68,14 +90,28 @@ export class Lift {
     const along = u.y.mul(height);
     // Rising motes and streaks.
     const rise = along.sub(this.time.mul(2.2));
-    const streak = smoothstep(0.62, 0.95, mx_noise_float(vec3(angle.cos().mul(3), angle.sin().mul(3), rise.mul(0.35))).mul(0.5).add(0.5));
+    const streak = smoothstep(
+      0.62,
+      0.95,
+      mx_noise_float(vec3(angle.cos().mul(3), angle.sin().mul(3), rise.mul(0.35)))
+        .mul(0.5)
+        .add(0.5),
+    );
     // Brightest face-on, soft at the silhouette, so the cylinder reads as a volume of light.
     const facing = pow(abs(dot(normalize(normalView), normalize(positionView.negate()))), float(1.6));
     // Fade at the foot (into the shell) and out at the top.
     const ends = smoothstep(0, 0.6, along).mul(float(1).sub(smoothstep(height - 3.5, height, along)));
     const glow = vec3(GLOW.r, GLOW.g, GLOW.b);
-    const colMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
-    colMat.colorNode = glow.mul(facing.mul(0.35).add(streak.mul(0.9))).mul(ends).mul(this.columnStrength);
+    const colMat = new THREE.MeshBasicNodeMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    });
+    colMat.colorNode = glow
+      .mul(facing.mul(0.35).add(streak.mul(0.9)))
+      .mul(ends)
+      .mul(this.columnStrength);
     const column = new THREE.Mesh(geo, colMat);
     column.position.y = shellY + height / 2;
     column.name = 'lift-column';
@@ -173,7 +209,9 @@ class Iris {
   constructor() {
     const p = uv().sub(vec2(0.5)).mul(2);
     const r = length(p);
-    const theta = atan(p.y, p.x).div(Math.PI * 2).add(0.5);
+    const theta = atan(p.y, p.x)
+      .div(Math.PI * 2)
+      .add(0.5);
     const blades = 8;
     // Aperture radius (of the iris, 0..1) and the blade pattern: each blade's
     // edge sweeps out from the opening in a curve.

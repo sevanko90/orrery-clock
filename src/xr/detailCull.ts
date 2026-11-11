@@ -51,7 +51,13 @@ export class DetailCuller {
     for (let i = part; i < n; i += share) {
       const { mesh, centre, radius } = this.meshes[i];
       const e = mesh.matrixWorld.elements;
-      const scale = Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10]));
+      const scale = Math.sqrt(
+        Math.max(
+          e[0] * e[0] + e[1] * e[1] + e[2] * e[2],
+          e[4] * e[4] + e[5] * e[5] + e[6] * e[6],
+          e[8] * e[8] + e[9] * e[9] + e[10] * e[10],
+        ),
+      );
       const at = this.tmp.copy(centre).applyMatrix4(mesh.matrixWorld);
       // A margin between hiding and showing again, so parts at the edge don't blink as the head moves.
       const shown = mesh.layers.isEnabled(0);

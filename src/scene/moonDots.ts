@@ -59,7 +59,9 @@ export class MoonDots {
     // A disc, edge-darkened a little like a lit sphere seen whole.
     const r = length(uv().sub(0.5)).mul(2);
     mat.maskNode = r.lessThan(1);
-    mat.colorNode = (instancedBufferAttribute(this.tint) as unknown as THREE.Node<'vec3'>).mul(float(1).sub(smoothstep(0.55, 1, r).mul(0.35)));
+    mat.colorNode = (instancedBufferAttribute(this.tint) as unknown as THREE.Node<'vec3'>).mul(
+      float(1).sub(smoothstep(0.55, 1, r).mul(0.35)),
+    );
     this.sprite = new THREE.Sprite(mat);
     this.sprite.name = 'moon-dots';
     this.sprite.count = 0;

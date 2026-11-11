@@ -25,6 +25,8 @@ export interface MoonDef {
   blurb: string;
 }
 
+// One moon per row reads as a table.
+// prettier-ignore
 export const MOONS: MoonDef[] = [
   {
     id: 'moon', name: 'Moon', parent: 'earth', radiusKm: 1737.4, aKm: 384_400, periodDays: 27.321661, incDeg: 5.1, l0: 0, textured: true,

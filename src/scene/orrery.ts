@@ -172,7 +172,8 @@ export function buildOrrery(mats: Materials): Orrery {
   const posT = tableGeo.attributes.position as THREE.BufferAttribute;
   // Planar UVs on the cap so the grain runs straight across the table.
   for (let i = 0; i < uvT.count; i++) {
-    if (Math.abs(posT.getY(i)) > (S - 0.12) / 2 - 1e-4) uvT.setXY(i, posT.getX(i) / (TABLE_RADIUS * 2) + 0.5, posT.getZ(i) / (TABLE_RADIUS * 2) + 0.5);
+    if (Math.abs(posT.getY(i)) > (S - 0.12) / 2 - 1e-4)
+      uvT.setXY(i, posT.getX(i) / (TABLE_RADIUS * 2) + 0.5, posT.getZ(i) / (TABLE_RADIUS * 2) + 0.5);
   }
   const table = new THREE.Mesh(tableGeo, [mats.woodEdge, mats.wood, mats.wood]);
   table.position.y = 0.12 + (S - 0.12) / 2;

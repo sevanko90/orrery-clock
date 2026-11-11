@@ -2,16 +2,7 @@ import * as THREE from 'three/webgpu';
 import designJson from '../mechanism/design.json';
 import type { ArborSpec, GearSpec, MechanismDesign } from '../mechanism/design';
 import type { Kinematics } from '../mechanism/kinematics';
-import {
-  BOTTOM_PLATE,
-  CENTRAL_HOLE,
-  MIDDLE_PLATE,
-  PLATE_RADIUS,
-  PLATE_T,
-  TABLE_TOP,
-  TL4,
-  TOP_PLATE,
-} from '../mechanism/heights';
+import { BOTTOM_PLATE, CENTRAL_HOLE, MIDDLE_PLATE, PLATE_RADIUS, PLATE_T, TABLE_TOP, TL4, TOP_PLATE } from '../mechanism/heights';
 import { gearGeometry } from './gear';
 import { arcError, arcPoints, arcSegments, chamferError, pathFrom, registerLod, sharpPrism } from './lod';
 import type { Materials } from './materials';
@@ -120,10 +111,7 @@ function balanceGroup(mats: Materials, radius: number) {
     const a = t * turns * Math.PI * 2;
     pts.push(new THREE.Vector3(Math.cos(a) * r, -0.05, -Math.sin(a) * r));
   }
-  const spring = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color: 0x3a5a9a }),
-  );
+  const spring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x3a5a9a }));
   spring.name = 'hairspring';
   g.add(spring);
   return g;
@@ -229,9 +217,7 @@ export function buildMechanism(mats: Materials): Mechanism3D {
 
   // ---- Plates & pillars ----
   const throughMiddle = design.arbors.filter((a) => a.bottom < MIDDLE_PLATE && a.top > MIDDLE_PLATE && Math.hypot(a.x, a.y) > 1e-6);
-  const throughTop = design.arbors.filter(
-    (a) => (a.bottom <= TOP_PLATE + 1e-6 && a.top >= TOP_PLATE - 1e-6 && Math.hypot(a.x, a.y) > 1e-6),
-  );
+  const throughTop = design.arbors.filter((a) => a.bottom <= TOP_PLATE + 1e-6 && a.top >= TOP_PLATE - 1e-6 && Math.hypot(a.x, a.y) > 1e-6);
   const pad = (list: ArborSpec[], extra = 0.12) => list.map((a) => ({ x: a.x, y: a.y, r: a.radius + extra }));
   const bottomPlate = new THREE.Mesh(plateGeometry([], true), mats.plate);
   bottomPlate.position.y = BOTTOM_PLATE;
@@ -292,8 +278,17 @@ export function buildMechanism(mats: Materials): Mechanism3D {
     let obj: THREE.Object3D;
     if (g.kind === 'spur') {
       const pinion = g.teeth <= 12;
-      const mat = pinion ? mats.steel : g.id === 'F.drive' || g.id.endsWith('.d') ? mats.copper : g.id.endsWith('.b') || g.id.endsWith('.c') ? mats.brassDark : mats.brass;
-      obj = new THREE.Mesh(gearGeometry({ teeth: g.teeth, module: g.module, thickness: g.thickness, boreRadius: g.bore, spokes: g.spokes ?? 0 }), mat);
+      const mat = pinion
+        ? mats.steel
+        : g.id === 'F.drive' || g.id.endsWith('.d')
+          ? mats.copper
+          : g.id.endsWith('.b') || g.id.endsWith('.c')
+            ? mats.brassDark
+            : mats.brass;
+      obj = new THREE.Mesh(
+        gearGeometry({ teeth: g.teeth, module: g.module, thickness: g.thickness, boreRadius: g.bore, spokes: g.spokes ?? 0 }),
+        mat,
+      );
     } else if (g.kind === 'escape') {
       obj = new THREE.Mesh(escapeWheelGeometry(g.outer!, g.teeth, g.thickness), mats.steel);
     } else if (g.kind === 'anchor') {

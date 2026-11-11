@@ -25,7 +25,7 @@ services:
       - orrery-clock-node-modules:/workspace/node_modules
 
     ports:
-      - "${DEV_PORT:-5173}:${DEV_PORT:-5173}"
+      - '${DEV_PORT:-5173}:${DEV_PORT:-5173}'
     environment:
       # Set to true in .env if hot-reload doesn't fire (common on Windows/WSL2)
       - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}

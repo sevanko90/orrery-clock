@@ -3,10 +3,7 @@
 // this one is placed by hand: above the trigger when there is room, else below,
 // and always clamped inside the viewport.
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const MIN_YEAR = 1000;
 const MAX_YEAR = 2999;
@@ -18,10 +15,7 @@ export interface DatePicker {
   isOpen(): boolean;
 }
 
-export function createDatePicker(
-  trigger: HTMLButtonElement,
-  onPick: (year: number, month: number, day: number) => void,
-): DatePicker {
+export function createDatePicker(trigger: HTMLButtonElement, onPick: (year: number, month: number, day: number) => void): DatePicker {
   let value = new Date();
   let viewYear = value.getFullYear();
   let viewMonth = value.getMonth();
@@ -47,9 +41,7 @@ export function createDatePicker(
   const grid = pop.querySelector<HTMLDivElement>('.dp-grid')!;
 
   const iso = (d: Date) =>
-    `${String(d.getFullYear()).padStart(4, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-      d.getDate(),
-    ).padStart(2, '0')}`;
+    `${String(d.getFullYear()).padStart(4, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   const render = () => {
     monthSel.value = String(viewMonth);
@@ -62,9 +54,7 @@ export function createDatePicker(
     for (let i = 0; i < lead; i++) html += '<span></span>';
     for (let d = 1; d <= days; d++) {
       const sel = value.getFullYear() === viewYear && value.getMonth() === viewMonth && value.getDate() === d;
-      html += `<button type="button" class="dp-day${sel ? ' sel' : ''}" data-day="${d}"${
-        sel ? ' aria-current="date"' : ''
-      }>${d}</button>`;
+      html += `<button type="button" class="dp-day${sel ? ' sel' : ''}" data-day="${d}"${sel ? ' aria-current="date"' : ''}>${d}</button>`;
     }
     grid.innerHTML = html;
   };

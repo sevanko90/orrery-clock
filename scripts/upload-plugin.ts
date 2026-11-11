@@ -35,16 +35,31 @@ export function upload(root: string): Plugin {
           const part = `${target}.part`;
           const out = createWriteStream(part);
           req.pipe(out);
+          // Exactly one answer per upload: an abort and a write error can both fire.
+          let settled = false;
           const fail = (why: string) => {
+            if (settled) return;
+            settled = true;
             out.destroy();
             rmSync(part, { force: true });
-            if (!res.headersSent) res.statusCode = 500;
+            if (!res.headersSent) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+            }
             res.end(JSON.stringify({ ok: false, why }));
           };
           req.on('aborted', () => fail('aborted'));
           out.on('error', (e) => fail(String(e)));
           out.on('finish', () => {
-            renameSync(part, target);
+            if (settled) return;
+            // A throw here (disk full, permissions) would be uncaught and take down the dev server.
+            try {
+              renameSync(part, target);
+            } catch (e) {
+              fail(String(e));
+              return;
+            }
+            settled = true;
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ ok: true, saved: basename(target) }));
           });

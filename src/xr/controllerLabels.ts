@@ -124,7 +124,12 @@ export class ControllerLabels {
    * into it and its handedness (null until known). `eyes`: the camera (the
    * plates turn to face it); `metresPerUnit`: the world scale.
    */
-  update(dt: number, controllers: { grip: THREE.Object3D; ray: THREE.Object3D; model: ModelLike; hand: Hand | null }[], eyes: THREE.Object3D, metresPerUnit: number) {
+  update(
+    dt: number,
+    controllers: { grip: THREE.Object3D; ray: THREE.Object3D; model: ModelLike; hand: Hand | null }[],
+    eyes: THREE.Object3D,
+    metresPerUnit: number,
+  ) {
     // From the camera's matrix as the renderer left it (the XR camera's position and
     // quaternion fields aren't kept in step, so getWorldQuaternion() rebuilds a wrong one).
     eyes.matrixWorld.decompose(this.head, this.eyeQ, this.tmp);
@@ -144,7 +149,11 @@ export class ControllerLabels {
           controller: !!c.model.motionController,
           asset: (c.model.motionController as { assetUrl?: string } | null | undefined)?.assetUrl ?? null,
           components: comps ? Object.keys(comps) : null,
-          anchors: comps ? Object.entries(comps).filter(([, v]) => anchorOf(c.model, v)).map(([k]) => k) : null,
+          anchors: comps
+            ? Object.entries(comps)
+                .filter(([, v]) => anchorOf(c.model, v))
+                .map(([k]) => k)
+            : null,
           built: !!b,
         };
       }
@@ -164,7 +173,13 @@ export class ControllerLabels {
       const pointing = this.fwd.set(0, 0, -1).transformDirection(c.ray.matrixWorld);
       const upright = pointing.y > 0.5;
       const want = this.showing > 0 || (dist < 0.5 && inView && upright && facing > 0) ? 1 : 0;
-      Object.assign(this.state[b.hand] as object, { dist: +dist.toFixed(2), facing: +facing.toFixed(2), inView, upright, opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2) });
+      Object.assign(this.state[b.hand] as object, {
+        dist: +dist.toFixed(2),
+        facing: +facing.toFixed(2),
+        inView,
+        upright,
+        opacity: +(this.opacity.get(b.group) ?? 0).toFixed(2),
+      });
       const o0 = this.opacity.get(b.group) ?? 0;
       // A gentle fade (~0.8 s), not a pop.
       const o = o0 + THREE.MathUtils.clamp(want - o0, -dt * 1.25, dt * 1.25);

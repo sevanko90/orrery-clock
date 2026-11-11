@@ -136,11 +136,7 @@ async function main() {
             { suffix: '256', width: 256 },
             { suffix: '1k', width: 1024 },
           ]
-        : [
-          { suffix: '256', width: 256 },
-          { suffix: '2k', width: 2048 },
-          ...(info.width >= 4096 ? [{ suffix: '4k', width: 4096 }] : []),
-        ];
+        : [{ suffix: '256', width: 256 }, { suffix: '2k', width: 2048 }, ...(info.width >= 4096 ? [{ suffix: '4k', width: 4096 }] : [])];
 
     for (const s of sizes) {
       let img = sharp(raw).resize({
@@ -150,7 +146,7 @@ async function main() {
         kernel: 'lanczos3',
       });
       if (opt.grey) img = img.greyscale();
-      const quality = opt.quality ?? { '256': 60, '1k': 78, '2k': 76, '4k': 72 }[s.suffix];
+      const quality = opt.quality ?? { 256: 60, '1k': 78, '2k': 76, '4k': 72 }[s.suffix];
       const out = path.join(OUT, `${name}-${s.suffix}.webp`);
       await img.webp({ quality, alphaQuality: 90, effort: 6 }).toFile(out);
       console.log('wrote', path.relative(ROOT, out));

@@ -47,16 +47,22 @@ export class Wormhole {
     const ribPhase = abs(fract(s.div(RIB)).sub(0.5)).mul(2);
     const rib = pow(ribPhase, float(40)).add(pow(ribPhase, float(8)).mul(0.25));
     // Two gold filaments spiralling opposite ways.
-    const line = (turns: number, pitch: number) => pow(float(1).sub(abs(fract(u.x.mul(turns).add(s.mul(pitch))).sub(0.5)).mul(2)), float(28));
+    const line = (turns: number, pitch: number) =>
+      pow(float(1).sub(abs(fract(u.x.mul(turns).add(s.mul(pitch))).sub(0.5)).mul(2)), float(28));
     const filament = line(3, 0.045).add(line(-2, 0.03).mul(0.7));
     // Slow gas drifting along the walls.
-    const gas = mx_fractal_noise_float(vec3(cos(around).mul(1.4), sin(around).mul(1.4), s.mul(0.12).sub(this.time.mul(0.25))), 3, 2, 0.5).mul(0.5).add(0.5);
+    const gas = mx_fractal_noise_float(vec3(cos(around).mul(1.4), sin(around).mul(1.4), s.mul(0.12).sub(this.time.mul(0.25))), 3, 2, 0.5)
+      .mul(0.5)
+      .add(0.5);
 
     const bronze = vec3(0.14, 0.075, 0.03);
     const brass = vec3(0.95, 0.68, 0.3);
     const gold = vec3(1.0, 0.78, 0.38);
     const cream = vec3(1.0, 0.93, 0.78);
-    let col = bronze.mul(gas.mul(0.9).add(0.2)).add(brass.mul(rib.mul(1.3))).add(gold.mul(filament.mul(1.1)));
+    let col = bronze
+      .mul(gas.mul(0.9).add(0.2))
+      .add(brass.mul(rib.mul(1.3)))
+      .add(gold.mul(filament.mul(1.1)));
     // The destination's glow fills the distance (and, at the end, the whole tube).
     const glowFrom = mix(float(30), float(-BEHIND), this.flash);
     const toward = smoothstep(glowFrom, float(LENGTH * 0.85), ahead);
