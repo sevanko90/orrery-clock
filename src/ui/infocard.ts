@@ -190,5 +190,5 @@ function bodyRows(body: Body, simMs: number, armLongitude: (id: string) => numbe
     }
   }
 
-    return rows;
+  return rows;
 }

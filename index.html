@@ -10,19 +10,30 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Orrery Clock" />
     <meta property="og:title" content="Orrery Clock" />
-    <meta property="og:description" content="A mechanical 3D orrery and clock: brass, walnut and the planets exactly where they are right now. In your browser, or in VR and in your room on Meta Quest." />
+    <meta
+      property="og:description"
+      content="A mechanical 3D orrery and clock: brass, walnut and the planets exactly where they are right now. In your browser, or in VR and in your room on Meta Quest."
+    />
     <meta property="og:url" content="https://sevanko90.github.io/orrery-clock/" />
     <meta property="og:image" content="https://sevanko90.github.io/orrery-clock/og.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="A brass and walnut orrery: the Sun on a geared column, the planets on arms around a zodiac-ringed table." />
+    <meta
+      property="og:image:alt"
+      content="A brass and walnut orrery: the Sun on a geared column, the planets on arms around a zodiac-ringed table."
+    />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   </head>
   <body>
     <div id="scene" aria-label="3D orrery. Drag to rotate, scroll to zoom, click a planet for details."></div>
 
-    <div id="veil"><div class="veil-inner"><div class="veil-gear"></div><p>Winding the mechanism…</p></div></div>
+    <div id="veil">
+      <div class="veil-inner">
+        <div class="veil-gear"></div>
+        <p>Winding the mechanism…</p>
+      </div>
+    </div>
 
     <section id="readout" class="panel" aria-live="off">
       <div class="brand">Orrery&nbsp;Clock</div>
@@ -39,10 +50,22 @@
           <dt>Moon</dt>
           <dd><svg id="r-moon" viewBox="-12 -12 24 24" width="22" height="22" aria-hidden="true"></svg><span id="r-moon-text">—</span></dd>
         </div>
-        <div><dt>Sunrise</dt><dd id="r-rise">—</dd></div>
-        <div><dt>Sunset</dt><dd id="r-set">—</dd></div>
-        <div><dt>Sidereal</dt><dd id="r-lst">—</dd></div>
-        <div><dt>Julian day</dt><dd id="r-jd">—</dd></div>
+        <div>
+          <dt>Sunrise</dt>
+          <dd id="r-rise">—</dd>
+        </div>
+        <div>
+          <dt>Sunset</dt>
+          <dd id="r-set">—</dd>
+        </div>
+        <div>
+          <dt>Sidereal</dt>
+          <dd id="r-lst">—</dd>
+        </div>
+        <div>
+          <dt>Julian day</dt>
+          <dd id="r-jd">—</dd>
+        </div>
         <div class="place-row">
           <dt>Place</dt>
           <dd><span id="r-place">—</span> <button id="r-locate" class="link-btn" type="button">Use my location</button></dd>
@@ -66,19 +89,50 @@
 
     <nav id="controls" class="panel" aria-label="Time controls">
       <button id="c-home" class="icon-btn" type="button" aria-label="Reset view" title="Reset view (H)">
-        <svg viewBox="0 0 24 24"><path d="M12 2a1 1 0 0 1 1 1v1.06A8 8 0 0 1 19.94 11H21a1 1 0 1 1 0 2h-1.06A8 8 0 0 1 13 19.94V21a1 1 0 1 1-2 0v-1.06A8 8 0 0 1 4.06 13H3a1 1 0 1 1 0-2h1.06A8 8 0 0 1 11 4.06V3a1 1 0 0 1 1-1zm0 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"/></svg>
+        <svg viewBox="0 0 24 24">
+          <path
+            d="M12 2a1 1 0 0 1 1 1v1.06A8 8 0 0 1 19.94 11H21a1 1 0 1 1 0 2h-1.06A8 8 0 0 1 13 19.94V21a1 1 0 1 1-2 0v-1.06A8 8 0 0 1 4.06 13H3a1 1 0 1 1 0-2h1.06A8 8 0 0 1 11 4.06V3a1 1 0 0 1 1-1zm0 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"
+          />
+        </svg>
       </button>
-      <button id="c-true" class="icon-btn toggle" type="button" aria-pressed="true" aria-label="True positions" title="Hide true positions (T)">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8.5" fill="none" stroke-width="1.6" opacity=".55"/></svg>
+      <button
+        id="c-true"
+        class="icon-btn toggle"
+        type="button"
+        aria-pressed="true"
+        aria-label="True positions"
+        title="Hide true positions (T)"
+      >
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="4" />
+          <circle cx="12" cy="12" r="8.5" fill="none" stroke-width="1.6" opacity=".55" />
+        </svg>
       </button>
       <button id="c-moons" class="icon-btn toggle" type="button" aria-pressed="false" aria-label="Moons" title="Show moons (M)">
-        <svg viewBox="0 0 24 24"><circle cx="10" cy="13" r="5"/><circle cx="19" cy="6" r="2.3"/><path d="M3.2 17.6C1.6 14 4.6 8.9 10.4 6.3c1.9-.9 3.8-1.4 5.5-1.5l-.2 1.3c-1.5.1-3.2.6-4.8 1.3-5 2.3-7.8 6.5-6.6 9.6z" opacity=".55"/></svg>
+        <svg viewBox="0 0 24 24">
+          <circle cx="10" cy="13" r="5" />
+          <circle cx="19" cy="6" r="2.3" />
+          <path
+            d="M3.2 17.6C1.6 14 4.6 8.9 10.4 6.3c1.9-.9 3.8-1.4 5.5-1.5l-.2 1.3c-1.5.1-3.2.6-4.8 1.3-5 2.3-7.8 6.5-6.6 9.6z"
+            opacity=".55"
+          />
+        </svg>
       </button>
       <button id="c-fiction" class="icon-btn toggle" type="button" aria-pressed="false" aria-label="Fiction mode" title="Fiction mode (F)">
-        <svg viewBox="0 0 24 24"><path d="M3 5.5C5.6 4.4 8.6 4.5 11.2 6v13c-2.6-1.4-5.6-1.5-8.2-.4zM12.8 6c2.6-1.5 5.6-1.6 8.2-.5v13.1c-2.6-1.1-5.6-1-8.2.4z"/></svg>
+        <svg viewBox="0 0 24 24">
+          <path d="M3 5.5C5.6 4.4 8.6 4.5 11.2 6v13c-2.6-1.4-5.6-1.5-8.2-.4zM12.8 6c2.6-1.5 5.6-1.6 8.2-.5v13.1c-2.6-1.1-5.6-1-8.2.4z" />
+        </svg>
       </button>
       <button id="c-disc" class="icon-btn toggle" type="button" aria-pressed="false" aria-label="Discworld mode" title="Discworld mode (D)">
-        <svg viewBox="0 0 24 24"><ellipse cx="11" cy="13" rx="7" ry="4.6"/><ellipse cx="20" cy="13" rx="2.4" ry="1.9"/><path d="M14.5 9.2 17 5.6l1.4.9-1.6 3.6zM14.5 16.8 17 20.4l1.4-.9-1.6-3.6zM6 9.8 4.2 7.2l-1 .8 1.3 2.6zM6 16.2l-1.8 2.6-1-.8 1.3-2.6z"/><path d="M3 5.6h16v1.2H3z" opacity=".7"/><path d="M5.5 6.8h1.4v2.6H5.5zM15.1 6.8h1.4v2.4h-1.4z" opacity=".7"/></svg>
+        <svg viewBox="0 0 24 24">
+          <ellipse cx="11" cy="13" rx="7" ry="4.6" />
+          <ellipse cx="20" cy="13" rx="2.4" ry="1.9" />
+          <path
+            d="M14.5 9.2 17 5.6l1.4.9-1.6 3.6zM14.5 16.8 17 20.4l1.4-.9-1.6-3.6zM6 9.8 4.2 7.2l-1 .8 1.3 2.6zM6 16.2l-1.8 2.6-1-.8 1.3-2.6z"
+          />
+          <path d="M3 5.6h16v1.2H3z" opacity=".7" />
+          <path d="M5.5 6.8h1.4v2.6H5.5zM15.1 6.8h1.4v2.4h-1.4z" opacity=".7" />
+        </svg>
       </button>
       <button id="c-vr" class="pill" type="button" title="Step into the orrery's hall in VR" hidden>VR</button>
       <button id="c-ar" class="pill" type="button" title="The orrery on your table, in passthrough" hidden>Tabletop</button>
@@ -96,19 +150,40 @@
         <input id="c-speed" type="range" min="0" max="16" step="1" aria-label="Speed" />
         <output id="c-speed-label">real time</output>
       </div>
-      <button id="c-date" class="date-jump" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Jump to date" title="Jump to date"></button>
+      <button
+        id="c-date"
+        class="date-jump"
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        aria-label="Jump to date"
+        title="Jump to date"
+      ></button>
     </nav>
 
     <div id="hover-tag" hidden></div>
 
     <footer id="corner">
       <span class="attribution">
-        Planet images: <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a>
-        (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>) &amp; NASA, via Wikimedia Commons
+        Planet images: <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a> (<a
+          href="https://creativecommons.org/licenses/by/4.0/"
+          target="_blank"
+          rel="noopener"
+          >CC BY 4.0</a
+        >) &amp; NASA, via Wikimedia Commons
       </span>
       <div class="corner-actions">
-        <a id="star-btn" class="corner-pill" href="https://github.com/sevanko90/orrery-clock" target="_blank" rel="noopener" title="Star it on GitHub">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4l-5.8 3.1 1.1-6.5L2.6 9.4l6.5-.9z" /></svg>
+        <a
+          id="star-btn"
+          class="corner-pill"
+          href="https://github.com/sevanko90/orrery-clock"
+          target="_blank"
+          rel="noopener"
+          title="Star it on GitHub"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4l-5.8 3.1 1.1-6.5L2.6 9.4l6.5-.9z" />
+          </svg>
           Star <span id="star-count" hidden></span>
         </a>
         <button id="share-btn" class="corner-pill" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="share-menu">
@@ -128,10 +203,30 @@
 
     <dialog id="credits">
       <h2>Credits</h2>
-      <p>Planet textures by <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, via Wikimedia Commons; resized and converted to WebP.</p>
+      <p>
+        Planet textures by <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a>,
+        licensed <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, via Wikimedia Commons;
+        resized and converted to WebP.
+      </p>
       <p>Pluto map: NASA / Johns Hopkins APL / SwRI (New Horizons), public domain.</p>
-      <p>Moon maps: the Moon by Solar System Scope (CC BY 4.0); Phobos, Deimos, Ganymede and Callisto by Askaniy Anpilogov, after Phil Stooke, John van Vliet, Björn Jónsson, USGS and NASA (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>); the rest from NASA / JPL / USGS, the Cassini imaging team (SSI, LPI) and New Horizons (APL, SwRI), public domain. Unimaged regions are filled from the opposite hemisphere.</p>
-      <p>Ceres in fiction mode: Solar System Scope’s artist’s impression (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>). Ceres’s and Eros’s orbits from JPL’s Small-Body Database.</p>
+      <p>
+        Moon maps: the Moon by Solar System Scope (CC BY 4.0); Phobos, Deimos, Ganymede and Callisto by Askaniy Anpilogov, after Phil
+        Stooke, John van Vliet, Björn Jónsson, USGS and NASA (<a
+          href="https://creativecommons.org/licenses/by-sa/3.0/"
+          target="_blank"
+          rel="noopener"
+          >CC BY-SA 3.0</a
+        >); the rest from NASA / JPL / USGS, the Cassini imaging team (SSI, LPI) and New Horizons (APL, SwRI), public domain. Unimaged
+        regions are filled from the opposite hemisphere.
+      </p>
+      <p>
+        Ceres in fiction mode: Solar System Scope’s artist’s impression (<a
+          href="https://creativecommons.org/licenses/by/4.0/"
+          target="_blank"
+          rel="noopener"
+          >CC BY 4.0</a
+        >). Ceres’s and Eros’s orbits from JPL’s Small-Body Database.
+      </p>
       <p>Planet positions from JPL’s approximate Keplerian elements (E. M. Standish). Sunrise and sunset after SunCalc.</p>
       <p>Discworld mode is an affectionate nod to Terry Pratchett’s Discworld: the Disc, the four elephants and Great A’Tuin.</p>
       <p>Sizes and distances are compressed so everything fits on the table. Angles around the Sun are true for the date shown.</p>

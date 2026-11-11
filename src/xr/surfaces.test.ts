@@ -12,7 +12,15 @@ const table = (y: number, x = 0, z = -1): Surface => ({
     { x: -0.5, z: 0.5 },
   ],
 });
-const floor: Surface = { ...table(0, 0, 0), polygon: [{ x: -5, z: -5 }, { x: 5, z: -5 }, { x: 5, z: 5 }, { x: -5, z: 5 }] };
+const floor: Surface = {
+  ...table(0, 0, 0),
+  polygon: [
+    { x: -5, z: -5 },
+    { x: 5, z: -5 },
+    { x: 5, z: 5 },
+    { x: -5, z: 5 },
+  ],
+};
 
 describe('surfaces', () => {
   it('finds the table just under a point over it', () => {

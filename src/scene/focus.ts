@@ -97,7 +97,7 @@ export class FocusController {
   destination(): { camera: THREE.Vector3; target: THREE.Vector3 } | null {
     const f = this.flight;
     if (!f) return null;
-    const goal = (f.goal ?? (f.home ? this.homeTarget : this.focused?.group.getWorldPosition(new THREE.Vector3()))) ?? null;
+    const goal = f.goal ?? (f.home ? this.homeTarget : this.focused?.group.getWorldPosition(new THREE.Vector3())) ?? null;
     if (!goal) return null;
     return { camera: goal.clone().add(f.offset), target: goal.clone() };
   }

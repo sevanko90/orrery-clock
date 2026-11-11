@@ -46,7 +46,11 @@ export class RoomSpot {
     this.pending = null;
     this.error = null;
     const saved = load();
-    this.log('begin', { saved: saved?.uuid ?? null, known: session.persistentAnchors ? [...session.persistentAnchors] : null, canRestore: !!session.restorePersistentAnchor });
+    this.log('begin', {
+      saved: saved?.uuid ?? null,
+      known: session.persistentAnchors ? [...session.persistentAnchors] : null,
+      canRestore: !!session.restorePersistentAnchor,
+    });
     // Leftovers count against the site's few: cleared one at a time, after the
     // saved one is restored (alongside it, at the session's start, Quest refused).
     const known = [...(session.persistentAnchors ?? [])].filter((id) => id !== saved?.uuid);
@@ -121,7 +125,15 @@ export class RoomSpot {
    * by `yaw`), replacing the one anchor, and save it with the scale and placement.
    * False if it can't take it now (busy: try again later).
    */
-  save(frame: XRFrame | null, space: XRReferenceSpace | null, session: XRSession | null, position: THREE.Vector3, yaw: number, metresPerUnit: number, placement: Placement) {
+  save(
+    frame: XRFrame | null,
+    space: XRReferenceSpace | null,
+    session: XRSession | null,
+    position: THREE.Vector3,
+    yaw: number,
+    metresPerUnit: number,
+    placement: Placement,
+  ) {
     if (this.busy || !frame || !space || !session) return false;
     if (!frame.createAnchor) {
       this.state = 'unsupported';
@@ -131,7 +143,10 @@ export class RoomSpot {
     this.state = 'saving';
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     // (Made now, inside the frame: a frame is only good during its callback.)
-    const made = frame.createAnchor(new XRRigidTransform({ x: position.x, y: position.y, z: position.z }, { x: q.x, y: q.y, z: q.z, w: q.w }), space);
+    const made = frame.createAnchor(
+      new XRRigidTransform({ x: position.x, y: position.y, z: position.z }, { x: q.x, y: q.y, z: q.z, w: q.w }),
+      space,
+    );
     const old = load();
     void (async () => {
       try {

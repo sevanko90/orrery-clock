@@ -36,7 +36,13 @@ export class SpriteBatch {
         const s = o as THREE.Sprite;
         if (!s.isSprite || s.count > 1) return;
         const m = s.material as THREE.SpriteMaterial;
-        if (!(m as unknown as { isSpriteMaterial?: boolean }).isSpriteMaterial || m.blending !== THREE.AdditiveBlending || m.depthWrite || !m.map) return;
+        if (
+          !(m as unknown as { isSpriteMaterial?: boolean }).isSpriteMaterial ||
+          m.blending !== THREE.AdditiveBlending ||
+          m.depthWrite ||
+          !m.map
+        )
+          return;
         if (m.rotation !== 0 || !m.sizeAttenuation || s.center.x !== 0.5 || s.center.y !== 0.5) return;
         if (map && m.map !== map) return;
         map = m.map;

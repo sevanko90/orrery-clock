@@ -1,7 +1,8 @@
 import { FICTION, nextOccurrence, type FictionEntry } from '../fiction/catalog';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const EYE = '<path d="M12 5C6.5 5 2.7 9.3 1.5 12c1.2 2.7 5 7 10.5 7s9.3-4.3 10.5-7C21.3 9.3 17.5 5 12 5zm0 11.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9zm0-2.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>';
+const EYE =
+  '<path d="M12 5C6.5 5 2.7 9.3 1.5 12c1.2 2.7 5 7 10.5 7s9.3-4.3 10.5-7C21.3 9.3 17.5 5 12 5zm0 11.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9zm0-2.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>';
 const SLASH = '<path d="M3.3 2 22 20.7 20.7 22 2 3.3z"/>';
 
 const fmtDate = (ms: number) =>
@@ -146,7 +147,13 @@ export class FictionPanel {
       const start = nextOccurrence(entry, simMs);
       const now = start !== null && simMs >= start && simMs <= start + (entry.durationMs ?? 0);
       const label =
-        start === null ? (this.isShown(entry.id) ? 'Always on show · Show' : 'Hidden') : now ? 'Happening now · Replay' : `${fmtDate(start)} · Play`;
+        start === null
+          ? this.isShown(entry.id)
+            ? 'Always on show · Show'
+            : 'Hidden'
+          : now
+            ? 'Happening now · Replay'
+            : `${fmtDate(start)} · Play`;
       const el = this.when.get(entry.id)!;
       if (el.textContent !== label) el.textContent = label;
     }

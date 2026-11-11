@@ -22,9 +22,9 @@ Push to `main` on GitHub with Pages set to "GitHub Actions" as the source; `.git
 The dev environment runs inside Docker, so you need no local Node.js install. There are two ways to start it, and both use the same `docker-compose.yml`, so the environment is identical either way:
 
 | Method                    | Best for                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------- |
-| **VS Code Dev Container** | Full IDE integration — extensions, settings, and the terminal all run inside the container  |
-| **`docker compose up`**   | Any editor, or headless / CI use                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------ |
+| **VS Code Dev Container** | Full IDE integration — extensions, settings, and the terminal all run inside the container |
+| **`docker compose up`**   | Any editor, or headless / CI use                                                           |
 
 ### Option 1 — VS Code Dev Container
 

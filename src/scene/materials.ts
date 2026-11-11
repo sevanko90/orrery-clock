@@ -4,7 +4,7 @@ import * as THREE from 'three/webgpu';
 function makeNoise(seed: number) {
   const perm = new Uint8Array(512);
   let s = seed >>> 0;
-  const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const rand = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
   const p = Array.from({ length: 256 }, (_, i) => i);
   for (let i = 255; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
@@ -21,11 +21,7 @@ function makeNoise(seed: number) {
     const h = (i: number, j: number) => grad[perm[(perm[(xi + i) & 255] + yi + j) & 255]];
     const u = fade(xf),
       v = fade(yf);
-    return THREE.MathUtils.lerp(
-      THREE.MathUtils.lerp(h(0, 0), h(1, 0), u),
-      THREE.MathUtils.lerp(h(0, 1), h(1, 1), u),
-      v,
-    );
+    return THREE.MathUtils.lerp(THREE.MathUtils.lerp(h(0, 0), h(1, 0), u), THREE.MathUtils.lerp(h(0, 1), h(1, 1), u), v);
   };
 }
 
@@ -57,7 +53,9 @@ function woodTextures(size: number) {
       const tone = noise(u * 1.5 + plankOffset, plank) * 0.5;
       let t = 0.5 + 0.28 * grain + fine - 0.15 + tone * 0.4;
       t = THREE.MathUtils.clamp(t, 0, 1);
-      c.copy(dark).lerp(mid, Math.min(1, t * 1.6)).lerp(light, Math.max(0, t - 0.6) * 1.2);
+      c.copy(dark)
+        .lerp(mid, Math.min(1, t * 1.6))
+        .lerp(light, Math.max(0, t - 0.6) * 1.2);
       // Plank seams.
       const seam = inPlank < 0.006 || inPlank > 0.994 ? 0.35 : 1;
       const i = (y * size + x) * 4;

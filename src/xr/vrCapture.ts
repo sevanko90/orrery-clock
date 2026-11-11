@@ -8,7 +8,13 @@ import * as THREE from 'three/webgpu';
  * screen, and uploads it as a PNG to .telemetry/captures/. It costs a hitch
  * of a frame or two (the first one also compiles shaders for the extra view).
  */
-export async function captureEye(renderer: THREE.WebGPURenderer, scene: THREE.Scene, name: string, log: (stage: string) => void = () => undefined, width = 1280) {
+export async function captureEye(
+  renderer: THREE.WebGPURenderer,
+  scene: THREE.Scene,
+  name: string,
+  log: (stage: string) => void = () => undefined,
+  width = 1280,
+) {
   const eye = (renderer.xr.getCamera() as THREE.ArrayCamera).cameras[0];
   log(`start (eye ${!!eye})`);
   if (!eye) return;

@@ -1,5 +1,15 @@
 import * as THREE from 'three/webgpu';
-import { BRDF_Lambert, F_Schlick, diffuseContribution, lights, normalView, positionViewDirection, specularColor, specularF90, vec3 } from 'three/tsl';
+import {
+  BRDF_Lambert,
+  F_Schlick,
+  diffuseContribution,
+  lights,
+  normalView,
+  positionViewDirection,
+  specularColor,
+  specularF90,
+  vec3,
+} from 'three/tsl';
 import type { Node } from 'three/webgpu';
 
 type V3 = Node<'vec3'>;
@@ -40,7 +50,11 @@ class SunlitLightingModel extends THREE.PhysicalLightingModel {
     super.direct(input, builder);
     reflectedLight.directDiffuse = keep;
 
-    const wrap = normalView.dot(lightDirection).add(TERMINATOR_WRAP).div(1 + TERMINATOR_WRAP).saturate();
+    const wrap = normalView
+      .dot(lightDirection)
+      .add(TERMINATOR_WRAP)
+      .div(1 + TERMINATOR_WRAP)
+      .saturate();
     const halfDir = lightDirection.add(positionViewDirection).normalize();
     const dotVH = positionViewDirection.dot(halfDir).saturate();
     const F = F_Schlick({ f0: specularColor, f90: specularF90, dotVH }) as unknown as V3;

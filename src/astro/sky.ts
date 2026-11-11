@@ -40,8 +40,7 @@ export function moonPhase(date: Date): MoonPhase {
   const moon = moonLon(julianDate(date));
 
   const L0 = 280.46646 + 36000.76983 * T;
-  const C =
-    (1.914602 - 0.004817 * T) * Math.sin(M) + 0.019993 * Math.sin(2 * M) + 0.000289 * Math.sin(3 * M);
+  const C = (1.914602 - 0.004817 * T) * Math.sin(M) + 0.019993 * Math.sin(2 * M) + 0.000289 * Math.sin(3 * M);
   const sunLon = L0 + C;
 
   const elong = norm360(moon - sunLon);
@@ -93,8 +92,7 @@ const eclipticLongitude = (M: number) => {
   return M + C + DEG * 102.9372 + Math.PI;
 };
 const approxTransit = (Ht: number, lw: number, n: number) => J0 + (Ht + lw) / (2 * Math.PI) + n;
-const solarTransitJ = (ds: number, M: number, L: number) =>
-  J2000 + ds + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+const solarTransitJ = (ds: number, M: number, L: number) => J2000 + ds + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
 
 export function sunTimes(date: Date, latDeg: number, lonDeg: number): SunTimes {
   const lw = DEG * -lonDeg;

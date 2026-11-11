@@ -51,7 +51,13 @@ export class Batcher {
     const groups = new Map<string, THREE.Mesh[]>();
     root.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (!m.isMesh || (m as THREE.InstancedMesh).isInstancedMesh || (m as THREE.BatchedMesh).isBatchedMesh || (m as THREE.SkinnedMesh).isSkinnedMesh) return;
+      if (
+        !m.isMesh ||
+        (m as THREE.InstancedMesh).isInstancedMesh ||
+        (m as THREE.BatchedMesh).isBatchedMesh ||
+        (m as THREE.SkinnedMesh).isSkinnedMesh
+      )
+        return;
       if (Array.isArray(m.material)) return;
       const mat = m.material as THREE.Material;
       if (!mat.visible || mat.transparent || skip(m)) return;
@@ -102,9 +108,7 @@ export class Batcher {
       batch.raycast = () => undefined;
       const stored = new Map<THREE.BufferGeometry, number>();
       for (const [g, s] of asStored) stored.set(g, batch.addGeometry(s));
-      const lodIds = new Map(
-        [...chains].map(([g, c]) => [g, c.map((l) => ({ id: stored.get(l.geometry)!, from: l.from }))]),
-      );
+      const lodIds = new Map([...chains].map(([g, c]) => [g, c.map((l) => ({ id: stored.get(l.geometry)!, from: l.from }))]));
       for (const m of list) {
         const id = batch.addInstance(stored.get(level0(m.geometry))!);
         batch.setMatrixAt(id, m.matrixWorld);
@@ -141,7 +145,13 @@ export class Batcher {
       }
       if (visible && (cull || (lodEye && e.lods))) {
         const m = e.mesh.matrixWorld.elements;
-        const scale = Math.sqrt(Math.max(m[0] * m[0] + m[1] * m[1] + m[2] * m[2], m[4] * m[4] + m[5] * m[5] + m[6] * m[6], m[8] * m[8] + m[9] * m[9] + m[10] * m[10]));
+        const scale = Math.sqrt(
+          Math.max(
+            m[0] * m[0] + m[1] * m[1] + m[2] * m[2],
+            m[4] * m[4] + m[5] * m[5] + m[6] * m[6],
+            m[8] * m[8] + m[9] * m[9] + m[10] * m[10],
+          ),
+        );
         const at = this.tmp.copy(e.centre).applyMatrix4(e.mesh.matrixWorld);
         const r = e.radius * scale;
         if (cull) visible = r > at.distanceTo(eye!) * minAngle;

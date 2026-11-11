@@ -134,7 +134,8 @@ export class ScrunchDebug {
     // (Discworld assembles in ~4 s), then holds still: the same frame on every load.
     // (Seeded runs act on fixed frame numbers: modes at frame 300, frozen at 660.)
     const start = this.seeded ? 300 : this.ticks;
-    if (this.seeded && this.ticks > start) console.warn(`scrunch setup: called late (frame ${this.ticks}); frames may not match other loads`);
+    if (this.seeded && this.ticks > start)
+      console.warn(`scrunch setup: called late (frame ${this.ticks}); frames may not match other loads`);
     while (this.ticks < start) await this.frames(1);
     this.freeze(true);
     this.frozen = false;
@@ -258,7 +259,11 @@ export class ScrunchDebug {
       lod: this.ctx.batches().map((b) => b.lodCounts()),
       renderer: { drawCalls: info.drawCalls, triangles: Math.round(info.triangles) },
       /** Pixels per radian of this view (the Quest eye is ~720). */
-      pxPerRad: Math.round(this.ctx.stage.renderer.domElement.height / 2 / Math.tan(THREE.MathUtils.degToRad((this.ctx.stage.camera as THREE.PerspectiveCamera).fov / 2))),
+      pxPerRad: Math.round(
+        this.ctx.stage.renderer.domElement.height /
+          2 /
+          Math.tan(THREE.MathUtils.degToRad((this.ctx.stage.camera as THREE.PerspectiveCamera).fov / 2)),
+      ),
     };
   }
 

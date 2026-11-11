@@ -11,7 +11,18 @@ import { FloorGuide } from './floorGuide';
 import { Reticle } from './reticle';
 import { planesReport, surfaceUnder, surfacesFrom, type Surface as RoomSurface } from './surfaces';
 import { buildHangar } from './hangar';
-import { groundAt, spawnPoint, walkRadius, drumRadius, liftPoint, WALK_RADIUS, GROUND_Y, UNDERSIDE_Y, type Surface, type Viewpoint } from './vrScene';
+import {
+  groundAt,
+  spawnPoint,
+  walkRadius,
+  drumRadius,
+  liftPoint,
+  WALK_RADIUS,
+  GROUND_Y,
+  UNDERSIDE_Y,
+  type Surface,
+  type Viewpoint,
+} from './vrScene';
 import { CAPTURE_RADIUS, Lift } from './lift';
 import { shellTopAt, type Lore } from '../scene/discworld';
 import type { CardContent } from '../ui/infocard';
@@ -189,7 +200,10 @@ export class XrMode {
   /** Frame rate, renderer and scale, beside the wrist panel. */
   private debugPanel: ControlPanel;
   /** Each controller's model (loaded from its input profile), for the labels. */
-  private controllerModels: { slot: { grip: THREE.XRGripSpace; ray: THREE.XRTargetRaySpace; source: XRInputSource | null }; model: THREE.Object3D }[];
+  private controllerModels: {
+    slot: { grip: THREE.XRGripSpace; ray: THREE.XRTargetRaySpace; source: XRInputSource | null };
+    model: THREE.Object3D;
+  }[];
   /** Engraved control labels that show when a controller is raised to be read. */
   private controllerLabels = new ControllerLabels();
   /** The info card, opened with the trigger on a body or a Discworld figure. */
@@ -254,7 +268,9 @@ export class XrMode {
     this.floorY = layout.orrery.min.y - XR.hoverGap;
     this.half = layout.tableRadius + XR.hangarMargin;
     this.roofY = layout.orrery.max.y + XR.roofClearance;
-    this.hangar = LEGACY_HALL ? buildHangar({ floorY: this.floorY, half: this.half, roofY: this.roofY, tableRadius: layout.tableRadius }) : new THREE.Group();
+    this.hangar = LEGACY_HALL
+      ? buildHangar({ floorY: this.floorY, half: this.half, roofY: this.roofY, tableRadius: layout.tableRadius })
+      : new THREE.Group();
     this.hangar.visible = false;
     scene.add(this.hangar);
     // Start just beyond the table's edge, facing the instrument.
@@ -276,10 +292,14 @@ export class XrMode {
     }
     this.input = new XrInput(renderer, this.rig);
     this.spot.onEvent = (e) => this.hooks.report?.(e);
-    this.handling = new TabletopHandling(this.rig, () => this.orreryCentre(), (m) => {
-      this.metresPerUnit = m;
-      this.applyScale();
-    });
+    this.handling = new TabletopHandling(
+      this.rig,
+      () => this.orreryCentre(),
+      (m) => {
+        this.metresPerUnit = m;
+        this.applyScale();
+      },
+    );
 
     const models = new XRControllerModelFactory();
     this.controllerModels = this.input.all.map((slot) => {
@@ -301,7 +321,13 @@ export class XrMode {
       new THREE.LineBasicMaterial({ color: 0xffd28a, transparent: true, opacity: 0.7 }),
     );
     this.rayDot = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffe2a8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+      new THREE.SpriteMaterial({
+        map: glowTexture(),
+        color: 0xffe2a8,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
     );
     scene.add(this.rayDot, this.hoverLabel.sprite);
     (this.pivotDot.material as THREE.SpriteMaterial).map = glowTexture();
@@ -313,17 +339,30 @@ export class XrMode {
     // bright rim where its edge will stand, and ripples of light (the arrival
     // tunnel's brass and gold) drawing in toward it from well outside the
     // disc, so it shows round the instrument held over it. It pulses.
-    const ghostMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const ghostMat = new THREE.MeshBasicNodeMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
     {
       const OUTER = 1.6; // the quad's half-size, in footprint radii
       const t = this.ghostTime;
       const r = length(uv().sub(0.5)).mul(2 * OUTER);
       const rim = smoothstep(0.93, 1.0, r).mul(smoothstep(1.07, 1.0, r));
       // Ripples moving inward, only outside the footprint, fading out at the edge of the quad.
-      const ripple = smoothstep(0.7, 1.0, sin(r.mul(30).add(t.mul(6))).mul(0.5).add(0.5));
+      const ripple = smoothstep(
+        0.7,
+        1.0,
+        sin(r.mul(30).add(t.mul(6)))
+          .mul(0.5)
+          .add(0.5),
+      );
       const band = smoothstep(0.95, 1.08, r).mul(smoothstep(OUTER, 1.25, r));
       const pulse = sin(t.mul(5)).mul(0.25).add(0.75);
-      ghostMat.colorNode = vec3(1.0, 0.78, 0.38).mul(rim.mul(1.4)).add(vec3(0.95, 0.68, 0.3).mul(ripple.mul(band)));
+      ghostMat.colorNode = vec3(1.0, 0.78, 0.38)
+        .mul(rim.mul(1.4))
+        .add(vec3(0.95, 0.68, 0.3).mul(ripple.mul(band)));
       ghostMat.opacityNode = rim.mul(1.2).add(ripple.mul(band).mul(0.65)).mul(pulse).clamp(0, 1);
     }
     this.ghost = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2).rotateX(-Math.PI / 2), ghostMat);
@@ -343,7 +382,6 @@ export class XrMode {
     this.vignette.renderOrder = 30;
     this.vignette.visible = false;
     this.camera.add(this.vignette);
-
 
     this.scaleTag = new THREE.Mesh(
       new THREE.PlaneGeometry(0.32, 0.1),
@@ -408,7 +446,13 @@ export class XrMode {
     if (scale > 0 && scale <= 1) this.renderer.xr.setFramebufferScaleFactor(scale);
     const session = await xr.requestSession(mode === 'ar' ? 'immersive-ar' : 'immersive-vr', {
       // 'layers' lets the renderer draw both eyes in one pass (multiview).
-      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers', ...(mode === 'ar' ? ['hit-test', 'anchors', 'plane-detection'] : [])],
+      optionalFeatures: [
+        'local-floor',
+        'bounded-floor',
+        'hand-tracking',
+        'layers',
+        ...(mode === 'ar' ? ['hit-test', 'anchors', 'plane-detection'] : []),
+      ],
     });
     await this.renderer.xr.setSession(session);
     // Quest runs at 90 Hz by default; 72 Hz gives each frame 13.9 ms instead
@@ -507,7 +551,10 @@ export class XrMode {
     const toHead = Math.atan2(head.x - c.x, head.z - c.z);
     // With a viewpoint (the desktop's camera for the scene), turn so the player sees it from that side
     // (a line from the Sun shows side-on, not end-on); else bring `at` round to the player's side.
-    const toAt = from && Math.hypot(from.x - at.x, from.z - at.z) > 1e-3 ? Math.atan2(from.x - at.x, from.z - at.z) : Math.atan2(at.x - c.x, at.z - c.z);
+    const toAt =
+      from && Math.hypot(from.x - at.x, from.z - at.z) > 1e-3
+        ? Math.atan2(from.x - at.x, from.z - at.z)
+        : Math.atan2(at.x - c.x, at.z - c.z);
     // The world turns by (toHead − toAt); the rig turns the opposite way. Shortest way round.
     let angle = toAt - toHead;
     angle = Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -648,7 +695,8 @@ export class XrMode {
     if (!still || this.spot.restoring || this.placePending) return;
     const at = this.handling.toRoom(base, this.tmpRoom);
     // (Busy clearing old anchors: try again next frame.)
-    if (!this.spot.save(frame, space, this.renderer.xr.getSession(), at, this.handling.yaw, this.metresPerUnit, this.handling.placement)) return;
+    if (!this.spot.save(frame, space, this.renderer.xr.getSession(), at, this.handling.yaw, this.metresPerUnit, this.handling.placement))
+      return;
     this.movedAt = 0;
     // Come to rest floating (driven there): Discworld if there's room for it.
     if (this.handling.placement === 'air') this.hooks.tabletopDisc?.(this.clearBelow());
@@ -1017,7 +1065,12 @@ export class XrMode {
     const table = this.mode === 'ar';
     if (table && !carried) {
       const hands = { left: this.input.hand('left')?.grip ?? null, right: this.input.hand('right')?.grip ?? null };
-      const moved = this.handling.update(dt, { left: a.sticks.left, right: a.sticks.right, gripLeft: a.gripLeft, gripRight: a.gripRight }, hands, this.camera.quaternion);
+      const moved = this.handling.update(
+        dt,
+        { left: a.sticks.left, right: a.sticks.right, gripLeft: a.gripLeft, gripRight: a.gripRight },
+        hands,
+        this.camera.quaternion,
+      );
       if (moved) this.turn = null;
       if (moved === 'grab') this.input.rumble(0.3, 40);
       this.stepSurfaces(moved === 'drop');
@@ -1048,7 +1101,10 @@ export class XrMode {
         const pivot = this.tmpPivot.copy(this.scalePivot!);
         if (this.grounded) pivot.y = this.rig.position.y;
         // The player shrinks (or grows) by M / next about the pivot.
-        this.rig.position.sub(pivot).multiplyScalar(M / next).add(pivot);
+        this.rig.position
+          .sub(pivot)
+          .multiplyScalar(M / next)
+          .add(pivot);
         this.metresPerUnit = next;
         this.applyScale();
       }
@@ -1174,7 +1230,10 @@ export class XrMode {
 
     // Comfort vignette (closed in while carried or arriving).
     const speed = v.length();
-    const vig = Math.max(vigWanted, THREE.MathUtils.clamp((speed - XR.vignetteFrom) / (XR.vignetteFull - XR.vignetteFrom), 0, 1) * XR.vignetteMax);
+    const vig = Math.max(
+      vigWanted,
+      THREE.MathUtils.clamp((speed - XR.vignetteFrom) / (XR.vignetteFull - XR.vignetteFrom), 0, 1) * XR.vignetteMax,
+    );
     const u = this.vignetteStrength;
     u.value += (vig - u.value) * Math.min(1, dt * 6);
     this.vignette.visible = u.value > 0.01;
@@ -1190,7 +1249,12 @@ export class XrMode {
     this.updateWrist(dt, cpuMs);
     this.controllerLabels.update(
       dt,
-      this.controllerModels.map(({ slot, model }) => ({ grip: slot.grip, ray: slot.ray, model, hand: (slot.source?.handedness as 'left' | 'right' | undefined) ?? null })),
+      this.controllerModels.map(({ slot, model }) => ({
+        grip: slot.grip,
+        ray: slot.ray,
+        model,
+        hand: (slot.source?.handedness as 'left' | 'right' | undefined) ?? null,
+      })),
       this.renderer.xr.getCamera(),
       this.metresPerUnit,
     );

@@ -71,7 +71,12 @@ export function spawnPoint(): Viewpoint {
     s = Math.sin(HEADING);
   const at = new THREE.Vector3(SPAWN.ahead * c + SPAWN.side * s, 0, -SPAWN.ahead * s + SPAWN.side * c);
   at.y = shellTopAt(at.x, at.z) ?? SHELL_CROWN_Y;
-  return { head: at, yawDeg: yawFacing(headingDir()), onGround: true, note: "spawn: toward the front of A'Tuin's shell, looking over its rim at the head" };
+  return {
+    head: at,
+    yawDeg: yawFacing(headingDir()),
+    onGround: true,
+    note: "spawn: toward the front of A'Tuin's shell, looking over its rim at the head",
+  };
 }
 
 /**
@@ -99,9 +104,14 @@ export function viewpoints(): Record<string, Viewpoint> {
   const toCentre = side.clone().setY(0).negate().normalize();
   return {
     spawn: spawnPoint(),
-    rim: { head: rimAt, yawDeg: yawFacing(rimIn), onGround: false, note: 'just off the rim, under its edge: the front elephant and the shell below' },
+    rim: {
+      head: rimAt,
+      yawDeg: yawFacing(rimIn),
+      onGround: false,
+      note: 'just off the rim, under its edge: the front elephant and the shell below',
+    },
     hub: { head: hub, yawDeg: yawFacing(toHub), onGround: true, note: 'beside the glass drum: the movement and the Sun' },
-    far: { head: side, yawDeg: yawFacing(toCentre), onGround: false, note: 'far off in space: Disc, elephants and A\'Tuin in profile' },
+    far: { head: side, yawDeg: yawFacing(toCentre), onGround: false, note: "far off in space: Disc, elephants and A'Tuin in profile" },
   };
 }
 

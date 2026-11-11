@@ -41,7 +41,7 @@ function moonPath(phase: number, r = 10) {
   const sweepOuter = waxing ? 1 : 0;
   const rx = Math.abs(k) * r;
   // Terminator bulges toward the lit side when gibbous.
-  const sweepInner = (k > 0) === waxing ? 0 : 1;
+  const sweepInner = k > 0 === waxing ? 0 : 1;
   return `M0,${-r} A${r},${r} 0 0 ${sweepOuter} 0,${r} A${rx},${r} 0 0 ${sweepInner} 0,${-r} Z`;
 }
 

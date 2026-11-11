@@ -103,7 +103,6 @@ const TRAIL_SPAN = 0.12;
 /** Loose puffs of gas drifting off along each trail. */
 const WAKE_PUFFS = 6;
 
-
 /** Apex at the origin, opening along −y to a rim of radius 1 at y = −1. */
 const CONE = new THREE.ConeGeometry(1, 1, 32, 1, true).translate(0, -0.5, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -189,11 +188,7 @@ class WarOfTheWorlds {
     const a = (1 - s) * (1 - s),
       b = 2 * (1 - s) * s,
       c = s * s;
-    return out
-      .copy(this.mars)
-      .multiplyScalar(a)
-      .addScaledVector(this.ctrl, b)
-      .addScaledVector(this.earth, c);
+    return out.copy(this.mars).multiplyScalar(a).addScaledVector(this.ctrl, b).addScaledVector(this.earth, c);
   }
 
   /** Bend the arc up off the table and, when the Sun is in the way, wide round it. */
@@ -206,7 +201,10 @@ class WarOfTheWorlds {
     // A quadratic arc passes half way to its control point.
     const clear = Math.max(0, 4.5 - reach) * 2;
     const len = this.mars.distanceTo(this.earth);
-    this.ctrl.copy(mid).addScaledVector(out, clear).addScaledVector(UP, 0.12 * len + 0.4);
+    this.ctrl
+      .copy(mid)
+      .addScaledVector(out, clear)
+      .addScaledVector(UP, 0.12 * len + 0.4);
   }
 
   update(simMs: number, dt: number, jumped: boolean) {
@@ -348,7 +346,11 @@ class WarOfTheWorlds {
   framePoints(): THREE.Vector3[] {
     const span = WOTW_SPAN_MS / DAY;
     const around = (p: THREE.Vector3, periodDays: number) =>
-      p.clone().sub(SUN).applyAxisAngle(UP, (span / periodDays) * Math.PI * 2).add(SUN);
+      p
+        .clone()
+        .sub(SUN)
+        .applyAxisAngle(UP, (span / periodDays) * Math.PI * 2)
+        .add(SUN);
     const mars = this.bodies.positionOf('mars');
     const earth = this.bodies.positionOf('earth');
     return [mars, earth, around(mars, 687), around(earth, 365.25)];
@@ -480,7 +482,7 @@ class UtopiaPlanitia {
       const flicker = Math.sin(elapsed * (9 + i * 1.3) + i * 4.1) * Math.sin(elapsed * 3.7 + i * 2.2);
       s.material.opacity = Math.max(0, flicker) ** 3 * 1.4;
     });
-    const blink = (elapsed % 1.6) < 0.18 ? 1 : 0;
+    const blink = elapsed % 1.6 < 0.18 ? 1 : 0;
     this.beacons.forEach((b) => (b.material.opacity = blink * 0.9));
   }
 }
@@ -654,7 +656,6 @@ class Breakaway {
 
 // ---- Interstellar -----------------------------------------------------------------------
 
-
 class Wormhole {
   readonly anchor = new THREE.Group();
   readonly body: Body;
@@ -730,19 +731,8 @@ function vogonShip(mats: Materials, enamel: THREE.Material) {
   return ship;
 }
 
-
 /** Fades the bypass traffic the same way as the lane. */
 const laneFade = (p: THREE.Vector3) => 1 - THREE.MathUtils.smoothstep(Math.hypot(p.x, p.z), TABLE_RADIUS * 0.5, TABLE_RADIUS);
-
-
-
-
-
-
-
-
-
-
 
 /** Draw the construction sign: hazard-striped frame, lettering, on a clear ground. */
 function constructionSignTexture() {
@@ -806,7 +796,6 @@ const BLAST = { shock: 3.5, echo: 2.6, fireball: 1.3, embers: 4.5 };
 const EMBERS = 60;
 
 const CHUNK_DUMMY = new THREE.Object3D();
-
 
 interface Chunk {
   /** Which instanced mesh holds it, and its slot there. */
@@ -1019,12 +1008,21 @@ class Demolition {
     const surface = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0, flatShading: true });
     new ProgressiveTexture('earth', (t) => ((surface.map = t), (surface.needsUpdate = true))).start('2k');
     sunlit(surface);
-    const molten = new THREE.MeshStandardMaterial({ color: 0x5a1e0a, emissive: 0xff5a14, emissiveIntensity: 0.8, roughness: 1, flatShading: true });
+    const molten = new THREE.MeshStandardMaterial({
+      color: 0x5a1e0a,
+      emissive: 0xff5a14,
+      emissiveIntensity: 0.8,
+      roughness: 1,
+      flatShading: true,
+    });
     // One draw call per material rather than one per chunk (they all move by hand,
     // so their bounds are never up to date: no culling).
     const chunkGeo = new THREE.IcosahedronGeometry(1, 0);
     const hotCount = Math.ceil(CHUNKS / 5);
-    const [cold, hotMesh] = [new THREE.InstancedMesh(chunkGeo, surface, CHUNKS - hotCount), new THREE.InstancedMesh(chunkGeo, molten, hotCount)];
+    const [cold, hotMesh] = [
+      new THREE.InstancedMesh(chunkGeo, surface, CHUNKS - hotCount),
+      new THREE.InstancedMesh(chunkGeo, molten, hotCount),
+    ];
     this.chunkMeshes = [cold, hotMesh];
     for (const m of this.chunkMeshes) {
       m.visible = false;
@@ -1074,7 +1072,14 @@ class Demolition {
     for (let i = 0; i < 4; i++) {
       const ring = new THREE.Mesh(
         new THREE.RingGeometry(0.92, 1, 48),
-        new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+        new THREE.MeshBasicMaterial({
+          color: 0xffe27a,
+          transparent: true,
+          opacity: 0,
+          side: THREE.DoubleSide,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
       );
       this.ripples.push(ring);
       this.group.add(ring);
@@ -1303,7 +1308,8 @@ class Demolition {
     // The hitchhikers: just before the end, a white teleport beam lifts two
     // figures from Earth to one of the ships.
     const tp = this.ships[TELEPORT.ship].ship;
-    const beamOn = toBlast < 0 && tp.visible ? ramp(toBlast, TELEPORT.on, TELEPORT.on + 1) * (1 - ramp(toBlast, TELEPORT.arrive, TELEPORT.off)) : 0;
+    const beamOn =
+      toBlast < 0 && tp.visible ? ramp(toBlast, TELEPORT.on, TELEPORT.on + 1) * (1 - ramp(toBlast, TELEPORT.arrive, TELEPORT.off)) : 0;
     this.teleCore.visible = this.teleGlow.visible = beamOn > 0.01;
     if (this.teleCore.visible) {
       // Up at an angle from elsewhere on Earth (well clear of this ship's
@@ -1451,7 +1457,9 @@ class Demolition {
       this.bodies.positionOf('sun', this.sun);
       const toSign = this.sign.position.clone().sub(camera.position).normalize();
       const toSun = this.sun.clone().sub(camera.position).normalize();
-      const glare = this.tabletop ? 1 : THREE.MathUtils.smoothstep(toSign.dot(toSun), Math.cos(THREE.MathUtils.degToRad(25)), Math.cos(THREE.MathUtils.degToRad(12)));
+      const glare = this.tabletop
+        ? 1
+        : THREE.MathUtils.smoothstep(toSign.dot(toSun), Math.cos(THREE.MathUtils.degToRad(25)), Math.cos(THREE.MathUtils.degToRad(12)));
       // (Stronger in the tabletop: at 60% it was hard to see against the room and the Sun.)
       this.scrim.material.opacity = (this.tabletop ? 0.85 : 0.6) * glare * site * signIn;
       this.scrim.visible = this.scrim.material.opacity > 0.01;
@@ -1526,7 +1534,13 @@ class Demolition {
   private rows(): [string, string][] {
     const h = this.hours;
     const when = (hours: number) =>
-      new Date(this.start + hours * HOUR).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      new Date(this.start + hours * HOUR).toLocaleString(undefined, {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
     if (!this.active) return [['Next demolition', when(VOGON.demolish)]];
     const toBlast = (h - VOGON.demolish) * 3600;
     const status =
@@ -1597,7 +1611,6 @@ class Demolition {
 // ---- Project Hail Mary: the Petrova line --------------------------------------------------
 
 const ASTROPHAGE = 600;
-
 
 class PetrovaLine {
   readonly object = new THREE.Group();
@@ -1792,7 +1805,13 @@ class ErosPlace extends ExpansePlace {
       pos.setXYZ(i, v.x * 0.12, v.y * 0.05, v.z * 0.055);
     }
     geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x7d6a58, roughness: 1, envMapIntensity: 0, emissive: 0x2a6bff, emissiveIntensity: 0.05 });
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x7d6a58,
+      roughness: 1,
+      envMapIntensity: 0,
+      emissive: 0x2a6bff,
+      emissiveIntensity: 0.05,
+    });
     sunlit(mat);
     this.rock = new THREE.Mesh(geo, mat);
     this.anchor.add(this.rock);
@@ -1884,7 +1903,6 @@ class TychoStationPlace extends ExpansePlace {
     });
   }
 }
-
 
 /** The Ring: dark alien metal round a shimmering disc, facing the Sun, beyond Uranus. */
 class RingGatePlace extends ExpansePlace {

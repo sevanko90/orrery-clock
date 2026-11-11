@@ -9,10 +9,7 @@
 
   "customizations": {
     "vscode": {
-      "extensions": [
-        "oxc.oxc-vscode",
-        "esbenp.prettier-vscode"
-      ],
+      "extensions": ["oxc.oxc-vscode", "esbenp.prettier-vscode"],
       "settings": {
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "esbenp.prettier-vscode",

@@ -121,8 +121,8 @@ measurements behind it are in `docs/VR-PERFORMANCE.md`.
   heights.
 - **Persistent anchors are capped per site (about 8 on Quest):** past it,
   `requestPersistentHandle()` rejects with `InvalidStateError: ... Maximum
-  number of anchors reached!`. Keep one persistent anchor per thing, delete
-  the old persistent anchor (`session.deletePersistentAnchor`) *before*
+number of anchors reached!`. Keep one persistent anchor per thing, delete
+  the old persistent anchor (`session.deletePersistentAnchor`) _before_
   asking for the new handle, and clear strays at the session's start.
   Clearing the site's data also clears them. Log each anchor step as an
   event, not a sampled state: a quick failure followed by a new save hides

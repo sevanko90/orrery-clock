@@ -131,7 +131,10 @@ stage.scene.add(bodies.root);
 const meshLods = scrunch ? new MeshLods() : null;
 /** The mesh simplifier (headset): loaded at start, used when the Discworld is first built. */
 let simplifierLoaded = false;
-if (scrunch) loadSimplifier().then(() => (simplifierLoaded = true)).catch(() => undefined);
+if (scrunch)
+  loadSimplifier()
+    .then(() => (simplifierLoaded = true))
+    .catch(() => undefined);
 /** Headset: tiny moons drawn together as dots (see MoonDots). */
 const moonDots = scrunch ? new MoonDots() : null;
 if (moonDots) stage.scene.add(moonDots.sprite);
@@ -250,7 +253,11 @@ const NORMAL_LIMITS = { maxPolar: stage.controls.maxPolarAngle, maxDistance: sta
 function setDiscworld(on: boolean, persist = true) {
   if (on && !discworld) {
     reseed('discworld');
-    discworld = new Discworld(mats, { lowQuality: quality.low || quality.headset, pixelRatio: quality.pixelRatio, decimate: scrunch && simplifierLoaded });
+    discworld = new Discworld(mats, {
+      lowQuality: quality.low || quality.headset,
+      pixelRatio: quality.pixelRatio,
+      decimate: scrunch && simplifierLoaded,
+    });
     discBatch = new Batcher(discworld.root, stage.scene);
     stage.scene.add(discworld.root);
   }
@@ -444,7 +451,15 @@ function timeRows(): PanelRow[] {
   return [
     { label: 'Time', heading: true },
     { label: 'Speed', slider: { stops: SPEED_STEPS.length, at: clock.step, caption: SPEED_STEPS[clock.step].label } },
-    { label: 'Play', buttons: [{ label: 'Slower' }, { label: paused ? 'Play' : 'Pause', active: paused }, { label: 'Faster' }, { label: 'Now', active: clock.isLive() }] },
+    {
+      label: 'Play',
+      buttons: [
+        { label: 'Slower' },
+        { label: paused ? 'Play' : 'Pause', active: paused },
+        { label: 'Faster' },
+        { label: 'Now', active: clock.isLive() },
+      ],
+    },
     { label: 'Date', buttons: DATE_STEPS.map((d) => ({ label: d.label })) },
   ];
 }
@@ -786,88 +801,95 @@ function sceneCounts() {
   stage.scene.traverseVisible(() => shown++);
   return [all, shown];
 }
-const xr = new XrMode(stage.renderer, stage.scene, { orrery: orreryBox, tableRadius: TABLE_RADIUS, sky: stage.sky }, {
-  pick: xrPick,
-  ...(import.meta.env.DEV ? { capture: () => (captureDue = `vr-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`) } : {}),
-  faster: () => clock.setStep(clock.step + 1),
-  slower: () => clock.setStep(clock.step - 1),
-  card: (hit) => {
-    const { body, lore } = hit;
-    if (body) return () => bodyCard(body, clock.nowMs(), armLongitude);
-    return lore ? () => loreCard(lore) : null;
+const xr = new XrMode(
+  stage.renderer,
+  stage.scene,
+  { orrery: orreryBox, tableRadius: TABLE_RADIUS, sky: stage.sky },
+  {
+    pick: xrPick,
+    ...(import.meta.env.DEV ? { capture: () => (captureDue = `vr-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`) } : {}),
+    faster: () => clock.setStep(clock.step + 1),
+    slower: () => clock.setStep(clock.step - 1),
+    card: (hit) => {
+      const { body, lore } = hit;
+      if (body) return () => bodyCard(body, clock.nowMs(), armLongitude);
+      return lore ? () => loreCard(lore) : null;
+    },
+    view: viewFrom,
+    now: () => clock.resetToNow(),
+    status: () => [
+      new Date(clock.nowMs()).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+      SPEED_STEPS[clock.step].label,
+    ],
+    quake: () => Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0),
+    // Bloom can't run on a multiview frame; the toggle only works without it.
+    report: (entry) => {
+      telemetry.send({
+        ...entry,
+        ...lastRender,
+        // Objects with a non-finite world matrix (NaN state hides them and makes picking crawl).
+        nonFinite: countNonFinite(),
+        cpuParts: takeCpuParts(),
+        frame: takeFrameStats(1000 / ((stage.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate || 72)),
+        hidden: [...forcedHidden.keys()],
+        probes: probes.on,
+        noGlass: vrGlass.on,
+        // Scene graph size: every object, and those the renderer walks (visible chain).
+        objects: sceneCounts(),
+        scrunch,
+        // Batches draw as one multi-draw call each; without the extension three falls back to a GL draw per part.
+        multiDraw,
+        lod: orreryBatch.lodCounts(),
+        sphereLod: meshLods?.counts(),
+        sim: new Date(clock.nowMs()).toISOString(),
+        speed: SPEED_STEPS[clock.step].label,
+        modes: { fiction: !!fiction?.enabled, discworld: !!discworld?.enabled, moons: bodies.moonsVisible, markers: markersOn },
+        playing: playing?.id ?? null,
+        carried: xr.moving,
+      });
+    },
+    backend: () => stage.backend,
+    discOn: () => !!discworld?.enabled,
+    // Tabletop: dropped in mid-air with room below, the Discworld entrance plays; set on a table, it goes.
+    tabletopDisc: (on) => {
+      if (!!discworld?.enabled === on) return;
+      setDiscworld(on, false);
+      // It forms and dissolves where it is (rising and sinking, it went through the floor),
+      // and once formed it stands still, baked (see Discworld.freeze): the tabletop's biggest cost.
+      if (discworld) discworld.dissolveOnExit = discworld.freeze = true;
+    },
+    // The VR scene: Discworld on (assembled), without touching the saved setting.
+    sessionStart: (mode) => {
+      orrery.setHeadsetLook(true);
+      discBeforeVr = !!discworld?.enabled;
+      // Fiction always on in VR and the tabletop (the scene panel is its catalogue), without touching the saved setting.
+      fictionBeforeVr = !!fiction?.enabled;
+      if (!fictionBeforeVr) setFiction(true, false);
+      // The VR scene stands on the Disc; the tabletop is the instrument alone.
+      if (mode === 'ar') {
+        // Gone at once, not sinking away at the player's feet.
+        setDiscworld(false, false);
+        discworld?.finish();
+      } else {
+        setDiscworld(true, false);
+        discworld!.finish();
+      }
+    },
+    sessionEnd: () => {
+      orrery.setHeadsetLook(false);
+      if (!!fiction?.enabled !== fictionBeforeVr) setFiction(fictionBeforeVr, false);
+      // Discworld back as it was (VR turned it on; the tabletop turned it off).
+      if (discworld) discworld.dissolveOnExit = discworld.freeze = false;
+      if (!!discworld?.enabled !== discBeforeVr) setDiscworld(discBeforeVr, false);
+      vrReturn = null;
+      vrFlyPending = null;
+    },
+    timeRows,
+    timePress,
+    panelRows,
+    panelPress,
   },
-  view: viewFrom,
-  now: () => clock.resetToNow(),
-  status: () => [new Date(clock.nowMs()).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), SPEED_STEPS[clock.step].label],
-  quake: () => Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0),
-  // Bloom can't run on a multiview frame; the toggle only works without it.
-  report: (entry) => {
-    telemetry.send({
-      ...entry,
-      ...lastRender,
-      // Objects with a non-finite world matrix (NaN state hides them and makes picking crawl).
-      nonFinite: countNonFinite(),
-      cpuParts: takeCpuParts(),
-      frame: takeFrameStats(1000 / ((stage.renderer.xr.getSession() as (XRSession & { frameRate?: number }) | null)?.frameRate || 72)),
-      hidden: [...forcedHidden.keys()],
-      probes: probes.on,
-      noGlass: vrGlass.on,
-      // Scene graph size: every object, and those the renderer walks (visible chain).
-      objects: sceneCounts(),
-      scrunch,
-      // Batches draw as one multi-draw call each; without the extension three falls back to a GL draw per part.
-      multiDraw,
-      lod: orreryBatch.lodCounts(),
-      sphereLod: meshLods?.counts(),
-      sim: new Date(clock.nowMs()).toISOString(),
-      speed: SPEED_STEPS[clock.step].label,
-      modes: { fiction: !!fiction?.enabled, discworld: !!discworld?.enabled, moons: bodies.moonsVisible, markers: markersOn },
-      playing: playing?.id ?? null,
-      carried: xr.moving,
-    });
-  },
-  backend: () => stage.backend,
-  discOn: () => !!discworld?.enabled,
-  // Tabletop: dropped in mid-air with room below, the Discworld entrance plays; set on a table, it goes.
-  tabletopDisc: (on) => {
-    if (!!discworld?.enabled === on) return;
-    setDiscworld(on, false);
-    // It forms and dissolves where it is (rising and sinking, it went through the floor),
-    // and once formed it stands still, baked (see Discworld.freeze): the tabletop's biggest cost.
-    if (discworld) discworld.dissolveOnExit = discworld.freeze = true;
-  },
-  // The VR scene: Discworld on (assembled), without touching the saved setting.
-  sessionStart: (mode) => {
-    orrery.setHeadsetLook(true);
-    discBeforeVr = !!discworld?.enabled;
-    // Fiction always on in VR and the tabletop (the scene panel is its catalogue), without touching the saved setting.
-    fictionBeforeVr = !!fiction?.enabled;
-    if (!fictionBeforeVr) setFiction(true, false);
-    // The VR scene stands on the Disc; the tabletop is the instrument alone.
-    if (mode === 'ar') {
-      // Gone at once, not sinking away at the player's feet.
-      setDiscworld(false, false);
-      discworld?.finish();
-    }
-    else {
-      setDiscworld(true, false);
-      discworld!.finish();
-    }
-  },
-  sessionEnd: () => {
-    orrery.setHeadsetLook(false);
-    if (!!fiction?.enabled !== fictionBeforeVr) setFiction(fictionBeforeVr, false);
-    // Discworld back as it was (VR turned it on; the tabletop turned it off).
-    if (discworld) discworld.dissolveOnExit = discworld.freeze = false;
-    if (!!discworld?.enabled !== discBeforeVr) setDiscworld(discBeforeVr, false);
-    vrReturn = null;
-    vrFlyPending = null;
-  },
-  timeRows,
-  timePress,
-  panelRows,
-  panelPress,
-});
+);
 {
   const vrButton = document.getElementById('c-vr') as HTMLButtonElement;
   navigator.xr
@@ -972,8 +994,18 @@ const telemetry = new Telemetry((c: Command) => {
         frustumCulled: o.frustumCulled,
         world: [pos.x, pos.y, pos.z].map((v) => +v.toFixed(3)),
         scale: +scl.x.toFixed(3),
-        material: m && { type: m.type, opacity: m.opacity, transparent: m.transparent, visible: m.visible, depthTest: m.depthTest, blending: m.blending, side: m.side },
-        eye: viewer().position.toArray().map((v) => +v.toFixed(3)),
+        material: m && {
+          type: m.type,
+          opacity: m.opacity,
+          transparent: m.transparent,
+          visible: m.visible,
+          depthTest: m.depthTest,
+          blending: m.blending,
+          side: m.side,
+        },
+        eye: viewer()
+          .position.toArray()
+          .map((v) => +v.toFixed(3)),
       });
       return;
     }
@@ -992,7 +1024,14 @@ const debug = new ScrunchDebug({
   clock,
   scrunch,
   batches: () => [orreryBatch, ...(discBatch ? [discBatch] : [])],
-  roots: () => ({ movement: orrery.mechanism.root, orrery: orrery.root, bodies: bodies.root, discworld: discworld?.root, fiction: fiction?.root, hangar: xr.hall }),
+  roots: () => ({
+    movement: orrery.mechanism.root,
+    orrery: orrery.root,
+    bodies: bodies.root,
+    discworld: discworld?.root,
+    fiction: fiction?.root,
+    hangar: xr.hall,
+  }),
   setMode: (mode, on) => {
     if (mode === 'fiction') setFiction(on);
     else if (mode === 'discworld') setDiscworld(on);
@@ -1242,7 +1281,12 @@ function step(now: number) {
   }
   // An elephant shifting its feet shakes the whole Disc (and the camera).
   const quake = Math.max(discworld?.quake ?? 0, fiction?.quake ?? 0);
-  const shake = quake > 0 && !xr.presenting ? new THREE.Vector3().randomDirection().multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target)) : null;
+  const shake =
+    quake > 0 && !xr.presenting
+      ? new THREE.Vector3()
+          .randomDirection()
+          .multiplyScalar(quake * quake * 0.004 * stage.camera.position.distanceTo(stage.controls.target))
+      : null;
   if (shake) stage.camera.position.add(shake);
   // ?vrview=1: the desktop camera stands in for the head (hall shown, VR culling run).
   if (VRVIEW_FLAG && !xr.presenting) {
@@ -1346,4 +1390,26 @@ const vrPreview = {
 stage.renderer.setAnimationLoop(frame);
 
 // Expose for debugging in the console.
-Object.assign(window, { orreryDebug: { stage, clock, bodies, orrery, kinematics, discworld: () => discworld, fiction: () => fiction, pick, xr, scrunch: debug, scrunchParts: { meshLods, moonDots, movementTriangles: () => movementTriangles, culler, fictionSprites: () => fictionSprites, batch: () => orreryBatch }, vr: vrPreview } });
+Object.assign(window, {
+  orreryDebug: {
+    stage,
+    clock,
+    bodies,
+    orrery,
+    kinematics,
+    discworld: () => discworld,
+    fiction: () => fiction,
+    pick,
+    xr,
+    scrunch: debug,
+    scrunchParts: {
+      meshLods,
+      moonDots,
+      movementTriangles: () => movementTriangles,
+      culler,
+      fictionSprites: () => fictionSprites,
+      batch: () => orreryBatch,
+    },
+    vr: vrPreview,
+  },
+});

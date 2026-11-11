@@ -46,10 +46,16 @@ async function measure(label) {
     return null;
   }
   const f = (v, d = 1) => (v == null ? '   -' : v.toFixed(d).padStart(5));
-  const m = { fps: median(s.map((r) => r.fps)), js: median(s.map((r) => r.cpuMs)), outside: median(s.map((r) => r.frame?.outsideMs)), draws: median(s.map((r) => r.drawCalls)) };
+  const m = {
+    fps: median(s.map((r) => r.fps)),
+    js: median(s.map((r) => r.cpuMs)),
+    outside: median(s.map((r) => r.frame?.outsideMs)),
+    draws: median(s.map((r) => r.drawCalls)),
+  };
   console.log(
     `${label.padEnd(18)} fps ${f(median(s.map((r) => r.fps)))}  js ${f(median(s.map((r) => r.cpuMs)))}  render ${f(median(s.map((r) => r.cpuParts?.render)))}  outside ${f(median(s.map((r) => r.frame?.outsideMs)))}  missed ${String(s.reduce((a, r) => a + (r.frame?.missed ?? 0), 0)).padStart(3)}  draws ${f(median(s.map((r) => r.drawCalls)), 0)}`,
-  );  return m;
+  );
+  return m;
 }
 
 // Each part measured on, hidden, on again, back to back: its cost is the hidden run against the

@@ -138,6 +138,7 @@ Budget: worst viewpoint <n> draws now (start <n0>), target ≤ 70. <k> of <m> it
 ```
 
 Rules that go with it:
+
 - **Plan first.** Before editing code, measure, write the ranked plan with
   expected savings, and stop items whose total cannot reach the budget.
 - **Commit each item** when it works (typecheck + tests pass), with its

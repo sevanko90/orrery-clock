@@ -84,7 +84,12 @@ export class TabletopHandling {
    * frame a grab starts (for a buzz), 'drop' on the frame it's let go, true while it
    * moved the orrery, else false. Picked up, it floats until set down again (settle).
    */
-  update(dt: number, input: TabletopInput, hands: { left: THREE.Object3D | null; right: THREE.Object3D | null }, headQ: THREE.Quaternion): 'grab' | 'drop' | boolean {
+  update(
+    dt: number,
+    input: TabletopInput,
+    hands: { left: THREE.Object3D | null; right: THREE.Object3D | null },
+    headQ: THREE.Quaternion,
+  ): 'grab' | 'drop' | boolean {
     const held = [input.gripLeft ? hands.left : null, input.gripRight ? hands.right : null].filter((x): x is THREE.Object3D => !!x);
     const key = (input.gripLeft && hands.left ? 'L' : '') + (input.gripRight && hands.right ? 'R' : '');
     if (!key) {
@@ -130,7 +135,10 @@ export class TabletopHandling {
     if (turn) {
       const c = this.p.copy(this.centre()).applyMatrix4(t);
       const a = (-turn * DRIVE.turnDegPerS * Math.PI * dt) / 180;
-      const r = this.h.makeTranslation(c.x, 0, c.z).multiply(this.m.makeRotationY(a)).multiply(new THREE.Matrix4().makeTranslation(-c.x, 0, -c.z));
+      const r = this.h
+        .makeTranslation(c.x, 0, c.z)
+        .multiply(this.m.makeRotationY(a))
+        .multiply(new THREE.Matrix4().makeTranslation(-c.x, 0, -c.z));
       t.premultiply(r);
     }
     // Drive it across the room, relative to where the player faces; and up or down.

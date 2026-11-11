@@ -8,10 +8,14 @@ function setup(m = 0.016, at = new THREE.Vector3(0, 0.8, -0.8)) {
   rig.scale.setScalar(1 / m);
   rig.position.copy(at).multiplyScalar(-1 / m);
   let scale = m;
-  const h = new TabletopHandling(rig, () => new THREE.Vector3(), (s) => {
-    scale = s;
-    rig.scale.setScalar(1 / s);
-  });
+  const h = new TabletopHandling(
+    rig,
+    () => new THREE.Vector3(),
+    (s) => {
+      scale = s;
+      rig.scale.setScalar(1 / s);
+    },
+  );
   /** Where a world point is in the room (metres). */
   const inRoom = (p: THREE.Vector3) => {
     rig.updateMatrix();
@@ -126,7 +130,12 @@ describe('tabletop handling', () => {
   it('the turn keeps the centre where it is', () => {
     const { h, inRoom } = setup();
     const before = inRoom(new THREE.Vector3());
-    h.update(0.5, { left: new THREE.Vector2(), right: new THREE.Vector2(1, 0), gripLeft: false, gripRight: false }, { left: null, right: null }, q);
+    h.update(
+      0.5,
+      { left: new THREE.Vector2(), right: new THREE.Vector2(1, 0), gripLeft: false, gripRight: false },
+      { left: null, right: null },
+      q,
+    );
     const after = inRoom(new THREE.Vector3());
     expect(after.distanceTo(before)).toBeLessThan(1e-6);
     // ...and moves a point off-centre (it did turn).

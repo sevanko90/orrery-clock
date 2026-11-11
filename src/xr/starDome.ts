@@ -1,5 +1,23 @@
 import * as THREE from 'three/webgpu';
-import { distance, dot, floor, fract, fwidth, length, max, mix, normalize, positionLocal, positionWorld, pow, sin, smoothstep, step, uniform, vec3 } from 'three/tsl';
+import {
+  distance,
+  dot,
+  floor,
+  fract,
+  fwidth,
+  length,
+  max,
+  mix,
+  normalize,
+  positionLocal,
+  positionWorld,
+  pow,
+  sin,
+  smoothstep,
+  step,
+  uniform,
+  vec3,
+} from 'three/tsl';
 
 /** Star cells across the dome's radius: the finer, the more (and smaller) the stars. */
 const DENSITY = 260;
@@ -36,7 +54,11 @@ export class StarDome {
     // radius, ~65 cm at the usual scale); stepping back it fades away (gone by ~2.2 radii, ~1.5 m),
     // so a half sky doesn't trail round the room after the instrument.
     const near = smoothstep(this.radius.mul(2.2), this.radius.mul(1), this.eyeToCentre);
-    const far = smoothstep(this.eyeToCentre.add(this.radius.mul(0.05)), this.eyeToCentre.add(this.radius.mul(0.4)), distance(positionWorld, this.eye)).mul(near);
+    const far = smoothstep(
+      this.eyeToCentre.add(this.radius.mul(0.05)),
+      this.eyeToCentre.add(this.radius.mul(0.4)),
+      distance(positionWorld, this.eye),
+    ).mul(near);
 
     // The star in this pixel's grid cell: where in the cell, whether there is one, how bright, what colour.
     const p = positionLocal.mul(DENSITY);
@@ -53,7 +75,9 @@ export class StarDome {
     const pixel = max(length(fwidth(p)), 0.0001);
     // The star sits on the dome's surface (a random point in a 3D cell is mostly off it).
     const onDome = normalize(cell.add(at)).mul(DENSITY);
-    const star = smoothstep(pixel.mul(1.1), pixel.mul(0.2), length(p.sub(onDome))).mul(there).mul(bright);
+    const star = smoothstep(pixel.mul(1.1), pixel.mul(0.2), length(p.sub(onDome)))
+      .mul(there)
+      .mul(bright);
     const tint = mix(vec3(1.0, 0.82, 0.62), vec3(0.72, 0.84, 1.0), rnd(29.3));
 
     const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.BackSide });

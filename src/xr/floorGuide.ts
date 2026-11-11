@@ -15,7 +15,12 @@ export class FloorGuide {
   private shown = 0;
 
   constructor() {
-    const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const mat = new THREE.MeshBasicNodeMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
     // Along the strip: a dot every 12 cm, drifting toward the far end; soft at both ends.
     const along = uv().x.mul(this.length);
     const dot = step(0.55, fract(along.div(0.12).sub(this.time.mul(2))));
