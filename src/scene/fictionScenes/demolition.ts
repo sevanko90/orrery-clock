@@ -140,7 +140,7 @@ interface Chunk {
  * planet explode. The orrery's look applies: effects are light, gas and fire
  * rather than solid objects; craft are yellow-enamel-and-brass automata.
  *
- * When: every Thursday, local time, whenever fiction mode is on, including
+ * When: every Thursday, local time, including
  * when the clock is simply running in real time. Times are from VOGON in the
  * catalogue (hours after the fleet's 08:00 arrival).
  *

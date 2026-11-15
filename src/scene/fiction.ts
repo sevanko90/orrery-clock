@@ -20,7 +20,9 @@ import { Demolition } from './fictionScenes/demolition';
 import { PetrovaLine } from './fictionScenes/petrovaLine';
 import { CeresStationPlace, ErosPlace, RingGatePlace, TychoStationPlace } from './fictionScenes/expanse';
 
-// ---- Fiction mode -----------------------------------------------------------------------
+// ---- Fiction ------------------------------------------------------------------------------
+// Always in the scene: the places show unless hidden from the catalogue, and the
+// dated events play whenever the clock reaches them.
 
 export class Fiction {
   readonly root = new THREE.Group();
@@ -32,12 +34,6 @@ export class Fiction {
   private wormhole: Wormhole;
   /** The always-on places: what each one shows, and how it moves. */
   private places: { id: string; object: THREE.Object3D; update: (simMs: number, elapsed: number) => void }[];
-  /**
-   * Fiction mode proper: shows the places and the catalogue. The dated events
-   * run regardless, whenever the clock is in one (a Thursday morning, the
-   * August volley), mode or no mode.
-   */
-  private on = false;
   /** Places switched off from the catalogue. */
   private hiddenPlaces = new Set<string>();
   /** Entry whose scene is playing: everything else steps aside. */
@@ -75,15 +71,6 @@ export class Fiction {
       petrova.body,
       ...expanse.map((p) => p.body),
     ];
-    this.setEnabled(false);
-  }
-
-  get enabled() {
-    return this.on;
-  }
-
-  setEnabled(on: boolean) {
-    this.on = on;
     this.refresh();
   }
 
@@ -111,7 +98,7 @@ export class Fiction {
     const inScene = (id: string) => this.playing === null || this.playing === id;
     // An event shows when no other scene is playing and, unless it's the one playing, it isn't skipped for coming round too often.
     const shows = (id: string) => inScene(id) && (this.playing === id || !this.skipped.has(id));
-    for (const p of this.places) p.object.visible = this.on && this.placeShown(p.id) && inScene(p.id);
+    for (const p of this.places) p.object.visible = this.placeShown(p.id) && inScene(p.id);
     this.wotw.suppressed = !shows(WAR_OF_THE_WORLDS.id);
     this.breakaway.suppressed = !shows(SPACE_1999.id);
     this.demolition.suppressed = !shows(VOGON_DEMOLITION.id);

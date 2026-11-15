@@ -292,9 +292,10 @@ addEventListener('keydown', (e) => {
   if (e.key === 'm' || e.key === 'M') setMoons(!bodies.moonsVisible);
 });
 
-// ---- Fiction mode --------------------------------------------------------------
-// Built at startup even with the mode off: its dated events (the Vogons every
-// Thursday, the Martians every August) play whenever the clock reaches them.
+// ---- Fiction --------------------------------------------------------------------
+// Always in the scene: places show unless hidden in the catalogue, and the dated
+// events (the Vogons every Thursday, the Martians every August) play whenever the
+// clock reaches them. The fiction button only opens and closes the catalogue.
 let fiction: Fiction | null = null;
 /** Scrunched: fiction's ~130 additive glow sprites drawn as one. */
 let fictionSprites: SpriteBatch | null = null;
@@ -376,7 +377,6 @@ let vrFictionAt: string | null = null;
 function vrFiction(entry: FictionEntry) {
   // (The tabletop never carries the player off, so there's nowhere to return to.)
   if (!vrReturn && xr.mode !== 'ar') vrReturn = xr.pose();
-  if (!fiction?.enabled) setFiction(true);
   const p = xr.pose();
   const fwd = new THREE.Vector3(-Math.sin(THREE.MathUtils.degToRad(p.yawDeg)), 0, -Math.cos(THREE.MathUtils.degToRad(p.yawDeg)));
   stage.camera.position.copy(p.head);
@@ -465,27 +465,24 @@ function timePress(i: number, part: number) {
 
 /**
  * The VR scene panel: what's shown, and the fiction catalogue as on the
- * desktop (fiction on or off; each entry plays or flies to it, and the
- * always-on places have an eye to show or hide them). Each row with what a
+ * desktop (each entry plays or flies to it, and the always-on places have
+ * an eye to show or hide them). Each row with what a
  * press on it (part 0, or 1 for the eye) does.
  */
 function panelItems(mode: XrSessionMode): { row: PanelRow; press?: (part: number) => void }[] {
-  const on = !!fiction?.enabled;
   return [
     { row: { label: 'Show', heading: true } },
     { row: { label: 'Moons', on: bodies.moonsVisible }, press: () => setMoons(!bodies.moonsVisible) },
-    { row: { label: 'Fiction', on }, press: () => setFiction(!on, false) },
-    ...(on
-      ? FICTION.map((e) => ({
-          row: { label: e.title, active: vrFictionAt === e.id, ...(e.kind === 'place' ? { eye: !hiddenPlaces.has(e.id) } : {}) },
-          press: (part: number) => {
-            if (part === 1) {
-              setPlaceShown(e, hiddenPlaces.has(e.id));
-              fictionPanel.syncToggles();
-            } else vrFiction(e);
-          },
-        }))
-      : []),
+    { row: { label: 'Fiction', heading: true } },
+    ...FICTION.map((e) => ({
+      row: { label: e.title, active: vrFictionAt === e.id, ...(e.kind === 'place' ? { eye: !hiddenPlaces.has(e.id) } : {}) },
+      press: (part: number) => {
+        if (part === 1) {
+          setPlaceShown(e, hiddenPlaces.has(e.id));
+          fictionPanel.syncToggles();
+        } else vrFiction(e);
+      },
+    })),
     {
       row: { label: mode === 'ar' ? 'Place in front of me' : vrReturn ? 'Return' : 'Return to the Disc' },
       press: () => {
@@ -506,31 +503,29 @@ function panelPress(i: number, part = 0) {
 
 /** Discworld's state before VR turned it on, to put back after. */
 let discBeforeVr = false;
-/** Fiction's state before VR or the tabletop turned it on, to put back after. */
-let fictionBeforeVr = false;
+{
+  reseed('fiction');
+  fiction = new Fiction(bodies, mats);
+  hiddenPlaces.forEach((id) => fiction!.setPlaceShown(id, false));
+  stage.scene.add(fiction.root);
+  if (scrunch) fictionSprites = new SpriteBatch(fiction.spriteRoots, stage.scene);
+}
 
-function setFiction(on: boolean, persist = true) {
-  if (!fiction) {
-    reseed('fiction');
-    fiction = new Fiction(bodies, mats);
-    hiddenPlaces.forEach((id) => fiction!.setPlaceShown(id, false));
-    stage.scene.add(fiction.root);
-    if (scrunch) fictionSprites = new SpriteBatch(fiction.spriteRoots, stage.scene);
-  }
-  if (!on && playing) finishScene();
-  fiction?.setEnabled(on);
-  fictionPanel.setVisible(on);
-  fictionButton.setAttribute('aria-pressed', String(on));
-  fictionButton.title = on ? 'Leave fiction mode (F)' : 'Fiction mode (F)';
-  // Don't leave the camera or a card on something that has just vanished (a place; events stay).
-  const shown = [focus.focused, info.showingBody];
-  if (!on && fiction && shown.some((b) => b && fiction!.bodies.includes(b) && b.available?.() === false)) unfocus();
-  if (!persist) return;
+/** Open or close the fiction catalogue (what's in the scene is set from the catalogue itself). */
+function setFictionPanel(open: boolean) {
+  fictionPanel.setVisible(open);
+  fictionButton.setAttribute('aria-pressed', String(open));
+  fictionButton.title = open ? 'Close the fiction catalogue (F)' : 'Fiction catalogue (F)';
   try {
-    localStorage.setItem('fiction', on ? '1' : '0');
+    localStorage.setItem('fiction-panel', open ? '1' : '0');
   } catch {
     /* ignore */
   }
+}
+const fictionPanelOpen = () => fictionButton.getAttribute('aria-pressed') === 'true';
+/** Telemetry / scrunch measuring only: hide all of fiction's own scene, to measure without it. */
+function setFictionShown(on: boolean) {
+  if (fiction) fiction.root.visible = on;
 }
 
 /** Dated events: jump to just before they start and run at a day a second. Places: fly to them. */
@@ -560,16 +555,17 @@ function playFiction(entry: FictionEntry) {
 {
   let saved = false;
   try {
-    saved = localStorage.getItem('fiction') === '1';
+    saved = localStorage.getItem('fiction-panel') === '1';
+    localStorage.removeItem('fiction'); // the old fiction-mode setting
   } catch {
     /* ignore */
   }
-  setFiction(saved);
+  setFictionPanel(saved);
 }
-fictionButton.addEventListener('click', () => setFiction(!fiction?.enabled));
+fictionButton.addEventListener('click', () => setFictionPanel(!fictionPanelOpen()));
 addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.key === 'f' || e.key === 'F') setFiction(!fiction?.enabled);
+  if (e.key === 'f' || e.key === 'F') setFictionPanel(!fictionPanelOpen());
 });
 
 const credits = document.getElementById('credits') as HTMLDialogElement;
@@ -815,7 +811,7 @@ const xr = new XrMode(
         sphereLod: meshLods?.counts(),
         sim: new Date(clock.nowMs()).toISOString(),
         speed: SPEED_STEPS[clock.step].label,
-        modes: { fiction: !!fiction?.enabled, discworld: !!discworld?.enabled, moons: bodies.moonsVisible, markers: markersOn },
+        modes: { fiction: fiction?.root.visible ?? false, discworld: !!discworld?.enabled, moons: bodies.moonsVisible, markers: markersOn },
         playing: playing?.id ?? null,
         carried: xr.moving,
       });
@@ -834,9 +830,6 @@ const xr = new XrMode(
     sessionStart: (mode) => {
       orrery.setHeadsetLook(true);
       discBeforeVr = !!discworld?.enabled;
-      // Fiction always on in VR and the tabletop (the scene panel is its catalogue), without touching the saved setting.
-      fictionBeforeVr = !!fiction?.enabled;
-      if (!fictionBeforeVr) setFiction(true, false);
       // The VR scene stands on the Disc; the tabletop is the instrument alone.
       if (mode === 'ar') {
         // Gone at once, not sinking away at the player's feet.
@@ -849,7 +842,6 @@ const xr = new XrMode(
     },
     sessionEnd: () => {
       orrery.setHeadsetLook(false);
-      if (!!fiction?.enabled !== fictionBeforeVr) setFiction(fictionBeforeVr, false);
       // Discworld back as it was (VR turned it on; the tabletop turned it off).
       if (discworld) discworld.dissolveOnExit = discworld.freeze = false;
       if (!!discworld?.enabled !== discBeforeVr) setDiscworld(discBeforeVr, false);
@@ -893,7 +885,7 @@ const telemetry = new Telemetry((c: Command) => {
     case 'scale':
       return xr.setScale(c.metresPerUnit);
     case 'mode':
-      if (c.mode === 'fiction') setFiction(c.on);
+      if (c.mode === 'fiction') setFictionShown(c.on);
       else if (c.mode === 'discworld') setDiscworld(c.on);
       else if (c.mode === 'moons') setMoons(c.on);
       else if (c.mode === 'markers') setMarkers(c.on);
@@ -1005,7 +997,7 @@ const debug = new ScrunchDebug({
     hangar: xr.hall,
   }),
   setMode: (mode, on) => {
-    if (mode === 'fiction') setFiction(on);
+    if (mode === 'fiction') setFictionShown(on);
     else if (mode === 'discworld') setDiscworld(on);
     else if (mode === 'moons') setMoons(on);
     else if (mode === 'markers') setMarkers(on);
